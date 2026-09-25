@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">1 download manager</string>
+    <string name="app_tagline">One queue for every download</string>
+    <string name="notification_channel_downloads">Download progress</string>
+    <string name="notification_channel_complete">Download complete</string>
+    <string name="notification_channel_torrent">Torrent activity</string>
+    <string name="notification_pause_all">Pause all</string>
+    <string name="notification_resume_all">Resume all</string>
+</resources>

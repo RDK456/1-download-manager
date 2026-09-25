@@ -1,0 +1,9 @@
+<resources>
+    <color name="brand_blue">#1769E0</color>
+    <color name="brand_blue_dark">#0B3D91</color>
+    <color name="brand_teal">#00796B</color>
+    <color name="brand_amber">#B45309</color>
+    <color name="brand_background">#F7F9FC</color>
+    <color name="brand_surface">#FFFFFF</color>
+    <color name="brand_ink">#172033</color>
+</resources>

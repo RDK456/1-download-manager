@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.DownloadHub" parent="android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">#10151F</item>
+        <item name="android:colorAccent">@color/brand_blue</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

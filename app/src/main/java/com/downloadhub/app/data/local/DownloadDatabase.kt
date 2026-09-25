@@ -1,0 +1,42 @@
+package com.downloadhub.app.data.local
+
+import androidx.room.Database
+import androidx.room.RoomDatabase
+import androidx.room.TypeConverter
+import androidx.room.TypeConverters
+import com.downloadhub.app.data.model.DownloadCategory
+import com.downloadhub.app.data.model.DownloadSource
+import com.downloadhub.app.data.model.DownloadStatus
+
+@Database(
+    entities = [DownloadEntity::class],
+    version = 1,
+    exportSchema = false
+)
+@TypeConverters(DownloadConverters::class)
+abstract class DownloadDatabase : RoomDatabase() {
+    abstract fun downloadDao(): DownloadDao
+}
+
+class DownloadConverters {
+    @TypeConverter
+    fun sourceToString(value: DownloadSource): String = value.name
+
+    @TypeConverter
+    fun stringToSource(value: String): DownloadSource =
+        runCatching { DownloadSource.valueOf(value) }.getOrDefault(DownloadSource.HTTP)
+
+    @TypeConverter
+    fun statusToString(value: DownloadStatus): String = value.name
+
+    @TypeConverter
+    fun stringToStatus(value: String): DownloadStatus =
+        runCatching { DownloadStatus.valueOf(value) }.getOrDefault(DownloadStatus.FAILED)
+
+    @TypeConverter
+    fun categoryToString(value: DownloadCategory): String = value.name
+
+    @TypeConverter
+    fun stringToCategory(value: String): DownloadCategory =
+        runCatching { DownloadCategory.valueOf(value) }.getOrDefault(DownloadCategory.OTHER)
+}
