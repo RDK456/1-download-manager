@@ -29,7 +29,8 @@ class YoutubeDownloader(
     private val context: Context,
     private val dao: DownloadDao,
     private val storage: DownloadStorage,
-    private val settings: SettingsRepository
+    private val settings: SettingsRepository,
+    private val thumbnailCache: ThumbnailCache
 ) {
     private val initMutex = Mutex()
     private val updateMutex = Mutex()
@@ -108,6 +109,9 @@ class YoutubeDownloader(
             estimatedTotal,
             System.currentTimeMillis()
         )
+        // Grab the artwork as soon as the stream is resolved so the queue card can
+        // show a thumbnail while the transfer is still running.
+        storeArtwork(item.id, info)
 
         val workDirectory = storage.workDirectory(item.id)
         workDirectory.mkdirs()
@@ -180,6 +184,40 @@ class YoutubeDownloader(
         dao.setStatus(item.id, DownloadStatus.COMPLETED, null, now)
         if (!published.location.startsWith("content:")) {
             storage.scan(File(published.location))
+        }
+    }
+
+    /**
+     * Saves the resolved thumbnail URL, its cached copy, and the media duration.
+     * Failures are ignored: artwork is a nicety, never a reason to fail a download.
+     */
+    private suspend fun storeArtwork(id: String, info: com.yausername.youtubedl_android.mapper.VideoInfo) {
+        val url = runCatching {
+            info.thumbnail?.takeIf { it.isNotBlank() }
+                ?: info.thumbnails?.lastOrNull()?.url?.takeIf { it.isNotBlank() }
+        }.getOrNull()
+        val duration = runCatching { info.duration }.getOrNull()?.takeIf { it > 0 }?.toLong()
+        if (url == null && duration == null) return
+
+        val cached = url?.let { runCatching { thumbnailCache.load(null, it) }.getOrNull() }
+        val cachedPath = cached?.let { bitmap ->
+            runCatching {
+                val target = File(File(context.filesDir, "thumbnails"), "$id.jpg")
+                target.parentFile?.mkdirs()
+                target.outputStream().use { out ->
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out)
+                }
+                target.absolutePath
+            }.getOrNull()
+        }
+        runCatching {
+            dao.updateThumbnail(
+                id = id,
+                thumbnailUrl = url,
+                thumbnailPath = cachedPath,
+                durationSeconds = duration,
+                updatedAt = System.currentTimeMillis()
+            )
         }
     }
 

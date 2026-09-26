@@ -5,13 +5,15 @@ import com.downloadhub.app.data.local.DownloadEntity
 import com.downloadhub.app.data.model.DownloadCreateRequest
 import com.downloadhub.app.download.DownloadStorage
 import com.downloadhub.app.download.LinkParser
+import com.downloadhub.app.download.ThumbnailCache
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 
 class DownloadRepository(
     private val dao: DownloadDao,
-    private val storage: DownloadStorage
+    private val storage: DownloadStorage,
+    private val thumbnailCache: ThumbnailCache
 ) {
     fun observeAll(): Flow<List<DownloadEntity>> = dao.observeAll()
 
@@ -72,6 +74,7 @@ class DownloadRepository(
     suspend fun delete(item: DownloadEntity) {
         storage.deleteWork(item.id)
         storage.deleteOutput(item.outputPath)
+        thumbnailCache.discard(item.thumbnailPath, item.thumbnailUrl)
         if (item.source == com.downloadhub.app.data.model.DownloadSource.TORRENT) {
             item.torrentFilePath?.let { path -> File(path).delete() }
         }

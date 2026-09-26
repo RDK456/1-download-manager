@@ -1,11 +1,14 @@
 package com.downloadhub.app.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -37,14 +40,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,10 +61,13 @@ import com.downloadhub.app.data.model.DownloadCategory
 import com.downloadhub.app.data.model.DownloadSource
 import com.downloadhub.app.data.model.DownloadStatus
 import com.downloadhub.app.data.model.label
+import com.downloadhub.app.download.ThumbnailCache
+import java.io.File
 
 @Composable
 fun DownloadCard(
     item: DownloadEntity,
+    loader: ThumbnailCache,
     onClick: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
@@ -75,20 +86,11 @@ fun DownloadCard(
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(46.dp),
-                    shape = MaterialTheme.shapes.small,
-                    color = categoryColor(item.category).copy(alpha = 0.16f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = iconFor(item),
-                            contentDescription = null,
-                            tint = categoryColor(item.category),
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
+                DownloadThumbnail(
+                    loader = loader,
+                    item = item,
+                    modifier = Modifier.size(58.dp)
+                )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -191,6 +193,80 @@ fun DownloadCard(
             }
         }
     }
+}
+
+/**
+ * Artwork for a download: the cached thumbnail, the finished file when the
+ * download is an image, or a category icon when there is nothing to show.
+ */
+@Composable
+private fun DownloadThumbnail(
+    loader: ThumbnailCache,
+    item: DownloadEntity,
+    modifier: Modifier = Modifier
+) {
+    val localPath = remember(item) { localThumbnailFor(item) }
+    var bitmap by remember(localPath, item.thumbnailUrl) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(localPath, item.thumbnailUrl) {
+        val loaded = runCatching { loader.load(localPath, item.thumbnailUrl) }.getOrNull()
+        bitmap = loaded?.asImageBitmap()
+    }
+    val shape = MaterialTheme.shapes.small
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(categoryColor(item.category).copy(alpha = 0.16f))
+    ) {
+        val image = bitmap
+        if (image != null) {
+            Image(
+                bitmap = image,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Icon(
+                imageVector = iconFor(item),
+                contentDescription = null,
+                tint = categoryColor(item.category),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(24.dp)
+            )
+        }
+        val duration = item.durationSeconds
+        if (image != null && duration != null && duration > 0) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(2.dp),
+                color = Color.Black.copy(alpha = 0.66f),
+                shape = MaterialTheme.shapes.extraSmall
+            ) {
+                Text(
+                    formatDuration(duration),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                )
+            }
+        }
+    }
+}
+
+/** A finished image file is its own thumbnail; otherwise use the cached artwork. */
+private fun localThumbnailFor(item: DownloadEntity): String? {
+    if (item.thumbnailPath?.let { File(it).isFile } == true) return item.thumbnailPath
+    val isImage = item.category == DownloadCategory.IMAGE ||
+        item.mimeType?.startsWith("image/") == true
+    if (isImage && item.status == DownloadStatus.COMPLETED) {
+        val output = item.outputPath
+        if (!output.isNullOrBlank() && !output.startsWith("content:") && File(output).isFile) {
+            return output
+        }
+    }
+    return null
 }
 
 @Composable

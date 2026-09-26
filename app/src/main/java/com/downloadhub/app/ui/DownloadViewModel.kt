@@ -71,6 +71,9 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     private val repository = app.container.repository
     private val settings = app.container.settings
 
+    /** Shared artwork cache handed to the download cards. */
+    val thumbnailCache = app.container.thumbnailCache
+
     val allDownloads: StateFlow<List<DownloadEntity>> = repository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val themeMode: StateFlow<ThemeMode> = settings.themeMode

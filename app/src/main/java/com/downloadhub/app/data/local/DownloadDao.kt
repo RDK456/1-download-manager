@@ -118,6 +118,24 @@ interface DownloadDao {
     suspend fun updateOutputPath(id: String, outputPath: String?, updatedAt: Long)
 
     @Query(
+        """
+        UPDATE downloads
+        SET thumbnailUrl = :thumbnailUrl,
+            thumbnailPath = :thumbnailPath,
+            durationSeconds = :durationSeconds,
+            updatedAt = :updatedAt
+        WHERE id = :id
+        """
+    )
+    suspend fun updateThumbnail(
+        id: String,
+        thumbnailUrl: String?,
+        thumbnailPath: String?,
+        durationSeconds: Long?,
+        updatedAt: Long
+    )
+
+    @Query(
         "UPDATE downloads SET torrentInfoHash = :infoHash, torrentFilePath = :filePath, updatedAt = :updatedAt WHERE id = :id"
     )
     suspend fun updateTorrentInfo(id: String, infoHash: String?, filePath: String?, updatedAt: Long)

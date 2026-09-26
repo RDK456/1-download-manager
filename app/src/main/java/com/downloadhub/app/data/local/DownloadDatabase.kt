@@ -10,7 +10,7 @@ import com.downloadhub.app.data.model.DownloadStatus
 
 @Database(
     entities = [DownloadEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(DownloadConverters::class)
@@ -23,6 +23,15 @@ abstract class DownloadDatabase : RoomDatabase() {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE downloads ADD COLUMN quality TEXT")
                 db.execSQL("ALTER TABLE downloads ADD COLUMN audioFormat TEXT")
+            }
+        }
+
+        /** Adds thumbnail artwork and media duration. */
+        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN thumbnailUrl TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN thumbnailPath TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN durationSeconds INTEGER")
             }
         }
     }

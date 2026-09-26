@@ -44,6 +44,15 @@ class FormattersTest {
     }
 
     @Test
+    fun formatsThumbnailDurations() {
+        assertEquals("0:07", formatDuration(7))
+        assertEquals("3:05", formatDuration(185))
+        assertEquals("1:02:03", formatDuration(3723))
+        assertEquals("0:00", formatDuration(-5))
+        assertEquals("59:59", formatDuration(3599))
+    }
+
+    @Test
     fun detectsCommonFileTypes() {
         fun categoryOf(name: String, mime: String? = null) =
             LinkParser.categoryFor(DownloadSource.HTTP, name, mime)
@@ -135,6 +144,9 @@ class FormattersTest {
         lastModified = null,
         errorMessage = null,
         createdAt = 0,
-        updatedAt = 0
+        updatedAt = 0,
+        thumbnailUrl = "https://example.com/thumb.jpg",
+        thumbnailPath = "/data/thumb.jpg",
+        durationSeconds = 212L
     )
 }

@@ -20,8 +20,7 @@ fun formatBytes(bytes: Long): String {
 fun formatSpeed(bytesPerSecond: Long): String =
     if (bytesPerSecond <= 0) "—" else "${formatBytes(bytesPerSecond)}/s"
 
-fun formatEta(seconds: Long): String {
-    if (seconds < 0) return "estimating"
+fun formatEta(seconds: Long): String {    if (seconds < 0) return "estimating"
     val safe = seconds.coerceAtMost(99 * 60 * 60)
     val hours = safe / 3600
     val minutes = (safe % 3600) / 60
@@ -30,6 +29,19 @@ fun formatEta(seconds: Long): String {
         hours > 0 -> "${hours}h ${minutes}m"
         minutes > 0 -> "${minutes}m ${remaining}s"
         else -> "${remaining}s"
+    }
+}
+
+/** Media length for the thumbnail badge, e.g. `3:05` or `1:02:03`. */
+fun formatDuration(seconds: Long): String {
+    val safe = seconds.coerceAtLeast(0)
+    val hours = safe / 3600
+    val minutes = (safe % 3600) / 60
+    val remaining = safe % 60
+    return if (hours > 0) {
+        "%d:%02d:%02d".format(hours, minutes, remaining)
+    } else {
+        "%d:%02d".format(minutes, remaining)
     }
 }
 

@@ -300,6 +300,7 @@ fun DownloadHubApp(
                     AppDestination.DOWNLOADS -> DownloadsScreen(
                         items = visibleItems,
                         summary = mainSummary,
+                        loader = viewModel.thumbnailCache,
                         filter = filter,
                         category = category,
                         query = query,
@@ -318,6 +319,7 @@ fun DownloadHubApp(
                     AppDestination.TORRENTS -> DownloadsScreen(
                         items = visibleTorrents,
                         summary = torrentSummary,
+                        loader = viewModel.thumbnailCache,
                         filter = filter,
                         category = null,
                         query = query,
@@ -440,6 +442,7 @@ fun DownloadHubApp(
 private fun DownloadsScreen(
     items: List<DownloadEntity>,
     summary: TabSummary,
+    loader: com.downloadhub.app.download.ThumbnailCache,
     filter: DownloadFilter,
     category: DownloadCategory?,
     query: String,
@@ -541,6 +544,7 @@ private fun DownloadsScreen(
                 items(items, key = { it.id }) { item ->
                     DownloadCard(
                         item = item,
+                        loader = loader,
                         onClick = { onSelect(item.id) },
                         onPause = { onPause(item.id) },
                         onResume = { onResume(item.id) },

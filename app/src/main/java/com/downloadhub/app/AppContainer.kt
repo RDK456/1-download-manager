@@ -6,6 +6,7 @@ import com.downloadhub.app.data.DownloadRepository
 import com.downloadhub.app.data.SettingsRepository
 import com.downloadhub.app.data.local.DownloadDatabase
 import com.downloadhub.app.download.DownloadStorage
+import com.downloadhub.app.download.ThumbnailCache
 import com.downloadhub.app.download.YoutubeDownloader
 
 class AppContainer(context: Context) {
@@ -16,9 +17,11 @@ class AppContainer(context: Context) {
         DownloadDatabase::class.java,
         "download-hub.db"
     )
-        .addMigrations(DownloadDatabase.MIGRATION_1_2)
+        .addMigrations(DownloadDatabase.MIGRATION_1_2, DownloadDatabase.MIGRATION_2_3)
         .fallbackToDestructiveMigration()
         .build()
+
+    val thumbnailCache = ThumbnailCache(appContext)
 
     val storage = DownloadStorage(appContext)
     val settings = SettingsRepository(appContext)
@@ -26,7 +29,8 @@ class AppContainer(context: Context) {
         appContext,
         database.downloadDao(),
         storage,
-        settings
+        settings,
+        thumbnailCache
     )
-    val repository = DownloadRepository(database.downloadDao(), storage)
+    val repository = DownloadRepository(database.downloadDao(), storage, thumbnailCache)
 }

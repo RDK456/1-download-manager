@@ -34,5 +34,8 @@ data class DownloadEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val quality: String? = null,
-    val audioFormat: String? = null
+    val audioFormat: String? = null,
+    val thumbnailUrl: String? = null,
+    val thumbnailPath: String? = null,
+    val durationSeconds: Long? = null
 )

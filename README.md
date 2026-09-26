@@ -14,6 +14,7 @@
 - Completed downloads switch to a green **Completed** state with a check mark and the final file size instead of a full progress bar, in both the queue card and the details sheet.
 - Status and category filters live behind a filter button in the top bar (badged while active), with removable chips summarising the current filter.
 - Automatic type categories — Programs, Compressed, Files, Video, Audio, Documents, Images, Other — inferred from the file name, extension, and MIME type, with live counts in the filter sheet.
+- Thumbnails in the queue: YouTube artwork is fetched as soon as the stream resolves and cached privately, finished image downloads show themselves as their own thumbnail, and media length is badged on the artwork. Anything without artwork falls back to its category icon.
 - Breadcrumb navigation in the top bar (`1 download manager > Settings > About us`) with working back navigation.
 - An **About us** page listing the app version, bundled yt-dlp version, and links to the source, releases, and issues, with a large GitHub logo that opens the repository.
 - An in-app updater that reads the newest GitHub release, compares it with the installed version, downloads the release APK, and hands it to the system package installer.
