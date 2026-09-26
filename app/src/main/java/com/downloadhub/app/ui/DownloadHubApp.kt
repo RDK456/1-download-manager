@@ -134,22 +134,6 @@ fun DownloadHubApp(
             destination = target
         }
 
-        val crumbs: List<Breadcrumb> = when (destination) {
-            AppDestination.DOWNLOADS, AppDestination.TORRENTS -> listOf(
-                Breadcrumb(APP_TITLE) { navigate(rootDestination) },
-                Breadcrumb(destinationTitle(destination))
-            )
-            AppDestination.SETTINGS -> listOf(
-                Breadcrumb(APP_TITLE) { navigate(rootDestination) },
-                Breadcrumb("Settings")
-            )
-            AppDestination.ABOUT -> listOf(
-                Breadcrumb(APP_TITLE) { navigate(rootDestination) },
-                Breadcrumb("Settings") { navigate(AppDestination.SETTINGS) },
-                Breadcrumb("About us")
-            )
-        }
-
         BackHandler(enabled = destination == AppDestination.ABOUT || destination == AppDestination.SETTINGS) {
             if (destination == AppDestination.ABOUT) {
                 navigate(AppDestination.SETTINGS)
@@ -203,7 +187,7 @@ fun DownloadHubApp(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Breadcrumbs(crumbs) },
+                    title = { Text(destinationTitle(destination)) },
                     navigationIcon = {
                         // Adding a download is the floating action button's job, so the
                         // root tabs show the app mark instead of a second add button.

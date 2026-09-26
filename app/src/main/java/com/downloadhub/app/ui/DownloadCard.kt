@@ -102,7 +102,7 @@ fun DownloadCard(
                     )
                     Spacer(Modifier.size(2.dp))
                     Text(
-                        "${item.category.label} • ${statusLabel(item.status)}",
+                        cardSubtitle(item),
                         style = MaterialTheme.typography.bodySmall,
                         color = statusColor(item.status),
                         maxLines = 1,
@@ -194,6 +194,17 @@ fun DownloadCard(
         }
     }
 }
+
+/**
+ * Secondary line of a card. A finished download shows only its category, because
+ * the Completed footer underneath already states the status.
+ */
+fun cardSubtitle(item: DownloadEntity): String =
+    if (item.status == DownloadStatus.COMPLETED) {
+        item.category.label
+    } else {
+        "${item.category.label} • ${statusLabel(item.status)}"
+    }
 
 /**
  * Artwork for a download: the cached thumbnail, the finished file when the

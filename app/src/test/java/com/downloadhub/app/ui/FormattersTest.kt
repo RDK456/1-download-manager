@@ -53,6 +53,18 @@ class FormattersTest {
     }
 
     @Test
+    fun completedStatusIsNotRepeatedInTheSubtitle() {
+        val done = entity(total = 100, downloaded = 100, percent = 100, status = DownloadStatus.COMPLETED)
+        // The green Completed footer already states the status, so the subtitle
+        // must not say "Completed" a second time.
+        assertEquals("Files", cardSubtitle(done))
+        assertFalse(cardSubtitle(done).contains("Completed"))
+
+        val running = entity(total = 100, downloaded = 40, percent = 40)
+        assertEquals("Files • Downloading", cardSubtitle(running))
+    }
+
+    @Test
     fun detectsCommonFileTypes() {
         fun categoryOf(name: String, mime: String? = null) =
             LinkParser.categoryFor(DownloadSource.HTTP, name, mime)

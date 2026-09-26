@@ -78,7 +78,13 @@ fun DownloadDetailsSheet(
         ) {
             Text(item.fileName, style = MaterialTheme.typography.titleLarge)
             Text(
-                "${sourceLabel(item.source)} • ${statusLabel(item.status)}",
+                // A finished download states its status in the Completed block
+                // below, so the header only shows where it came from.
+                if (item.status == DownloadStatus.COMPLETED) {
+                    sourceLabel(item.source)
+                } else {
+                    "${sourceLabel(item.source)} • ${statusLabel(item.status)}"
+                },
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary
             )

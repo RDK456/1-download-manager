@@ -10,7 +10,7 @@
 - Link import from other apps through Android Share and text-processing actions, plus clipboard paste.
 - Room-backed queue, WorkManager recovery after process death, prominent pause/resume controls, pause-all/resume-all actions, search, file open/share/delete actions, and system/light/dark/AMOLED theme selection.
 - Two separate tabs: **Downloads** holds direct files and YouTube media, while **Torrents** holds every magnet and `.torrent` transfer. Neither tab ever shows the other's items, and each has its own counters.
-- One add action: the floating action button at the bottom opens the add sheet. The top bar carries the app mark, the filter button, the GitHub link, and Settings.
+- One add action: the floating action button at the bottom opens the add sheet. The top bar shows the page title plus the filter, GitHub, and Settings icons.
 - Completed downloads switch to a green **Completed** state with a check mark and the final file size instead of a full progress bar, in both the queue card and the details sheet.
 - Status and category filters live behind a filter button in the top bar (badged while active), with removable chips summarising the current filter.
 - Automatic type categories — Programs, Compressed, Files, Video, Audio, Documents, Images, Other — inferred from the file name, extension, and MIME type, with live counts in the filter sheet.
@@ -40,11 +40,11 @@ Use the Android share sheet and choose 1 download manager from any app. The app 
 
 ## About page and app updates
 
-The top bar shows a breadcrumb trail. `1 download manager` returns to whichever tab you came
-from, and `Settings` steps back to the queue. Settings is reached from the gear in the top bar
-(there is no bottom-bar tab for it), and **About us** sits under Settings. The About page shows
-the installed version, the bundled yt-dlp version, and links to the source, the release list, and
-the issue tracker. The GitHub logo on that page — and in the top bar — opens
+The top bar shows the current page title. Settings is reached from the gear in the top bar (there is
+no bottom-bar tab for it), the back arrow and the system back gesture both step out of Settings and
+About, and **About us** sits under Settings. The About page shows the installed version, the
+bundled yt-dlp version, and links to the source, the release list, and the issue tracker. The
+GitHub logo on that page — and in the top bar — opens
 <https://github.com/RDK456/1-download-manager> in your browser.
 
 The updater calls the public GitHub releases API (no token needed):
