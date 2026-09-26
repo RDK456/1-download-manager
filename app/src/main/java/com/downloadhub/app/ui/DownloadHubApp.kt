@@ -2,8 +2,10 @@ package com.downloadhub.app.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +23,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Download
@@ -31,7 +35,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -46,22 +49,27 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.documentfile.provider.DocumentFile
+import com.downloadhub.app.BuildConfig
+import com.downloadhub.app.R
 import com.downloadhub.app.data.local.DownloadEntity
 import com.downloadhub.app.data.model.DownloadCategory
 import com.downloadhub.app.data.model.DownloadSource
@@ -74,13 +82,17 @@ import kotlinx.coroutines.flow.collectLatest
 private enum class AppDestination {
     DOWNLOADS,
     TORRENTS,
-    SETTINGS
+    SETTINGS,
+    ABOUT
 }
+
+private const val APP_TITLE = "1 download manager"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadHubApp(
     viewModel: DownloadViewModel,
+    updateViewModel: AppUpdateViewModel,
     incomingLink: String?,
     incomingDownloadId: String?,
     onIncomingConsumed: () -> Unit
@@ -97,8 +109,55 @@ fun DownloadHubApp(
         val query by viewModel.searchQuery.collectAsStateWithLifecycle()
         val destinationTreeUri by viewModel.destinationTreeUri.collectAsStateWithLifecycle()
         val downloaderVersion by viewModel.downloaderVersion.collectAsStateWithLifecycle()
+        val update by updateViewModel.snapshot.collectAsStateWithLifecycle()
+        val autoCheckUpdates by updateViewModel.autoCheckUpdates.collectAsStateWithLifecycle()
+        val updateMessage by updateViewModel.messages.collectAsStateWithLifecycle()
+        var rootDestination by remember { mutableStateOf(AppDestination.DOWNLOADS) }
         var destination by remember { mutableStateOf(AppDestination.DOWNLOADS) }
+        var dismissedRelease by rememberSaveable { mutableStateOf<String?>(null) }
         val snackbarHostState = remember { SnackbarHostState() }
+
+        fun navigate(target: AppDestination) {
+            if (target == AppDestination.DOWNLOADS || target == AppDestination.TORRENTS) {
+                rootDestination = target
+            }
+            destination = target
+        }
+
+        val crumbs: List<Breadcrumb> = when (destination) {
+            AppDestination.DOWNLOADS, AppDestination.TORRENTS -> listOf(
+                Breadcrumb(APP_TITLE) { navigate(rootDestination) },
+                Breadcrumb(destinationTitle(destination))
+            )
+            AppDestination.SETTINGS -> listOf(
+                Breadcrumb(APP_TITLE) { navigate(rootDestination) },
+                Breadcrumb("Settings")
+            )
+            AppDestination.ABOUT -> listOf(
+                Breadcrumb(APP_TITLE) { navigate(rootDestination) },
+                Breadcrumb("Settings") { navigate(AppDestination.SETTINGS) },
+                Breadcrumb("About us")
+            )
+        }
+
+        BackHandler(enabled = destination == AppDestination.ABOUT || destination == AppDestination.SETTINGS) {
+            if (destination == AppDestination.ABOUT) {
+                navigate(AppDestination.SETTINGS)
+            } else {
+                navigate(rootDestination)
+            }
+        }
+
+        fun openExternal(url: String) {
+            runCatching {
+                context.startActivity(
+                    android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        Uri.parse(url)
+                    )
+                )
+            }
+        }
 
         LaunchedEffect(viewModel) {
             viewModel.events.collectLatest { event ->
@@ -106,6 +165,16 @@ fun DownloadHubApp(
                     is DownloadEvent.Message -> snackbarHostState.showSnackbar(event.text)
                 }
             }
+        }
+        LaunchedEffect(updateMessage) {
+            updateMessage?.let { message ->
+                snackbarHostState.showSnackbar(message)
+                updateViewModel.consumeMessage()
+            }
+        }
+        LaunchedEffect(Unit) {
+            updateViewModel.checkOnLaunch()
+            updateViewModel.refreshInstallPermission()
         }
         LaunchedEffect(incomingLink) {
             incomingLink?.let { link ->
@@ -123,43 +192,68 @@ fun DownloadHubApp(
 
         Scaffold(
             topBar = {
-                CenterAlignedTopAppBar(
-                    title = { Text(destinationTitle(destination)) },
+                TopAppBar(
+                    title = { Breadcrumbs(crumbs) },
                     navigationIcon = {
-                        IconButton(onClick = { viewModel.openEditor() }) {
-                            Icon(Icons.Default.Add, contentDescription = "Add download")
+                        when (destination) {
+                            AppDestination.DOWNLOADS, AppDestination.TORRENTS -> {
+                                IconButton(onClick = { viewModel.openEditor() }) {
+                                    Icon(Icons.Default.Add, contentDescription = "Add download")
+                                }
+                            }
+                            else -> {
+                                IconButton(onClick = {
+                                    if (destination == AppDestination.ABOUT) {
+                                        navigate(AppDestination.SETTINGS)
+                                    } else {
+                                        navigate(rootDestination)
+                                    }
+                                }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                                }
+                            }
                         }
                     },
                     actions = {
-                        IconButton(onClick = { destination = AppDestination.SETTINGS }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        IconButton(onClick = { openExternal(BuildConfig.GITHUB_URL) }) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_github),
+                                contentDescription = "Open GitHub repository"
+                            )
+                        }
+                        if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT) {
+                            IconButton(onClick = { navigate(AppDestination.SETTINGS) }) {
+                                Icon(Icons.Default.Settings, contentDescription = "Settings")
+                            }
                         }
                     },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background
                     )
                 )
             },
             bottomBar = {
-                NavigationBar(modifier = Modifier.navigationBarsPadding()) {
-                    NavigationBarItem(
-                        selected = destination == AppDestination.DOWNLOADS,
-                        onClick = { destination = AppDestination.DOWNLOADS },
-                        icon = { Icon(Icons.Default.Download, contentDescription = null) },
-                        label = { Text("Downloads") }
-                    )
-                    NavigationBarItem(
-                        selected = destination == AppDestination.TORRENTS,
-                        onClick = { destination = AppDestination.TORRENTS },
-                        icon = { Icon(Icons.Default.Folder, contentDescription = null) },
-                        label = { Text("Torrents") }
-                    )
-                    NavigationBarItem(
-                        selected = destination == AppDestination.SETTINGS,
-                        onClick = { destination = AppDestination.SETTINGS },
-                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                        label = { Text("Settings") }
-                    )
+                if (destination != AppDestination.ABOUT) {
+                    NavigationBar(modifier = Modifier.navigationBarsPadding()) {
+                        NavigationBarItem(
+                            selected = destination == AppDestination.DOWNLOADS,
+                            onClick = { navigate(AppDestination.DOWNLOADS) },
+                            icon = { Icon(Icons.Default.Download, contentDescription = null) },
+                            label = { Text("Downloads") }
+                        )
+                        NavigationBarItem(
+                            selected = destination == AppDestination.TORRENTS,
+                            onClick = { navigate(AppDestination.TORRENTS) },
+                            icon = { Icon(Icons.Default.Folder, contentDescription = null) },
+                            label = { Text("Torrents") }
+                        )
+                        NavigationBarItem(
+                            selected = destination == AppDestination.SETTINGS,
+                            onClick = { navigate(AppDestination.SETTINGS) },
+                            icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                            label = { Text("Settings") }
+                        )
+                    }
                 }
             },
             floatingActionButton = {
@@ -220,9 +314,27 @@ fun DownloadHubApp(
                         themeMode = themeMode,
                         destinationTreeUri = destinationTreeUri,
                         downloaderVersion = downloaderVersion,
+                        appVersion = updateViewModel.currentVersion,
+                        update = update,
                         onThemeChange = viewModel::setTheme,
                         onDestinationChange = viewModel::setDestinationTreeUri,
-                        onUpdateDownloader = viewModel::updateDownloader
+                        onUpdateDownloader = viewModel::updateDownloader,
+                        onAbout = { navigate(AppDestination.ABOUT) },
+                        onCheckUpdates = updateViewModel::checkForUpdatesNow
+                    )
+                    AppDestination.ABOUT -> AboutScreen(
+                        appVersion = updateViewModel.currentVersion,
+                        versionCode = updateViewModel.currentVersionCode,
+                        ytdlpVersion = downloaderVersion,
+                        repoUrl = BuildConfig.GITHUB_URL,
+                        update = update,
+                        autoCheckUpdates = autoCheckUpdates,
+                        onAutoCheckChange = updateViewModel::setAutoCheck,
+                        onCheckUpdates = updateViewModel::checkForUpdatesNow,
+                        onDownloadUpdate = updateViewModel::downloadUpdate,
+                        onInstallUpdate = { updateViewModel.installUpdate(context) },
+                        onOpenRepo = { openExternal(BuildConfig.GITHUB_URL) },
+                        onOpenUrl = ::openExternal
                     )
                 }
             }
@@ -254,6 +366,30 @@ fun DownloadHubApp(
                         runCatching { context.startActivity(intent) }
                     }
                 }
+            )
+        }
+
+        // The "update available" dialog is shown once per version; dismissing it
+        // leaves the offer on the Settings and About pages instead of nagging.
+        val availableRelease = (update.status as? UpdateStatus.Available)?.release
+        val showUpdateDialog = availableRelease != null && dismissedRelease != availableRelease.version
+        if (availableRelease != null && showUpdateDialog) {
+            UpdateAvailableDialog(
+                release = availableRelease,
+                currentVersion = updateViewModel.currentVersion,
+                onDownload = updateViewModel::downloadUpdate,
+                onSkip = updateViewModel::skipVersion,
+                onDismiss = {
+                    dismissedRelease = availableRelease.version
+                    updateViewModel.dismiss()
+                }
+            )
+        } else if (update.progress != null || update.pending != null) {
+            UpdateFlowDialog(
+                update = update,
+                onInstall = { updateViewModel.installUpdate(context) },
+                onAllowInstalls = { updateViewModel.openInstallPermissionSettings(context) },
+                onDismiss = updateViewModel::dismiss
             )
         }
     }
@@ -509,9 +645,13 @@ private fun SettingsScreen(
     themeMode: ThemeMode,
     destinationTreeUri: String?,
     downloaderVersion: String,
+    appVersion: String,
+    update: UpdateSnapshot,
     onThemeChange: (ThemeMode) -> Unit,
     onDestinationChange: (String?) -> Unit,
-    onUpdateDownloader: () -> Unit
+    onUpdateDownloader: () -> Unit,
+    onAbout: () -> Unit,
+    onCheckUpdates: () -> Unit
 ) {
     val context = LocalContext.current
     val folderPicker = rememberLauncherForActivityResult(
@@ -532,6 +672,7 @@ private fun SettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -583,18 +724,68 @@ private fun SettingsScreen(
             Spacer(Modifier.width(8.dp))
             Text("Update yt-dlp now")
         }
+        Spacer(Modifier.height(8.dp))
+        Text("App updates", style = MaterialTheme.typography.titleMedium)
+        Text(
+            updateStatusText(update, appVersion),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedButton(
+            onClick = onCheckUpdates,
+            enabled = update.status !is UpdateStatus.Checking && update.progress == null,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_system_update),
+                contentDescription = null
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Check for updates")
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("About", style = MaterialTheme.typography.titleMedium)
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onAbout),
+            color = MaterialTheme.colorScheme.surface,
+            shape = MaterialTheme.shapes.medium
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_info),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(12.dp))
+                Text("About 1 download manager", modifier = Modifier.weight(1f))
+                Icon(
+                    painter = painterResource(R.drawable.ic_chevron_right),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         Text(
             "Share links from other apps or paste one into the add sheet.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Spacer(Modifier.height(24.dp))
     }
 }
 
 private fun destinationTitle(destination: AppDestination): String = when (destination) {
-    AppDestination.DOWNLOADS -> "1 download manager"
+    AppDestination.DOWNLOADS -> APP_TITLE
     AppDestination.TORRENTS -> "Torrents"
     AppDestination.SETTINGS -> "Settings"
+    AppDestination.ABOUT -> "About us"
 }
 
 private fun themeLabel(mode: ThemeMode): String = when (mode) {

@@ -19,6 +19,7 @@ import com.downloadhub.app.download.LinkParser
 
 class MainActivity : ComponentActivity() {
     private val viewModel: DownloadViewModel by viewModels()
+    private val updateViewModel: AppUpdateViewModel by viewModels()
     private var incomingLink by mutableStateOf<String?>(null)
     private var incomingDownloadId by mutableStateOf<String?>(null)
 
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             DownloadHubApp(
                 viewModel = viewModel,
+                updateViewModel = updateViewModel,
                 incomingLink = incomingLink,
                 incomingDownloadId = incomingDownloadId,
                 onIncomingConsumed = {

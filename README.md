@@ -10,6 +10,9 @@
 - Link import from other apps through Android Share and text-processing actions, plus clipboard paste.
 - Room-backed queue, WorkManager recovery after process death, prominent pause/resume controls, pause-all/resume-all actions, search, status filters, file open/share/delete actions, and system/light/dark/AMOLED theme selection.
 - Automatic type categories — Programs, Compressed, Files, Video, Audio, Documents, Images, Other — inferred from the file name, extension, and MIME type, with a category filter row and per-item category badges.
+- Breadcrumb navigation in the top bar (`1 download manager > Settings > About us`) with working back navigation.
+- An **About us** page listing the app version, bundled yt-dlp version, and links to the source, releases, and issues, with a large GitHub logo that opens the repository.
+- An in-app updater that reads the newest GitHub release, compares it with the installed version, downloads the release APK, and hands it to the system package installer.
 - Files are saved under the default `Download/DownloadHub` folder, or a folder selected with Android's persisted document-tree picker. Engines keep resumable data in private staging until completion.
 
 ## Build
@@ -29,6 +32,42 @@ On Windows use `gradlew.bat test` and `gradlew.bat assembleDebug`.
 ## Sharing links
 
 Use the Android share sheet and choose 1 download manager from any app. The app accepts shared `text/plain` links, selected text actions, `http`/`https` links, and `magnet:` links. Incoming links open the add sheet with the source detected automatically, so you can review the filename or choose YouTube quality/audio type before adding it.
+
+## About page and app updates
+
+The top bar shows a breadcrumb trail. `1 download manager` returns to whichever tab you came
+from, and `Settings` steps back to the queue. The **About us** page (Settings -> About) shows
+the installed version, the bundled yt-dlp version, and links to the source, the release list, and
+the issue tracker. The GitHub logo on that page — and in the top bar — opens
+<https://github.com/RDK456/1-download-manager> in your browser.
+
+The updater calls the public GitHub releases API (no token needed):
+
+1. On launch (throttled to once every 6 hours) and on demand from Settings or About.
+2. The newest published release is compared with `versionName` using numeric version parts, so
+   `1.10.0` correctly beats `1.9.9`. Pre-releases and older tags are ignored.
+3. If a newer version exists, a dialog offers **Download update** or **Skip this version**
+   (the skip is remembered per version).
+4. The APK is streamed into app-private storage with progress, then handed to the system package
+   installer. A download that was interrupted survives process death and is offered again.
+5. Android asks for "install unknown apps" permission the first time; the app deep-links to the
+   matching system screen and resumes the install when you return.
+
+## Releasing a new version
+
+`scripts/release.ps1` performs the whole publish flow so every release is reproducible:
+
+```powershell
+.\scripts\release.ps1                 # 1.0.0 -> 1.0.1
+.\scripts\release.ps1 -Bump Minor     # 1.0.1 -> 1.1.0
+.\scripts\release.ps1 -Bump Major -Notes "Rewritten queue"
+```
+
+It bumps `versionCode` and `versionName` in `app/build.gradle.kts`, runs
+`test lintDebug assembleDebug`, copies the APK, commits the whole tree, tags the commit, pushes
+both, and creates the GitHub release with the APK attached (falling back to updating the release if
+the tag already exists). Because the app's updater reads the newest published release, publishing
+here is exactly what existing installs offer as an update.
 
 ## Opening .torrent files
 

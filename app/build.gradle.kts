@@ -13,8 +13,13 @@ android {
         applicationId = "com.downloadhub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
+
+        // Single source of truth for the About page and the in-app updater.
+        buildConfigField("String", "GITHUB_OWNER", "\"RDK456\"")
+        buildConfigField("String", "GITHUB_REPO", "\"1-download-manager\"")
+        buildConfigField("String", "GITHUB_URL", "\"https://github.com/RDK456/1-download-manager\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -46,7 +51,7 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = false
+        buildConfig = true
     }
 
     packaging {
@@ -98,6 +103,8 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.2")
 
     testImplementation(libs.junit)
+    // Real org.json on the unit-test classpath (the Android stub only throws).
+    testImplementation("org.json:json:20231013")
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.espresso)
 }
