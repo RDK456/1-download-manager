@@ -199,14 +199,16 @@ Open this app's Settings -> Check for updates to install this release.
         if ($LASTEXITCODE -ne 0) { throw "Could not update release $tag." }
     }
 
-    # Confirm GitHub really has it before claiming success. Quote the --json list:
-    # PowerShell would otherwise split "tagName,assets" into two arguments.
-    $published = & $gh release view $tag --repo $Repository --json 'tagName,assets' `
-        --jq '.tagName + " assets=" + (.assets | length | tostring)' 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $published) {
+    # Confirm GitHub really has it before claiming success. This parses the JSON with
+    # PowerShell instead of gh --jq: Windows PowerShell strips double quotes out of
+    # native-command arguments, which corrupts jq expressions.
+    $raw = & $gh release view $tag --repo $Repository --json 'tagName,assets' 2>$null | Out-String
+    $info = $null
+    if ($raw) { $info = $raw | ConvertFrom-Json }
+    if (-not $info -or $info.tagName -ne $tag -or @($info.assets).Count -lt 1) {
         throw "Release $tag could not be read back from GitHub; treating the publish as failed."
     }
-    Write-Host "Verified on GitHub: $published" -ForegroundColor DarkGray
+    Write-Host "Verified on GitHub: $($info.tagName) with $(@($info.assets).Count) asset(s)" -ForegroundColor DarkGray
 
     $repoUrl = (& $gh repo view --json url --jq .url)
     Write-Host ''
