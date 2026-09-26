@@ -143,77 +143,47 @@ fun AboutScreen(
                 updateStatusText(update, appVersion),
                 style = MaterialTheme.typography.bodyMedium
             )
+            // A stable progress row + one primary action keeps the card from
+            // jumping between layouts while a check or download runs.
             val progress = update.progress
-            val pending = update.pending
-            when {
-                progress != null -> {
-                    Spacer(Modifier.height(10.dp))
-                    LinearProgressIndicator(
-                        progress = { progress.percent / 100f },
-                        modifier = Modifier.fillMaxWidth()
+            if (progress != null) {
+                Spacer(Modifier.height(10.dp))
+                LinearProgressIndicator(
+                    progress = { progress.percent / 100f },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (progress.totalBytes > 0) {
+                        "${progress.percent}% · ${formatBytes(progress.downloadedBytes)} of ${formatBytes(progress.totalBytes)}"
+                    } else {
+                        "${formatBytes(progress.downloadedBytes)} downloaded"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            val action = primaryUpdateAction(
+                update = update,
+                isDownloading = progress != null,
+                onCheck = onCheckUpdates,
+                onDownload = onDownloadUpdate,
+                onInstall = onInstallUpdate
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = action.onClick,
+                enabled = action.enabled,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (action.busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
                     )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        if (progress.totalBytes > 0) {
-                            "${progress.percent}% · ${formatBytes(progress.downloadedBytes)} of ${formatBytes(progress.totalBytes)}"
-                        } else {
-                            "${formatBytes(progress.downloadedBytes)} downloaded"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Spacer(Modifier.width(8.dp))
                 }
-                pending != null -> {
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = onInstallUpdate,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_system_update),
-                            contentDescription = null
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            when {
-                                !pending.signatureMatches -> "Uninstall old build"
-                                pending.needsPermission -> "Allow installation"
-                                else -> "Install version ${pending.release.version}"
-                            }
-                        )
-                    }
-                }
-                update.status is UpdateStatus.Available -> {
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = onDownloadUpdate,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_system_update),
-                            contentDescription = null
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Download version ${(update.status as UpdateStatus.Available).release.version}")
-                    }
-                }
-                else -> {
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = onCheckUpdates,
-                        enabled = update.status !is UpdateStatus.Checking,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (update.status is UpdateStatus.Checking) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text("Check for updates")
-                    }
-                }
+                Text(action.label)
             }
             Spacer(Modifier.height(6.dp))
             Row(
@@ -329,6 +299,43 @@ private fun AboutLinkRow(label: String, url: String, onClick: () -> Unit) {
                 modifier = Modifier.size(18.dp)
             )
         }
+    }
+}
+
+/** What the single primary button in the Updates card should do right now. */
+private data class PrimaryUpdateAction(
+    val label: String,
+    val onClick: () -> Unit,
+    val enabled: Boolean = true,
+    val busy: Boolean = false
+)
+
+@Composable
+private fun primaryUpdateAction(
+    update: UpdateSnapshot,
+    isDownloading: Boolean,
+    onCheck: () -> Unit,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit
+): PrimaryUpdateAction {
+    val pending = update.pending
+    return when {
+        isDownloading -> PrimaryUpdateAction("Downloading…", {}, enabled = false, busy = true)
+        update.status is UpdateStatus.Checking ->
+            PrimaryUpdateAction("Checking for updates…", {}, enabled = false, busy = true)
+        pending != null -> PrimaryUpdateAction(
+            label = when {
+                !pending.signatureMatches -> "Uninstall old build to update"
+                pending.needsPermission -> "Allow installation"
+                else -> "Install version ${pending.release.version}"
+            },
+            onClick = onInstall
+        )
+        update.status is UpdateStatus.Available -> PrimaryUpdateAction(
+            label = "Download version ${(update.status as UpdateStatus.Available).release.version}",
+            onClick = onDownload
+        )
+        else -> PrimaryUpdateAction("Check for updates", onCheck)
     }
 }
 

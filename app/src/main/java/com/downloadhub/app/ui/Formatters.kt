@@ -38,7 +38,7 @@ fun statusLabel(status: DownloadStatus): String = when (status) {
     DownloadStatus.RESOLVING -> "Resolving"
     DownloadStatus.RUNNING -> "Downloading"
     DownloadStatus.PAUSED -> "Paused"
-    DownloadStatus.COMPLETED -> "Complete"
+    DownloadStatus.COMPLETED -> "Completed"
     DownloadStatus.FAILED -> "Needs attention"
 }
 

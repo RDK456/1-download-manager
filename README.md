@@ -5,11 +5,13 @@
 ## Included
 
 - Resumable HTTP/HTTPS downloads with partial-file staging, byte-range resume, speed, ETA, pause, retry, cancel, and notifications.
-- YouTube video and audio downloads through the Android yt-dlp/FFmpeg engine. Pick a video ceiling (best, 4K/2160p, 2K/1440p, 1080p, 720p, 480p, 360p) or switch to audio only and pick the saved type (M4A, MP3, Opus, or WAV). Video merges the best audio stream with FFmpeg. The app checks the stable yt-dlp channel daily and exposes a manual update action in Settings.
+- YouTube video and audio downloads through the Android yt-dlp/FFmpeg engine. Pick a video ceiling (best, 4K/2160p, 2K/1440p, 1080p, 720p, 480p, 360p) or switch to audio only and pick the saved type (M4A, MP3, Opus, or WAV). Video merges the best audio stream with FFmpeg. Settings offers a read-only **Check for update** action against the yt-dlp stable feed, and only reveals **Update yt-dlp to &lt;version&gt;** when a newer stable release actually exists. The app also refreshes yt-dlp at most once a day in the background when a download starts.
 - Magnet links, remote `.torrent` URLs, and local `.torrent` files through libtorrent4j. `.torrent` files can be opened straight from any file manager ("Open with 1 download manager"), picked from the in-app button in the add sheet, or launched from the empty queue. Torrent payloads are staged privately and published to the selected/default destination after completion.
 - Link import from other apps through Android Share and text-processing actions, plus clipboard paste.
 - Room-backed queue, WorkManager recovery after process death, prominent pause/resume controls, pause-all/resume-all actions, search, file open/share/delete actions, and system/light/dark/AMOLED theme selection.
 - Two separate tabs: **Downloads** holds direct files and YouTube media, while **Torrents** holds every magnet and `.torrent` transfer. Neither tab ever shows the other's items, and each has its own counters.
+- One add action: the floating action button at the bottom opens the add sheet. The top bar carries the app mark, the filter button, the GitHub link, and Settings.
+- Completed downloads switch to a green **Completed** state with a check mark and the final file size instead of a full progress bar, in both the queue card and the details sheet.
 - Status and category filters live behind a filter button in the top bar (badged while active), with removable chips summarising the current filter.
 - Automatic type categories — Programs, Compressed, Files, Video, Audio, Documents, Images, Other — inferred from the file name, extension, and MIME type, with live counts in the filter sheet.
 - Breadcrumb navigation in the top bar (`1 download manager > Settings > About us`) with working back navigation.
@@ -133,7 +135,14 @@ Downloaded torrent content appears only under the Torrents tab.
 
 Selected torrents are copied into app-private storage first, so the download keeps working after the content permission expires or the file is moved.
 
-The Android wrapper artifact is versioned separately from yt-dlp itself. This build bundles yt-dlp `2026.08.19` in `app/src/main/res/raw/ytdlp`, checks the stable release channel daily, and keeps future updates in app-private storage. Settings can force an update.
+The Android wrapper artifact is versioned separately from yt-dlp itself. This build bundles yt-dlp
+`2026.08.19` in `app/src/main/res/raw/ytdlp`, and keeps future updates in app-private storage.
+
+`Check for update` in Settings queries `yt-dlp/yt-dlp`'s latest release — the same endpoint the
+wrapper's STABLE channel uses — and compares the tag with the installed version using the same
+numeric comparison as the app updater, so `2026.09.01` correctly beats `2026.08.19`. The check
+installs nothing. If (and only if) the result is newer, a second button appears to install it;
+otherwise the summary just reports that the installed version is current.
 
 ## Media and torrent notice
 

@@ -8,6 +8,7 @@ import com.downloadhub.app.data.model.AudioFormat
 import com.downloadhub.app.data.model.DownloadCategory
 import com.downloadhub.app.data.model.DownloadStatus
 import com.downloadhub.app.data.model.MediaQuality
+import com.downloadhub.app.update.YtDlpUpdateChecker
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
@@ -82,6 +83,13 @@ class YoutubeDownloader(
     fun currentVersion(): String = runCatching { YoutubeDL.version(context) }
         .getOrNull()
         ?: BUNDLED_YTDLP_VERSION
+
+    /**
+     * Newest stable yt-dlp release according to the same endpoint the wrapper's
+     * STABLE channel uses, or null when the check could not complete. Read-only:
+     * nothing is installed here.
+     */
+    suspend fun latestStableVersion(): String? = YtDlpUpdateChecker().latestStableVersion()
 
     suspend fun download(item: DownloadEntity, serviceScope: CoroutineScope) = withContext(Dispatchers.IO) {
         updateYtDlpIfNeeded()

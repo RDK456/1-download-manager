@@ -155,8 +155,11 @@ try {
     & $git commit -m "Release $tag"
     if ($LASTEXITCODE -ne 0) { throw 'Nothing to commit or the commit failed.' }
     & $git tag -a $tag -m "1 download manager $newVersion"
+
     & $git push origin main
+    if ($LASTEXITCODE -ne 0) { throw "Pushing main failed. Nothing was tagged remotely; re-run after fixing connectivity." }
     & $git push origin "refs/tags/$tag"
+    if ($LASTEXITCODE -ne 0) { throw "Pushing tag $tag failed; the release was not published." }
 
     # --- 6. release notes ---------------------------------------------------
     $previousTag = (& $git describe --tags --abbrev=0 "$tag^" 2>$null)
@@ -190,8 +193,17 @@ Open this app's Settings -> Check for updates to install this release.
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Release already exists; updating it instead.' -ForegroundColor Yellow
         & $gh release upload $tag $apkAsset --clobber
+        if ($LASTEXITCODE -ne 0) { throw "Could not upload the APK to release $tag." }
         & $gh release edit $tag --title "1 download manager $newVersion" --notes $Notes
+        if ($LASTEXITCODE -ne 0) { throw "Could not update release $tag." }
     }
+
+    # Confirm GitHub really has it before claiming success.
+    $published = & $gh release view $tag --repo 'RDK456/1-download-manager' --json tagName,assets --jq '.tagName + " " + (.assets | length | tostring)' 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $published) {
+        throw "Release $tag could not be read back from GitHub; treating the publish as failed."
+    }
+    Write-Host "Verified on GitHub: $published" -ForegroundColor DarkGray
 
     $repoUrl = (& $gh repo view --json url --jq .url)
     Write-Host ''

@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -78,6 +79,7 @@ import com.downloadhub.app.data.model.DownloadSource
 import com.downloadhub.app.data.model.DownloadStatus
 import com.downloadhub.app.data.model.ThemeMode
 import com.downloadhub.app.data.model.label
+import com.downloadhub.app.update.YtDlpUpdateState
 import com.downloadhub.app.ui.theme.DownloadHubTheme
 import kotlinx.coroutines.flow.collectLatest
 
@@ -116,6 +118,7 @@ fun DownloadHubApp(
         val query by viewModel.searchQuery.collectAsStateWithLifecycle()
         val destinationTreeUri by viewModel.destinationTreeUri.collectAsStateWithLifecycle()
         val downloaderVersion by viewModel.downloaderVersion.collectAsStateWithLifecycle()
+        val ytdlpUpdate by viewModel.ytdlpUpdate.collectAsStateWithLifecycle()
         val update by updateViewModel.snapshot.collectAsStateWithLifecycle()
         val autoCheckUpdates by updateViewModel.autoCheckUpdates.collectAsStateWithLifecycle()
         val updateMessage by updateViewModel.messages.collectAsStateWithLifecycle()
@@ -202,11 +205,17 @@ fun DownloadHubApp(
                 TopAppBar(
                     title = { Breadcrumbs(crumbs) },
                     navigationIcon = {
+                        // Adding a download is the floating action button's job, so the
+                        // root tabs show the app mark instead of a second add button.
                         when (destination) {
                             AppDestination.DOWNLOADS, AppDestination.TORRENTS -> {
-                                IconButton(onClick = { viewModel.openEditor() }) {
-                                    Icon(Icons.Default.Add, contentDescription = "Add download")
-                                }
+                                Image(
+                                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .padding(start = 12.dp)
+                                        .size(28.dp)
+                                )
                             }
                             else -> {
                                 IconButton(onClick = {
@@ -279,8 +288,7 @@ fun DownloadHubApp(
                         Icon(Icons.Default.Add, contentDescription = "Add download")
                     }
                 }
-            },
-            snackbarHost = { SnackbarHost(snackbarHostState) },
+            },            snackbarHost = { SnackbarHost(snackbarHostState) },
             containerColor = MaterialTheme.colorScheme.background
         ) { padding ->
             Box(
@@ -334,9 +342,11 @@ fun DownloadHubApp(
                         downloaderVersion = downloaderVersion,
                         appVersion = updateViewModel.currentVersion,
                         update = update,
+                        ytdlpUpdate = ytdlpUpdate,
                         onThemeChange = viewModel::setTheme,
                         onDestinationChange = viewModel::setDestinationTreeUri,
-                        onUpdateDownloader = viewModel::updateDownloader,
+                        onCheckYtDlp = viewModel::checkYtDlpUpdate,
+                        onApplyYtDlp = viewModel::applyYtDlpUpdate,
                         onAbout = { navigate(AppDestination.ABOUT) },
                         onCheckUpdates = updateViewModel::checkForUpdatesNow
                     )
@@ -669,9 +679,11 @@ private fun SettingsScreen(
     downloaderVersion: String,
     appVersion: String,
     update: UpdateSnapshot,
+    ytdlpUpdate: YtDlpUpdateState,
     onThemeChange: (ThemeMode) -> Unit,
     onDestinationChange: (String?) -> Unit,
-    onUpdateDownloader: () -> Unit,
+    onCheckYtDlp: () -> Unit,
+    onApplyYtDlp: () -> Unit,
     onAbout: () -> Unit,
     onCheckUpdates: () -> Unit
 ) {
@@ -734,17 +746,44 @@ private fun SettingsScreen(
         Spacer(Modifier.height(8.dp))
         Text("YouTube downloader", style = MaterialTheme.typography.titleMedium)
         Text(
-            "yt-dlp $downloaderVersion",
+            ytdlpSummary(downloaderVersion, ytdlpUpdate),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        // Checking is always available; installing is only offered when a newer
+        // stable release actually exists.
         OutlinedButton(
-            onClick = onUpdateDownloader,
+            onClick = onCheckYtDlp,
+            enabled = ytdlpUpdate !is YtDlpUpdateState.Checking,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(Icons.Default.Settings, contentDescription = null)
+            Icon(
+                painter = painterResource(R.drawable.ic_system_update),
+                contentDescription = null
+            )
             Spacer(Modifier.width(8.dp))
-            Text("Update yt-dlp now")
+            Text(
+                when (ytdlpUpdate) {
+                    is YtDlpUpdateState.Checking -> "Checking yt-dlp…"
+                    is YtDlpUpdateState.UpToDate -> "Check for update"
+                    else -> "Check for update"
+                }
+            )
+        }
+        val ytdlpTarget = (ytdlpUpdate as? YtDlpUpdateState.Available)?.latest
+        if (ytdlpTarget != null) {
+            Spacer(Modifier.height(6.dp))
+            Button(
+                onClick = onApplyYtDlp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_system_update),
+                    contentDescription = null
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Update yt-dlp to $ytdlpTarget")
+            }
         }
         Spacer(Modifier.height(8.dp))
         Text("App updates", style = MaterialTheme.typography.titleMedium)
@@ -815,6 +854,15 @@ private fun themeLabel(mode: ThemeMode): String = when (mode) {
     ThemeMode.LIGHT -> "Light"
     ThemeMode.DARK -> "Dark"
     ThemeMode.AMOLED -> "AMOLED"
+}
+
+/** One line describing the installed yt-dlp and the result of the last check. */
+fun ytdlpSummary(installed: String, state: YtDlpUpdateState): String = when (state) {
+    YtDlpUpdateState.Idle -> "yt-dlp $installed"
+    YtDlpUpdateState.Checking -> "yt-dlp $installed - checking for a newer release…"
+    is YtDlpUpdateState.UpToDate -> "yt-dlp $installed is up to date"
+    is YtDlpUpdateState.Available -> "yt-dlp $installed - version ${state.latest} is available"
+    is YtDlpUpdateState.Failed -> "yt-dlp $installed - ${state.message}"
 }
 
 private val DownloadStatus.isActiveUi: Boolean

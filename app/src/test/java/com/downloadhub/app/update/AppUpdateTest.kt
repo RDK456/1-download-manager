@@ -99,6 +99,28 @@ class AppUpdateTest {
         assertTrue(parsed.assets.isEmpty())
     }
 
+    @Test
+    fun comparesDateBasedYtDlpVersions() {
+        assertTrue(compareVersions("2026.08.19", "2025.11.12") > 0)
+        assertTrue(compareVersions("2026.08.19", "2026.08.19") == 0)
+        assertTrue(compareVersions("2026.8.19", "2026.08.19") == 0)
+        assertTrue(compareVersions("2026.08.19", "2026.08.20") < 0)
+    }
+
+    @Test
+    fun ytDlpUpdateOnlyOfferedWhenNewerVersionExists() {
+        val installed = "2026.08.19"
+        val latest = "2026.09.01"
+        assertTrue(YtDlpUpdateState.Available(installed, latest).hasUpdate)
+        assertFalse(YtDlpUpdateState.UpToDate(installed).hasUpdate)
+        assertFalse(YtDlpUpdateState.Idle.hasUpdate)
+        assertFalse(YtDlpUpdateState.Checking.hasUpdate)
+        assertFalse(YtDlpUpdateState.Failed("offline").hasUpdate)
+
+        val older = "2025.11.12"
+        assertFalse(compareVersions(older, installed) > 0)
+    }
+
     private fun release(tag: String, assets: List<ReleaseAsset> = emptyList()) = ReleaseInfo(
         tag = tag,
         name = "release $tag",

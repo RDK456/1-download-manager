@@ -181,7 +181,10 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
         val release = (_snapshot.value.status as? UpdateStatus.Available)?.release ?: return
         val asset = release.installAsset() ?: return
         viewModelScope.launch {
+            // Clear the "available" status so its dialog gives way to the download
+            // progress dialog instead of two dialogs fighting for the screen.
             _snapshot.value = _snapshot.value.copy(
+                status = UpdateStatus.Idle,
                 progress = DownloadProgress(release, 0, 0L, asset.size),
                 pending = null
             )

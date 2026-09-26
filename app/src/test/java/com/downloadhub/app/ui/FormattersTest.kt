@@ -36,6 +36,14 @@ class FormattersTest {
     }
 
     @Test
+    fun completedDownloadsReadAsCompleted() {
+        assertEquals("Completed", statusLabel(DownloadStatus.COMPLETED))
+        val item = entity(total = 100, downloaded = 100, percent = 100, status = DownloadStatus.COMPLETED)
+        assertEquals(1f, progressFor(item))
+        assertEquals("100%", progressLabel(item))
+    }
+
+    @Test
     fun detectsCommonFileTypes() {
         fun categoryOf(name: String, mime: String? = null) =
             LinkParser.categoryFor(DownloadSource.HTTP, name, mime)
@@ -100,14 +108,19 @@ class FormattersTest {
         assertEquals(DownloadSource.HTTP, LinkParser.sourceFor("https://host/file.zip"))
     }
 
-    private fun entity(total: Long, downloaded: Long, percent: Int) = DownloadEntity(
+    private fun entity(
+        total: Long,
+        downloaded: Long,
+        percent: Int,
+        status: DownloadStatus = DownloadStatus.RUNNING
+    ) = DownloadEntity(
         id = "test",
         source = DownloadSource.HTTP,
         url = "https://example.com/file",
         fileName = "file.bin",
         mimeType = null,
         category = DownloadCategory.FILE,
-        status = DownloadStatus.RUNNING,
+        status = status,
         bytesDownloaded = downloaded,
         totalBytes = total,
         progressPercent = percent,

@@ -20,6 +20,8 @@ import com.downloadhub.app.data.model.MediaQuality
 import com.downloadhub.app.data.model.ThemeMode
 import com.downloadhub.app.download.DownloadService
 import com.downloadhub.app.download.LinkParser
+import com.downloadhub.app.update.YtDlpUpdateState
+import com.downloadhub.app.update.compareVersions
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -78,6 +81,52 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         app.container.youtubeDownloader.currentVersion() ?: "Bundled"
     )
     val downloaderVersion: StateFlow<String> = _downloaderVersion
+
+    private val _ytdlpUpdate = MutableStateFlow<YtDlpUpdateState>(YtDlpUpdateState.Idle)
+    val ytdlpUpdate: StateFlow<YtDlpUpdateState> = _ytdlpUpdate.asStateFlow()
+
+    /** Read-only check of the newest stable yt-dlp; installs nothing. */
+    fun checkYtDlpUpdate() {
+        if (_ytdlpUpdate.value is YtDlpUpdateState.Checking) return
+        viewModelScope.launch {
+            _ytdlpUpdate.value = YtDlpUpdateState.Checking
+            val installed = app.container.youtubeDownloader.currentVersion()
+            val latest = runCatching {
+                app.container.youtubeDownloader.latestStableVersion()
+            }.getOrNull()
+            _ytdlpUpdate.value = when {
+                latest.isNullOrBlank() ->
+                    YtDlpUpdateState.Failed("Could not reach the yt-dlp release feed")
+                compareVersions(latest, installed) > 0 ->
+                    YtDlpUpdateState.Available(installed, latest)
+                else -> YtDlpUpdateState.UpToDate(installed)
+            }
+        }
+    }
+
+    /** Installs the newer yt-dlp and refreshes the reported version. */
+    fun applyYtDlpUpdate() {
+        val target = (_ytdlpUpdate.value as? YtDlpUpdateState.Available)?.latest ?: return
+        viewModelScope.launch {
+            _ytdlpUpdate.value = YtDlpUpdateState.Checking
+            runCatching {
+                app.container.youtubeDownloader.updateYtDlpIfNeeded(force = true)
+            }.onSuccess { version ->
+                val installed = version ?: app.container.youtubeDownloader.currentVersion()
+                _downloaderVersion.value = installed
+                _ytdlpUpdate.value = if (compareVersions(target, installed) > 0) {
+                    YtDlpUpdateState.Available(installed, target)
+                } else {
+                    YtDlpUpdateState.UpToDate(installed)
+                }
+                _events.emit(DownloadEvent.Message("yt-dlp updated to $installed"))
+            }.onFailure { error ->
+                _ytdlpUpdate.value = YtDlpUpdateState.Failed(
+                    error.message ?: "yt-dlp update failed"
+                )
+            }
+        }
+    }
 
     private val query = MutableStateFlow("")
     private val filter = MutableStateFlow(DownloadFilter.ALL)
@@ -305,19 +354,6 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 
     fun setDestinationTreeUri(uri: String?) {
         viewModelScope.launch { settings.setDestinationTreeUri(uri) }
-    }
-
-    fun updateDownloader() {
-        viewModelScope.launch {
-            runCatching {
-                app.container.youtubeDownloader.updateYtDlpIfNeeded(force = true)
-            }.onSuccess { version ->
-                _downloaderVersion.value = version ?: "Bundled"
-                _events.emit(DownloadEvent.Message("yt-dlp is up to date (${version ?: "bundled"})"))
-            }.onFailure { error ->
-                _events.emit(DownloadEvent.Message(error.message ?: "yt-dlp update failed"))
-            }
-        }
     }
 
     fun pauseAll() = DownloadService.action(getApplication(), DownloadService.ACTION_PAUSE_ALL)
