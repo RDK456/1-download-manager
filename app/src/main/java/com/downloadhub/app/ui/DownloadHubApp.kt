@@ -426,19 +426,21 @@ private fun CategoryFilterRow(
     onSelect: (DownloadCategory?) -> Unit
 ) {
     val options = remember(counts) {
-        listOf<DownloadCategory?>(null) + DownloadCategory.entries.filter { candidate ->
-            val count = counts[candidate] ?: 0
-            val legacy = if (candidate == DownloadCategory.COMPRESSED) {
-                counts[DownloadCategory.ARCHIVE] ?: 0
-            } else {
-                0
+        listOf<DownloadCategory?>(null) + DownloadCategory.entries
+            .filterNot { it == DownloadCategory.ARCHIVE }
+            .filter { candidate ->
+                val count = counts[candidate] ?: 0
+                val legacy = if (candidate == DownloadCategory.COMPRESSED) {
+                    counts[DownloadCategory.ARCHIVE] ?: 0
+                } else {
+                    0
+                }
+                count + legacy > 0 || candidate in setOf(
+                    DownloadCategory.PROGRAM,
+                    DownloadCategory.COMPRESSED,
+                    DownloadCategory.FILE
+                )
             }
-            count + legacy > 0 || candidate in setOf(
-                DownloadCategory.PROGRAM,
-                DownloadCategory.COMPRESSED,
-                DownloadCategory.FILE
-            )
-        }
     }
     Row(
         modifier = Modifier

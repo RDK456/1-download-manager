@@ -274,13 +274,16 @@ private fun CategorySelector(selected: DownloadCategory?, onSelect: (DownloadCat
                 .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            DownloadCategory.entries.forEach { option ->
-                FilterChip(
-                    selected = selected == option,
-                    onClick = { onSelect(option) },
-                    label = { Text(option.label) }
-                )
-            }
+            // ARCHIVE is a legacy stored value that already reads as "Compressed".
+            DownloadCategory.entries
+                .filterNot { it == DownloadCategory.ARCHIVE }
+                .forEach { option ->
+                    FilterChip(
+                        selected = selected == option,
+                        onClick = { onSelect(option) },
+                        label = { Text(option.label) }
+                    )
+                }
         }
     }
 }
