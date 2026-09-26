@@ -8,8 +8,10 @@
 - YouTube video and audio downloads through the Android yt-dlp/FFmpeg engine. Pick a video ceiling (best, 4K/2160p, 2K/1440p, 1080p, 720p, 480p, 360p) or switch to audio only and pick the saved type (M4A, MP3, Opus, or WAV). Video merges the best audio stream with FFmpeg. The app checks the stable yt-dlp channel daily and exposes a manual update action in Settings.
 - Magnet links, remote `.torrent` URLs, and local `.torrent` files through libtorrent4j. `.torrent` files can be opened straight from any file manager ("Open with 1 download manager"), picked from the in-app button in the add sheet, or launched from the empty queue. Torrent payloads are staged privately and published to the selected/default destination after completion.
 - Link import from other apps through Android Share and text-processing actions, plus clipboard paste.
-- Room-backed queue, WorkManager recovery after process death, prominent pause/resume controls, pause-all/resume-all actions, search, status filters, file open/share/delete actions, and system/light/dark/AMOLED theme selection.
-- Automatic type categories — Programs, Compressed, Files, Video, Audio, Documents, Images, Other — inferred from the file name, extension, and MIME type, with a category filter row and per-item category badges.
+- Room-backed queue, WorkManager recovery after process death, prominent pause/resume controls, pause-all/resume-all actions, search, file open/share/delete actions, and system/light/dark/AMOLED theme selection.
+- Two separate tabs: **Downloads** holds direct files and YouTube media, while **Torrents** holds every magnet and `.torrent` transfer. Neither tab ever shows the other's items, and each has its own counters.
+- Status and category filters live behind a filter button in the top bar (badged while active), with removable chips summarising the current filter.
+- Automatic type categories — Programs, Compressed, Files, Video, Audio, Documents, Images, Other — inferred from the file name, extension, and MIME type, with live counts in the filter sheet.
 - Breadcrumb navigation in the top bar (`1 download manager > Settings > About us`) with working back navigation.
 - An **About us** page listing the app version, bundled yt-dlp version, and links to the source, releases, and issues, with a large GitHub logo that opens the repository.
 - An in-app updater that reads the newest GitHub release, compares it with the installed version, downloads the release APK, and hands it to the system package installer.
@@ -36,7 +38,8 @@ Use the Android share sheet and choose 1 download manager from any app. The app 
 ## About page and app updates
 
 The top bar shows a breadcrumb trail. `1 download manager` returns to whichever tab you came
-from, and `Settings` steps back to the queue. The **About us** page (Settings -> About) shows
+from, and `Settings` steps back to the queue. Settings is reached from the gear in the top bar
+(there is no bottom-bar tab for it), and **About us** sits under Settings. The About page shows
 the installed version, the bundled yt-dlp version, and links to the source, the release list, and
 the issue tracker. The GitHub logo on that page — and in the top bar — opens
 <https://github.com/RDK456/1-download-manager> in your browser.
@@ -123,7 +126,10 @@ Three entry points, all routed through the same import path:
 
 1. File manager → tap a `.torrent` file → **Open with** → 1 download manager.
 2. Any app → share sheet → 1 download manager (torrent payloads are detected by MIME type or file name).
-3. In-app → the add sheet's "Choose .torrent file from device" button, the "Open a .torrent file" button on an empty queue, or paste a magnet/`.torrent` URL.
+3. In-app → the **Torrents** tab: "Open a .torrent file" on an empty queue, or the add sheet's
+   "Choose .torrent file from device" button. Paste a magnet or `.torrent` URL from any tab.
+
+Downloaded torrent content appears only under the Torrents tab.
 
 Selected torrents are copied into app-private storage first, so the download keeps working after the content permission expires or the file is moved.
 

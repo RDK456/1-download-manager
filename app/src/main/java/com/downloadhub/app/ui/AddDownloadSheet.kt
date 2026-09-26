@@ -59,6 +59,7 @@ private val TORRENT_MIME_TYPES = arrayOf(
 @Composable
 fun AddDownloadSheet(
     seed: EditorSeed,
+    allowTorrentFile: Boolean,
     onDismiss: () -> Unit,
     onAdd: (
         rawLink: String,
@@ -139,13 +140,17 @@ fun AddDownloadSheet(
                 }
             )
 
-            OutlinedButton(
-                onClick = { filePicker.launch(TORRENT_MIME_TYPES) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.FileOpen, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Choose .torrent file from device")
+            // Picking a .torrent file is a Torrents-tab action, so it is only
+            // offered there (or when the sheet was opened for a torrent source).
+            if (allowTorrentFile || effectiveSource == DownloadSource.TORRENT) {
+                OutlinedButton(
+                    onClick = { filePicker.launch(TORRENT_MIME_TYPES) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.FileOpen, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Choose .torrent file from device")
+                }
             }
 
             if (isYoutube) {

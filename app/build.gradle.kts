@@ -27,8 +27,8 @@ android {
         applicationId = "com.downloadhub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.1.2"
 
         // Single source of truth for the About page and the in-app updater.
         buildConfigField("String", "GITHUB_OWNER", "\"RDK456\"")
@@ -104,6 +104,14 @@ android {
             useLegacyPackaging = true
             pickFirsts += setOf("**/libc++_shared.so")
         }
+    }
+
+    lint {
+        // Lint's UAST/Kotlin frontend intermittently crashes on this project's unit
+        // test sources (it resolves org.json against both the android.jar stub and the
+        // real org.json test dependency). App sources are still linted in full.
+        checkTestSources = false
+        abortOnError = true
     }
 }
 

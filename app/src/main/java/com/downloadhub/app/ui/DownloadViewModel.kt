@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -36,9 +37,16 @@ import kotlinx.coroutines.withContext
 enum class DownloadFilter {
     ALL,
     ACTIVE,
-    COMPLETED,
-    TORRENTS
+    COMPLETED
 }
+
+/** Per-tab counters shown in the summary band. */
+data class TabSummary(
+    val active: Int = 0,
+    val paused: Int = 0,
+    val completed: Int = 0,
+    val total: Int = 0
+)
 
 data class EditorSeed(
     val link: String,
@@ -85,6 +93,10 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     val currentCategory: StateFlow<DownloadCategory?> = categoryFilter
     val searchQuery: StateFlow<String> = query
 
+    /**
+     * The Downloads tab never shows torrents: magnet and .torrent transfers live
+     * exclusively in the Torrents tab.
+     */
     val visibleDownloads: StateFlow<List<DownloadEntity>> = combine(
         allDownloads,
         query,
@@ -93,19 +105,42 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     ) { items, search, selectedFilter, selectedCategory ->
         val normalized = search.trim().lowercase()
         items.filter { item ->
-            val matchesSearch = normalized.isBlank() ||
-                item.fileName.lowercase().contains(normalized) ||
-                item.url.lowercase().contains(normalized)
-            val matchesFilter = when (selectedFilter) {
-                DownloadFilter.ALL -> true
-                DownloadFilter.ACTIVE -> item.status.isActiveCompat
-                DownloadFilter.COMPLETED -> item.status == com.downloadhub.app.data.model.DownloadStatus.COMPLETED
-                DownloadFilter.TORRENTS -> item.source == DownloadSource.TORRENT
-            }
-            val matchesCategory = selectedCategory == null || item.category.matchesFilter(selectedCategory)
-            matchesSearch && matchesFilter && matchesCategory
+            item.source != DownloadSource.TORRENT &&
+                matchesSearch(item, normalized) &&
+                matchesStatus(item, selectedFilter) &&
+                matchesCategory(item, selectedCategory)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val visibleTorrents: StateFlow<List<DownloadEntity>> = combine(
+        allDownloads,
+        query,
+        filter
+    ) { items, search, selectedFilter ->
+        val normalized = search.trim().lowercase()
+        items.filter { item ->
+            item.source == DownloadSource.TORRENT &&
+                matchesSearch(item, normalized) &&
+                matchesStatus(item, selectedFilter)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val mainSummary: StateFlow<TabSummary> = allDownloads
+        .map { list -> list.filter { it.source != DownloadSource.TORRENT }.toSummary() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TabSummary())
+
+    val torrentSummary: StateFlow<TabSummary> = allDownloads
+        .map { list -> list.filter { it.source == DownloadSource.TORRENT }.toSummary() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TabSummary())
+
+    /** Category counts for the filter sheet, based on the Downloads tab. */
+    val categoryCounts: StateFlow<Map<DownloadCategory, Int>> = allDownloads
+        .map { list ->
+            list.filter { it.source != DownloadSource.TORRENT }
+                .groupingBy { it.category }
+                .eachCount()
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     val selectedDownload: StateFlow<DownloadEntity?> = combine(allDownloads, _selectedId) { items, id ->
         items.firstOrNull { it.id == id }
@@ -120,8 +155,17 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setCategoryFilter(value: DownloadCategory?) {
-        categoryFilter.value = if (categoryFilter.value == value) null else value
+        categoryFilter.value = value
     }
+
+    fun resetFilters() {
+        filter.value = DownloadFilter.ALL
+        categoryFilter.value = null
+    }
+
+    val hasActiveFilter: StateFlow<Boolean> = combine(filter, categoryFilter) { status, category ->
+        status != DownloadFilter.ALL || category != null
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     fun select(id: String?) {
         _selectedId.value = id
@@ -328,6 +372,27 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             torrentFilePath = path
         )
 }
+
+private fun matchesSearch(item: DownloadEntity, normalized: String): Boolean =
+    normalized.isBlank() ||
+        item.fileName.lowercase().contains(normalized) ||
+        item.url.lowercase().contains(normalized)
+
+private fun matchesStatus(item: DownloadEntity, filter: DownloadFilter): Boolean = when (filter) {
+    DownloadFilter.ALL -> true
+    DownloadFilter.ACTIVE -> item.status.isActiveCompat
+    DownloadFilter.COMPLETED -> item.status == DownloadStatus.COMPLETED
+}
+
+private fun matchesCategory(item: DownloadEntity, category: DownloadCategory?): Boolean =
+    category == null || item.category.matchesFilter(category)
+
+private fun List<DownloadEntity>.toSummary() = TabSummary(
+    active = count { it.status.isActiveCompat },
+    paused = count { it.status == DownloadStatus.PAUSED },
+    completed = count { it.status == DownloadStatus.COMPLETED },
+    total = size
+)
 
 /** A "Compressed" chip should also catch rows that were stored as ARCHIVE. */
 private fun DownloadCategory.matchesFilter(filter: DownloadCategory): Boolean = when (filter) {

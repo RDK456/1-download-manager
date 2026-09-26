@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -100,12 +102,17 @@ fun DownloadHubApp(
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     DownloadHubTheme(themeMode) {
         val context = LocalContext.current
-        val allItems by viewModel.allDownloads.collectAsStateWithLifecycle()
         val visibleItems by viewModel.visibleDownloads.collectAsStateWithLifecycle()
+        val visibleTorrents by viewModel.visibleTorrents.collectAsStateWithLifecycle()
+        val mainSummary by viewModel.mainSummary.collectAsStateWithLifecycle()
+        val torrentSummary by viewModel.torrentSummary.collectAsStateWithLifecycle()
+        val categoryCounts by viewModel.categoryCounts.collectAsStateWithLifecycle()
+        val hasActiveFilter by viewModel.hasActiveFilter.collectAsStateWithLifecycle()
         val selectedItem by viewModel.selectedDownload.collectAsStateWithLifecycle()
         val editorSeed by viewModel.editorSeed.collectAsStateWithLifecycle()
         val filter by viewModel.currentFilter.collectAsStateWithLifecycle()
         val category by viewModel.currentCategory.collectAsStateWithLifecycle()
+        var filterSheetOpen by rememberSaveable { mutableStateOf(false) }
         val query by viewModel.searchQuery.collectAsStateWithLifecycle()
         val destinationTreeUri by viewModel.destinationTreeUri.collectAsStateWithLifecycle()
         val downloaderVersion by viewModel.downloaderVersion.collectAsStateWithLifecycle()
@@ -215,6 +222,22 @@ fun DownloadHubApp(
                         }
                     },
                     actions = {
+                        if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) {
+                            BadgedBox(
+                                badge = {
+                                    if (hasActiveFilter) {
+                                        Badge { Text(" ") }
+                                    }
+                                }
+                            ) {
+                                IconButton(onClick = { filterSheetOpen = true }) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_filter),
+                                        contentDescription = "Filters"
+                                    )
+                                }
+                            }
+                        }
                         IconButton(onClick = { openExternal(BuildConfig.GITHUB_URL) }) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_github),
@@ -247,12 +270,6 @@ fun DownloadHubApp(
                             icon = { Icon(Icons.Default.Folder, contentDescription = null) },
                             label = { Text("Torrents") }
                         )
-                        NavigationBarItem(
-                            selected = destination == AppDestination.SETTINGS,
-                            onClick = { navigate(AppDestination.SETTINGS) },
-                            icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                            label = { Text("Settings") }
-                        )
                     }
                 }
             },
@@ -274,7 +291,7 @@ fun DownloadHubApp(
                 when (destination) {
                     AppDestination.DOWNLOADS -> DownloadsScreen(
                         items = visibleItems,
-                        allItems = allItems,
+                        summary = mainSummary,
                         filter = filter,
                         category = category,
                         query = query,
@@ -291,9 +308,9 @@ fun DownloadHubApp(
                         onPickTorrent = viewModel::addTorrentFile
                     )
                     AppDestination.TORRENTS -> DownloadsScreen(
-                        items = allItems.filter { it.source == DownloadSource.TORRENT },
-                        allItems = allItems,
-                        filter = DownloadFilter.TORRENTS,
+                        items = visibleTorrents,
+                        summary = torrentSummary,
+                        filter = filter,
                         category = null,
                         query = query,
                         onQueryChange = viewModel::setQuery,
@@ -307,7 +324,8 @@ fun DownloadHubApp(
                         onRetry = viewModel::retry,
                         onDelete = viewModel::delete,
                         emptyTitle = "No torrents yet",
-                        emptyAction = "Add torrent",
+                        emptyAction = "Add a magnet link or open a .torrent file",
+                        showTorrentAction = true,
                         onPickTorrent = viewModel::addTorrentFile
                     )
                     AppDestination.SETTINGS -> SettingsScreen(
@@ -343,9 +361,22 @@ fun DownloadHubApp(
         editorSeed?.let { seed ->
             AddDownloadSheet(
                 seed = seed,
+                allowTorrentFile = destination == AppDestination.TORRENTS,
                 onDismiss = viewModel::closeEditor,
                 onAdd = viewModel::addLink,
                 onPickTorrent = viewModel::addTorrentFile
+            )
+        }
+        if (filterSheetOpen) {
+            FilterSheet(
+                filter = filter,
+                category = category,
+                categoryCounts = categoryCounts,
+                showCategories = destination == AppDestination.DOWNLOADS,
+                onFilterChange = viewModel::setFilter,
+                onCategoryChange = viewModel::setCategoryFilter,
+                onReset = viewModel::resetFilters,
+                onDismiss = { filterSheetOpen = false }
             )
         }
         selectedItem?.let { item ->
@@ -398,7 +429,7 @@ fun DownloadHubApp(
 @Composable
 private fun DownloadsScreen(
     items: List<DownloadEntity>,
-    allItems: List<DownloadEntity>,
+    summary: TabSummary,
     filter: DownloadFilter,
     category: DownloadCategory?,
     query: String,
@@ -414,17 +445,14 @@ private fun DownloadsScreen(
     onDelete: (String) -> Unit,
     emptyTitle: String = "Your queue is empty",
     emptyAction: String = "Add a download",
+    showTorrentAction: Boolean = false,
     onPickTorrent: (Uri) -> Unit
 ) {
     val torrentPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(onPickTorrent) }
-    val activeCount = allItems.count { it.status.isActiveUi }
-    val pausedCount = allItems.count { it.status == DownloadStatus.PAUSED }
-    val completedCount = allItems.count { it.status == DownloadStatus.COMPLETED }
-    val categoryCounts = remember(allItems) { allItems.groupingBy { it.category }.eachCount() }
     Column(modifier = Modifier.fillMaxSize()) {
-        SummaryBand(activeCount, completedCount, allItems.size)
+        SummaryBand(summary.active, summary.completed, summary.total)
         androidx.compose.material3.OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
@@ -432,43 +460,32 @@ private fun DownloadsScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             singleLine = true,
-            label = { Text("Search downloads") },
+            label = {
+                Text(if (showTorrentAction) "Search torrents" else "Search downloads")
+            },
             leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) }
         )
-        if (emptyTitle == "Your queue is empty") {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(DownloadFilter.ALL, DownloadFilter.ACTIVE, DownloadFilter.COMPLETED).forEach { value ->
-                    androidx.compose.material3.FilterChip(
-                        selected = filter == value,
-                        onClick = { onFilterChange(value) },
-                        label = { Text(value.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                    )
-                }
-            }
-            CategoryFilterRow(
-                selected = category,
-                counts = categoryCounts,
-                onSelect = onCategoryChange
+        if (filter != DownloadFilter.ALL || category != null) {
+            ActiveFilterRow(
+                filter = filter,
+                category = category,
+                onFilterChange = onFilterChange,
+                onCategoryChange = onCategoryChange
             )
         }
-        if (activeCount > 0 || pausedCount > 0) {
+        if (summary.active > 0 || summary.paused > 0) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (activeCount > 0) {
+                if (summary.active > 0) {
                     OutlinedButton(onClick = onPauseAll) {
                         Text("Pause all")
                     }
                 }
-                if (pausedCount > 0) {
+                if (summary.paused > 0) {
                     Button(onClick = onResumeAll) {
                         Text("Resume all")
                     }
@@ -485,23 +502,25 @@ private fun DownloadsScreen(
                     title = emptyTitle,
                     action = emptyAction
                 )
-                OutlinedButton(
-                    onClick = {
-                        torrentPicker.launch(
-                            arrayOf(
-                                "application/x-bittorrent",
-                                "application/vnd.torrent",
-                                "application/octet-stream"
+                if (showTorrentAction) {
+                    OutlinedButton(
+                        onClick = {
+                            torrentPicker.launch(
+                                arrayOf(
+                                    "application/x-bittorrent",
+                                    "application/vnd.torrent",
+                                    "application/octet-stream"
+                                )
                             )
-                        )
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 32.dp, vertical = 24.dp)
-                ) {
-                    Icon(Icons.Default.FolderOpen, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Open a .torrent file")
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 32.dp, vertical = 24.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Open a .torrent file")
+                    }
                 }
             }
         } else {
@@ -555,48 +574,51 @@ private fun SummaryValue(value: Int, label: String) {
     }
 }
 
+/**
+ * Compact reminder of what the filter sheet currently applies. Tapping a chip
+ * clears it; the filter button in the top bar opens the full sheet.
+ */
 @Composable
-private fun CategoryFilterRow(
-    selected: DownloadCategory?,
-    counts: Map<DownloadCategory, Int>,
-    onSelect: (DownloadCategory?) -> Unit
+private fun ActiveFilterRow(
+    filter: DownloadFilter,
+    category: DownloadCategory?,
+    onFilterChange: (DownloadFilter) -> Unit,
+    onCategoryChange: (DownloadCategory?) -> Unit
 ) {
-    val options = remember(counts) {
-        listOf<DownloadCategory?>(null) + DownloadCategory.entries
-            .filterNot { it == DownloadCategory.ARCHIVE }
-            .filter { candidate ->
-                val count = counts[candidate] ?: 0
-                val legacy = if (candidate == DownloadCategory.COMPRESSED) {
-                    counts[DownloadCategory.ARCHIVE] ?: 0
-                } else {
-                    0
-                }
-                count + legacy > 0 || candidate in setOf(
-                    DownloadCategory.PROGRAM,
-                    DownloadCategory.COMPRESSED,
-                    DownloadCategory.FILE
-                )
-            }
-    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        options.forEach { option ->
-            val label = option?.label ?: "All types"
-            val count = if (option == null) {
-                counts.values.sum()
-            } else {
-                (counts[option] ?: 0) +
-                    if (option == DownloadCategory.COMPRESSED) counts[DownloadCategory.ARCHIVE] ?: 0 else 0
-            }
-            androidx.compose.material3.FilterChip(
-                selected = selected == option,
-                onClick = { onSelect(option) },
-                label = { Text(if (count > 0) "$label ($count)" else label) }
+        if (filter != DownloadFilter.ALL) {
+            androidx.compose.material3.InputChip(
+                selected = true,
+                onClick = { onFilterChange(DownloadFilter.ALL) },
+                label = { Text(filterLabel(filter)) },
+                trailingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_close),
+                        contentDescription = "Clear status filter",
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            )
+        }
+        if (category != null) {
+            androidx.compose.material3.InputChip(
+                selected = true,
+                onClick = { onCategoryChange(null) },
+                label = { Text(category.label) },
+                trailingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_close),
+                        contentDescription = "Clear category filter",
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             )
         }
     }
