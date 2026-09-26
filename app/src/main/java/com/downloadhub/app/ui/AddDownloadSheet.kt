@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,7 +21,9 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -60,6 +63,7 @@ private val TORRENT_MIME_TYPES = arrayOf(
 fun AddDownloadSheet(
     seed: EditorSeed,
     allowTorrentFile: Boolean,
+    scanning: Boolean,
     onDismiss: () -> Unit,
     onAdd: (
         rawLink: String,
@@ -71,7 +75,8 @@ fun AddDownloadSheet(
         quality: MediaQuality,
         audioFormat: AudioFormat
     ) -> Unit,
-    onPickTorrent: (Uri) -> Unit
+    onPickTorrent: (Uri) -> Unit,
+    onScanPage: (String) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val clipboard = LocalClipboardManager.current
@@ -191,6 +196,27 @@ fun AddDownloadSheet(
                     label = { Text("File name (optional)") },
                     singleLine = true
                 )
+                // Offer to look inside a pasted web page for video, audio or files.
+                if (link.trim().startsWith("http")) {
+                    OutlinedButton(
+                        onClick = { onScanPage(link) },
+                        enabled = !scanning,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (scanning) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Checking the page...")
+                        } else {
+                            Icon(Icons.Default.TravelExplore, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Check page for media")
+                        }
+                    }
+                }
                 CategorySelector(category) { category = it }
             }
 

@@ -20,6 +20,10 @@ import com.downloadhub.app.data.model.MediaQuality
 import com.downloadhub.app.data.model.ThemeMode
 import com.downloadhub.app.download.DownloadService
 import com.downloadhub.app.download.LinkParser
+import com.downloadhub.app.download.MediaCandidate
+import com.downloadhub.app.download.MediaKind
+import com.downloadhub.app.download.PageScanState
+import com.downloadhub.app.download.PageScanner
 import com.downloadhub.app.update.YtDlpUpdateState
 import com.downloadhub.app.update.compareVersions
 import java.io.File
@@ -136,11 +140,13 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     private val categoryFilter = MutableStateFlow<DownloadCategory?>(null)
     private val _selectedId = MutableStateFlow<String?>(null)
     private val _editorSeed = MutableStateFlow<EditorSeed?>(null)
+    private val _pageScan = MutableStateFlow<PageScanState>(PageScanState.Idle)
     private val _events = MutableSharedFlow<DownloadEvent>(extraBufferCapacity = 8)
     val events = _events.asSharedFlow()
 
     val selectedId: StateFlow<String?> = _selectedId
     val editorSeed: StateFlow<EditorSeed?> = _editorSeed
+    val pageScan: StateFlow<PageScanState> = _pageScan.asStateFlow()
     val currentFilter: StateFlow<DownloadFilter> = filter
     val currentCategory: StateFlow<DownloadCategory?> = categoryFilter
     val searchQuery: StateFlow<String> = query
@@ -232,6 +238,101 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 
     fun closeEditor() {
         _editorSeed.value = null
+    }
+
+    /**
+     * Looks for video, audio and downloadable files on a pasted page. Links that
+     * are already media files skip the scan and queue straight away.
+     */
+    fun scanPageForMedia(url: String) {
+        if (_pageScan.value is PageScanState.Scanning) return
+        val target = LinkParser.extractFirstLink(url) ?: url.trim()
+        viewModelScope.launch {
+            _pageScan.value = PageScanState.Scanning
+            when (val result = PageScanner().scan(target)) {
+                is PageScanState.AlreadyMedia -> {
+                    _pageScan.value = PageScanState.Idle
+                    _events.emit(DownloadEvent.Message("That link is already a media file"))
+                    addLink(target)
+                }
+                is PageScanState.Failed -> {
+                    _pageScan.value = PageScanState.Failed(result.message)
+                }
+                is PageScanState.Found -> _pageScan.value = result
+                else -> _pageScan.value = PageScanState.Idle
+            }
+        }
+    }
+
+    fun dismissPageScan() {
+        _pageScan.value = PageScanState.Idle
+    }
+
+    /** Queues one item discovered by the page scan. */
+    fun addScannedMedia(candidate: MediaCandidate) {
+        viewModelScope.launch {
+            val category = when (candidate.kind) {
+                MediaKind.VIDEO -> DownloadCategory.VIDEO
+                MediaKind.AUDIO -> DownloadCategory.AUDIO
+                MediaKind.PLAYER -> DownloadCategory.VIDEO
+                MediaKind.FILE -> LinkParser.categoryFor(
+                    DownloadSource.HTTP,
+                    candidate.label.ifBlank { "download.${candidate.extension}" },
+                    null
+                )
+            }
+            val request = DownloadCreateRequest(
+                source = if (candidate.kind == MediaKind.PLAYER) {
+                    DownloadSource.YOUTUBE
+                } else {
+                    DownloadSource.HTTP
+                },
+                url = candidate.url,
+                fileName = LinkParser.sanitizeFileName(candidate.label),
+                category = category
+            )
+            runCatching { repository.create(request) }
+                .onSuccess {
+                    DownloadService.start(getApplication(), listOf(it.id))
+                    _events.emit(DownloadEvent.Message("Added \"${it.fileName}\" to the queue"))
+                }
+                .onFailure { _events.emit(DownloadEvent.Message(it.message ?: "Could not add download")) }
+        }
+    }
+
+    /** Queues every item the scan found. */
+    fun addAllScannedMedia() {
+        val items = (_pageScan.value as? PageScanState.Found)?.items.orEmpty()
+        if (items.isEmpty()) return
+        viewModelScope.launch {
+            val ids = mutableListOf<String>()
+            items.forEach { candidate ->
+                runCatching {
+                    repository.create(
+                        DownloadCreateRequest(
+                            source = if (candidate.kind == MediaKind.PLAYER) {
+                                DownloadSource.YOUTUBE
+                            } else {
+                                DownloadSource.HTTP
+                            },
+                            url = candidate.url,
+                            fileName = LinkParser.sanitizeFileName(candidate.label),
+                            category = when (candidate.kind) {
+                                MediaKind.VIDEO -> DownloadCategory.VIDEO
+                                MediaKind.AUDIO -> DownloadCategory.AUDIO
+                                MediaKind.PLAYER -> DownloadCategory.VIDEO
+                                MediaKind.FILE -> null
+                            }
+                        )
+                    )
+                }.onSuccess { ids += it.id }
+            }
+            if (ids.isNotEmpty()) {
+                DownloadService.start(getApplication(), ids)
+                _events.emit(DownloadEvent.Message("Added ${ids.size} item(s) to the queue"))
+            }
+            _pageScan.value = PageScanState.Idle
+        }
     }
 
     fun addLink(

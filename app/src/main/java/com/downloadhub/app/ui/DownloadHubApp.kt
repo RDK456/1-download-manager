@@ -79,6 +79,7 @@ import com.downloadhub.app.data.model.DownloadSource
 import com.downloadhub.app.data.model.DownloadStatus
 import com.downloadhub.app.data.model.ThemeMode
 import com.downloadhub.app.data.model.label
+import com.downloadhub.app.download.PageScanState
 import com.downloadhub.app.update.YtDlpUpdateState
 import com.downloadhub.app.ui.theme.DownloadHubTheme
 import kotlinx.coroutines.flow.collectLatest
@@ -354,13 +355,25 @@ fun DownloadHubApp(
             }
         }
 
+        val scanState by viewModel.pageScan.collectAsStateWithLifecycle()
         editorSeed?.let { seed ->
             AddDownloadSheet(
                 seed = seed,
                 allowTorrentFile = destination == AppDestination.TORRENTS,
+                scanning = scanState is PageScanState.Scanning,
                 onDismiss = viewModel::closeEditor,
                 onAdd = viewModel::addLink,
-                onPickTorrent = viewModel::addTorrentFile
+                onPickTorrent = viewModel::addTorrentFile,
+                onScanPage = viewModel::scanPageForMedia
+            )
+        }
+        if (scanState is PageScanState.Found || scanState is PageScanState.Failed) {
+            MediaScanSheet(
+                state = scanState,
+                onPick = viewModel::addScannedMedia,
+                onPickAll = viewModel::addAllScannedMedia,
+                onRescan = { viewModel.scanPageForMedia(editorSeed?.link.orEmpty()) },
+                onDismiss = viewModel::dismissPageScan
             )
         }
         if (filterSheetOpen) {
