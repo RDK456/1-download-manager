@@ -175,10 +175,10 @@ fun AboutScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            if (pending.needsPermission) {
-                                "Allow installation"
-                            } else {
-                                "Install version ${pending.release.version}"
+                            when {
+                                !pending.signatureMatches -> "Uninstall old build"
+                                pending.needsPermission -> "Allow installation"
+                                else -> "Install version ${pending.release.version}"
                             }
                         )
                     }
@@ -335,10 +335,13 @@ private fun AboutLinkRow(label: String, url: String, onClick: () -> Unit) {
 /** Human-readable status line for the update card. */
 fun updateStatusText(update: UpdateSnapshot, currentVersion: String): String {
     update.pending?.let { pending ->
-        return if (pending.needsPermission) {
-            "Version ${pending.release.version} is downloaded. Allow installs to finish updating."
-        } else {
-            "Version ${pending.release.version} is downloaded and ready to install."
+        return when {
+            !pending.signatureMatches ->
+                "Version ${pending.release.version} uses a different signing key. Uninstall this " +
+                    "app once, then install the new version."
+            pending.needsPermission ->
+                "Version ${pending.release.version} is downloaded. Allow installs to finish updating."
+            else -> "Version ${pending.release.version} is downloaded and ready to install."
         }
     }
     update.progress?.let { progress ->
@@ -413,7 +416,30 @@ fun UpdateFlowDialog(
     onDismiss: () -> Unit
 ) {
     update.pending?.let { pending ->
-        if (pending.needsPermission) {
+        if (!pending.signatureMatches) {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text("Different signing key") },
+                text = {
+                    Text(
+                        "Version ${pending.release.version} is signed with a different key than " +
+                            "the build you are running, so Android cannot install it over the " +
+                            "current app. Uninstall 1 download manager first, then install the " +
+                            "new version."
+                    )
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = onAllowInstalls) {
+                        Text("Open app settings")
+                    }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = onDismiss) {
+                        Text("Not now")
+                    }
+                }
+            )
+        } else if (pending.needsPermission) {
             AlertDialog(
                 onDismissRequest = onDismiss,
                 title = { Text("Allow installation") },

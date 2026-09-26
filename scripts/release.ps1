@@ -7,19 +7,26 @@
     Every run performs the same sequence so releases stay reproducible:
       1. read versionName / versionCode from app/build.gradle.kts
       2. bump them (patch by default, -Minor / -Major for larger jumps)
-      3. run unit tests, lint and assembleDebug
+      3. run unit tests, lint and the build
       4. copy the APK to the repository root as the release asset
       5. commit the whole tree, tag it, and push
       6. create the GitHub release (or update it if the tag already exists)
 
-    The app's in-app updater reads the newest published release from GitHub, so
-    a release created here is what existing installs offer as an update.
+    When keystore/keystore.properties exists the signed release APK is built and
+    published (the default). With -DebugApk the debug-signed APK is published
+    instead, which is only useful for quick internal testing.
+
+    The app's in-app updater reads the newest published release from GitHub, so a
+    release created here is exactly what existing installs offer as an update.
 
 .PARAMETER Bump
     Which part of the version to increase: Patch (default), Minor, or Major.
 
 .PARAMETER SkipTests
-    Skip the test/lint/assemble step (use only when you already validated).
+    Skip the test/lint/build step (use only when you already validated).
+
+.PARAMETER DebugApk
+    Publish the debug-signed APK instead of the signed release APK.
 
 .PARAMETER Draft
     Create the release as a draft so it is not offered as an update yet.
@@ -31,12 +38,14 @@
 .EXAMPLE
     .\scripts\release.ps1
     .\scripts\release.ps1 -Bump Minor
+    .\scripts\release.ps1 -DebugApk
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('Patch', 'Minor', 'Major')]
     [string]$Bump = 'Patch',
     [switch]$SkipTests,
+    [switch]$DebugApk,
     [switch]$Draft,
     [string]$Notes
 )
@@ -46,14 +55,13 @@ Set-StrictMode -Version Latest
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $GradleFile = Join-Path $RepoRoot 'app\build.gradle.kts'
-$ApkBuilt = Join-Path $RepoRoot 'app\build\outputs\apk\debug\app-debug.apk'
-$ApkAsset = Join-Path $RepoRoot 'DownloadHub-debug.apk'
+$DebugApkBuilt = Join-Path $RepoRoot 'app\build\outputs\apk\debug\app-debug.apk'
+$ReleaseApkBuilt = Join-Path $RepoRoot 'app\build\outputs\apk\release\app-release.apk'
+$KeystoreProperties = Join-Path $RepoRoot 'keystore\keystore.properties'
 
 # --- locate toolchain --------------------------------------------------------
 $ToolsRoot = Join-Path $env:LOCALAPPDATA 'Temp\opencode\tools'
-$PortableGitCmd = Join-Path $ToolsRoot 'mingit\cmd'
-$PortableGhBin = Join-Path $ToolsRoot 'gh\bin'
-foreach ($dir in @($PortableGitCmd, $PortableGhBin)) {
+foreach ($dir in @((Join-Path $ToolsRoot 'mingit\cmd'), (Join-Path $ToolsRoot 'gh\bin'))) {
     if (Test-Path $dir) { $env:PATH = "$dir;$env:PATH" }
 }
 $env:GIT_TERMINAL_PROMPT = '0'
@@ -66,6 +74,14 @@ function Resolve-Tool([string]$name) {
 
 $git = Resolve-Tool 'git'
 $gh = Resolve-Tool 'gh'
+
+# A signed release is the default; -DebugApk opts out.
+$useDebug = $DebugApk.IsPresent
+$hasKeystore = Test-Path $KeystoreProperties
+if (-not $useDebug -and -not $hasKeystore) {
+    Write-Warning 'No keystore\keystore.properties found - falling back to the debug-signed APK.'
+    $useDebug = $true
+}
 
 Push-Location $RepoRoot
 
@@ -90,6 +106,7 @@ try {
     $tag = "v$newVersion"
 
     Write-Host "Version $oldVersion ($oldVersionCode)  ->  $newVersion ($newVersionCode)" -ForegroundColor Cyan
+    Write-Host ("Artifact: " + $(if ($useDebug) { 'debug-signed APK' } else { 'signed release APK' })) -ForegroundColor Cyan
 
     # --- 2. write it back ---------------------------------------------------
     $gradleText = $gradleText -replace 'versionCode\s*=\s*\d+', "versionCode = $newVersionCode"
@@ -97,20 +114,38 @@ try {
     [System.IO.File]::WriteAllText($GradleFile, $gradleText)
 
     # --- 3. validate --------------------------------------------------------
+    $variant = if ($useDebug) { 'Debug' } else { 'Release' }
     if (-not $SkipTests) {
-        Write-Host 'Running tests, lint and assembleDebug...' -ForegroundColor Cyan
+        Write-Host "Running tests, lint and assemble$variant..." -ForegroundColor Cyan
         $gradlew = if ($env:OS -eq 'Windows_NT') { '.\gradlew.bat' } else { './gradlew' }
-        & $gradlew test lintDebug assembleDebug
+        & $gradlew test lintDebug "assemble$variant"
         if ($LASTEXITCODE -ne 0) { throw 'Build failed; the version bump was left in place for inspection.' }
     }
 
-    if (-not (Test-Path $ApkBuilt)) { throw "APK not found at $ApkBuilt" }
-    Copy-Item $ApkBuilt $ApkAsset -Force
-    $apkHash = (Get-FileHash $ApkAsset -Algorithm SHA256).Hash
-    $apkSize = (Get-Item $ApkAsset).Length
+    $apkBuilt = if ($useDebug) { $DebugApkBuilt } else { $ReleaseApkBuilt }
+    if (-not (Test-Path $apkBuilt)) { throw "APK not found at $apkBuilt" }
+    $apkAsset = Join-Path $RepoRoot ("1-download-manager-$newVersion.apk")
+    Copy-Item $apkBuilt $apkAsset -Force
+    $apkHash = (Get-FileHash $apkAsset -Algorithm SHA256).Hash
+    $apkSize = (Get-Item $apkAsset).Length
     Write-Host ("APK {0} bytes, sha256 {1}" -f $apkSize, $apkHash) -ForegroundColor DarkGray
 
-    # --- 4. commit + tag + push --------------------------------------------
+    # --- 4. verify the published signature ----------------------------------
+    $sdkRoot = $env:ANDROID_HOME
+    if (-not $sdkRoot) { $sdkRoot = $env:ANDROID_SDK_ROOT }
+    $aapt = $null
+    if ($sdkRoot) {
+        $aapt = Get-ChildItem (Join-Path $sdkRoot 'build-tools') -Recurse -Filter 'aapt2.exe' `
+            -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+    }
+    if ($aapt) {
+        $badging = & $aapt.FullName dump badging $apkAsset 2>&1
+        $signed = ($badging | Select-String -Pattern "v2 scheme" | Select-Object -First 1)
+        Write-Host ("Signature: " + $(if ($signed) { 'v2/v3 present' } else { 'v1 only' })) -ForegroundColor DarkGray
+    }
+
+    # --- 5. commit + tag + push --------------------------------------------
     & $git add --all
     & $git commit -m "Release $tag"
     if ($LASTEXITCODE -ne 0) { throw 'Nothing to commit or the commit failed.' }
@@ -118,11 +153,16 @@ try {
     & $git push origin main
     & $git push origin "refs/tags/$tag"
 
-    # --- 5. release notes ---------------------------------------------------
+    # --- 6. release notes ---------------------------------------------------
     $previousTag = (& $git describe --tags --abbrev=0 "$tag^" 2>$null)
     $logArgs = @('log', '--pretty=format:- %s')
     if ($previousTag) { $logArgs += "$previousTag..$tag" }
     $commitList = (& $git @logArgs) -join "`n"
+    $signingNote = if ($useDebug) {
+        'This APK is debug-signed and is for internal testing only.'
+    } else {
+        'This APK is release-signed and can replace an earlier release-signed install.'
+    }
     if ([string]::IsNullOrWhiteSpace($Notes)) {
         $Notes = @"
 1 download manager $newVersion
@@ -130,20 +170,21 @@ try {
 Highlights:
 $commitList
 
-APK: DownloadHub-debug.apk ($([math]::Round($apkSize / 1MB, 1)) MB, debug-signed)
+APK: $([System.IO.Path]::GetFileName($apkAsset)) ($([math]::Round($apkSize / 1MB, 1)) MB)
 SHA-256: $apkHash
+$signingNote
 
 Open this app's Settings -> Check for updates to install this release.
 "@
     }
 
-    # --- 6. publish ---------------------------------------------------------
-    $releaseArgs = @('release', 'create', $tag, $ApkAsset, '--title', "1 download manager $newVersion", '--notes', $Notes)
+    # --- 7. publish ---------------------------------------------------------
+    $releaseArgs = @('release', 'create', $tag, $apkAsset, '--title', "1 download manager $newVersion", '--notes', $Notes)
     if ($Draft) { $releaseArgs += '--draft' }
     & $gh @releaseArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Release already exists; updating it instead.' -ForegroundColor Yellow
-        & $gh release upload $tag $ApkAsset --clobber
+        & $gh release upload $tag $apkAsset --clobber
         & $gh release edit $tag --title "1 download manager $newVersion" --notes $Notes
     }
 

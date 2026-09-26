@@ -53,21 +53,69 @@ The updater calls the public GitHub releases API (no token needed):
 5. Android asks for "install unknown apps" permission the first time; the app deep-links to the
    matching system screen and resumes the install when you return.
 
+## Release signing
+
+Release builds are signed with a key that lives **outside version control**, so a fresh clone still
+builds (it falls back to the debug key with a warning):
+
+```text
+keystore/
+  1-download-manager-release.jks   # the signing key
+  keystore.properties              # storeFile / storePassword / keyAlias / keyPassword
+```
+
+`app/build.gradle.kts` reads `keystore/keystore.properties` and registers a `release` signing
+config with v1+v2+v3 schemes. Both paths are ignored by `.gitignore`.
+
+> Write the `storeFile` path with **forward slashes**. `Properties.load` treats a backslash as an
+> escape character, which silently turns `E:\path\key.jks` into `E:pathkey.jks` and makes the build
+> quietly fall back to the debug key.
+
+To create a new key:
+
+```powershell
+keytool -genkeypair -v -keystore keystore\my-release.jks -storetype PKCS12 `
+  -alias my-alias -keyalg RSA -keysize 4096 -validity 10950 `
+  -storepass <store-password> -keypass <key-password> `
+  -dname "CN=1 download manager, O=1 download manager, C=IN"
+```
+
+**Back up the keystore and its passwords somewhere safe.** Android only allows an update to
+replace an app signed with the same key; losing them means existing installs can never be updated
+again and every user has to uninstall and reinstall.
+
+Verify what you are about to publish:
+
+```powershell
+apksigner verify --print-certs app\build\outputs\apk\release\app-release.apk
+```
+
+`isMinifyEnabled` is deliberately `false`: the JNI engines (libtorrent4j, the yt-dlp/FFmpeg
+wrapper) and Room's generated code are easier to keep correct without shrinking rules that have
+been tested on a device.
+
 ## Releasing a new version
 
 `scripts/release.ps1` performs the whole publish flow so every release is reproducible:
 
 ```powershell
-.\scripts\release.ps1                 # 1.0.0 -> 1.0.1
-.\scripts\release.ps1 -Bump Minor     # 1.0.1 -> 1.1.0
+.\scripts\release.ps1                 # 1.1.0 -> 1.1.1, signed release APK
+.\scripts\release.ps1 -Bump Minor     # 1.1.1 -> 1.2.0
 .\scripts\release.ps1 -Bump Major -Notes "Rewritten queue"
+.\scripts\release.ps1 -DebugApk       # publish the debug-signed APK instead
 ```
 
-It bumps `versionCode` and `versionName` in `app/build.gradle.kts`, runs
-`test lintDebug assembleDebug`, copies the APK, commits the whole tree, tags the commit, pushes
-both, and creates the GitHub release with the APK attached (falling back to updating the release if
-the tag already exists). Because the app's updater reads the newest published release, publishing
-here is exactly what existing installs offer as an update.
+It bumps `versionCode` and `versionName` in `app/build.gradle.kts`, runs `test lintDebug
+assemble<Variant>`, copies the APK to the repository root, commits the whole tree, tags the
+commit, pushes both, and creates the GitHub release with the APK attached (falling back to updating
+the release if the tag already exists). It publishes the **signed release APK** whenever
+`keystore/keystore.properties` exists, and warns and falls back to the debug APK when it does not.
+Because the app's updater reads the newest published release, publishing here is exactly what
+existing installs offer as an update.
+
+> A release-signed APK cannot be installed over a debug-signed one — Android rejects it with
+> `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. The app detects the key mismatch before downloading and
+> offers to open the app's system page so the old build can be uninstalled first.
 
 ## Opening .torrent files
 

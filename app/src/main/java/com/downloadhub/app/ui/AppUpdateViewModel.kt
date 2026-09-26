@@ -36,7 +36,17 @@ sealed interface UpdateStatus {
 }
 
 /** An APK that has already been fetched and is waiting to be installed. */
-data class PendingInstall(val release: ReleaseInfo, val apk: File, val needsPermission: Boolean)
+data class PendingInstall(
+    val release: ReleaseInfo,
+    val apk: File,
+    val needsPermission: Boolean,
+    /**
+     * False when the downloaded APK is signed with a different key than the running
+     * build (for example a debug-signed install receiving a release-signed update),
+     * which Android rejects with INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+     */
+    val signatureMatches: Boolean = true
+)
 
 /** Progress of the release APK download. */
 data class DownloadProgress(
@@ -181,7 +191,12 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
                 settings.setPendingInstallVersion(release.version)
                 _snapshot.value = _snapshot.value.copy(
                     progress = null,
-                    pending = PendingInstall(release, file, !canRequestInstalls())
+                    pending = PendingInstall(
+                        release = release,
+                        apk = file,
+                        needsPermission = !canRequestInstalls(),
+                        signatureMatches = isSignedBySameKey(file)
+                    )
                 )
             }.onFailure { error ->
                 _snapshot.value = _snapshot.value.copy(
@@ -204,11 +219,28 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
     /** Opens the installer, or the "allow unknown apps" screen when required. */
     fun installUpdate(context: Context) {
         val pending = _snapshot.value.pending ?: return
+        if (!pending.signatureMatches) {
+            openAppDetails(context)
+            return
+        }
         if (pending.needsPermission) {
             openInstallPermissionSettings(context)
             return
         }
         launchInstaller(context, pending.apk)
+    }
+
+    /** Takes the user to this app's system page so an old build can be removed. */
+    fun openAppDetails(context: Context) {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+            .onFailure {
+                _messages.value =
+                    "Uninstall the previous build first, then install version ${_snapshot.value.pending?.release?.version}."
+            }
     }
 
     /** Re-evaluates the permission after the user returns from system settings. */
@@ -262,6 +294,55 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
             app.packageManager.canRequestPackageInstalls()
         }
     }.getOrDefault(false)
+
+    /**
+     * Compares the signing certificate of a downloaded APK with the running build so
+     * a key mismatch is explained before Android rejects the install.
+     */
+    private fun isSignedBySameKey(apk: File): Boolean {
+        val installed = installedSignatureDigest() ?: return true
+        val downloaded = archiveSignatureDigest(apk) ?: return true
+        return installed == downloaded
+    }
+
+    private fun installedSignatureDigest(): String? = runCatching {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            android.content.pm.PackageManager.GET_SIGNATURES
+        }
+        val info = app.packageManager.getPackageInfo(app.packageName, flags)
+        certificateDigest(info)
+    }.getOrNull()
+
+    private fun archiveSignatureDigest(apk: File): String? = runCatching {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            android.content.pm.PackageManager.GET_SIGNATURES
+        }
+        val info = app.packageManager.getPackageArchiveInfo(apk.absolutePath, flags) ?: return@runCatching null
+        certificateDigest(info)
+    }.getOrNull()
+
+    private fun certificateDigest(info: android.content.pm.PackageInfo): String? {
+        val bytes: ByteArray = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = info.signingInfo ?: return null
+            val signers = if (signingInfo.hasMultipleSigners()) {
+                signingInfo.apkContentsSigners
+            } else {
+                signingInfo.signingCertificateHistory
+            }
+            signers.firstOrNull()?.toByteArray() ?: return null
+        } else {
+            @Suppress("DEPRECATION")
+            info.signatures?.firstOrNull()?.toByteArray() ?: return null
+        }
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+        return digest.joinToString(separator = "") { "%02x".format(it) }
+    }
 
     private fun updateFile(version: String): File =
         File(File(app.filesDir, "updates"), "1-download-manager-$version.apk")

@@ -1,9 +1,23 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
+
+// Release signing material lives outside version control. When keystore/keystore.properties
+// exists the release build is signed with that key; otherwise it falls back to the debug key
+// so the project still assembles on a fresh clone or a CI machine.
+val keystorePropertiesFile = rootProject.file("keystore/keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+val releaseStorePath = keystoreProperties.getProperty("storeFile")
+val hasReleaseKeystore = !releaseStorePath.isNullOrBlank() && rootProject.file(releaseStorePath).exists()
 
 android {
     namespace = "com.downloadhub.app"
@@ -13,8 +27,8 @@ android {
         applicationId = "com.downloadhub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.1.1"
 
         // Single source of truth for the About page and the in-app updater.
         buildConfigField("String", "GITHUB_OWNER", "\"RDK456\"")
@@ -29,13 +43,39 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = rootProject.file(releaseStorePath)
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Obfuscation is intentionally off: the JNI engines (libtorrent4j,
+            // yt-dlp/FFmpeg wrapper) and Room reflection are easier to keep correct
+            // without a device to test on.
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn(
+                    "No keystore/keystore.properties found - the release build is signed with " +
+                        "the debug key and cannot replace an installed release-signed build."
+                )
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

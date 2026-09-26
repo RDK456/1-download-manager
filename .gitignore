@@ -19,3 +19,9 @@ Thumbs.db
 
 # Build artifacts
 *.apk
+
+# Release signing material - keep the keystore and its passwords out of git.
+# Losing these means no future release can replace an already installed build.
+keystore/
+*.jks
+*.keystore
