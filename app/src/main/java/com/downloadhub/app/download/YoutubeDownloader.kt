@@ -4,8 +4,10 @@ import android.content.Context
 import com.downloadhub.app.data.SettingsRepository
 import com.downloadhub.app.data.local.DownloadDao
 import com.downloadhub.app.data.local.DownloadEntity
+import com.downloadhub.app.data.model.AudioFormat
 import com.downloadhub.app.data.model.DownloadCategory
 import com.downloadhub.app.data.model.DownloadStatus
+import com.downloadhub.app.data.model.MediaQuality
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
@@ -111,17 +113,8 @@ class YoutubeDownloader(
             addOption("--concurrent-fragments", "4")
             addOption("--socket-timeout", "30")
             addOption("--paths", workDirectory.absolutePath)
-            addOption("-o", "%(title).180s [%(id)s].%(ext)s")
             item.userAgent?.let { addOption("--user-agent", it) }
-            if (item.category == DownloadCategory.AUDIO) {
-                addOption("-f", "bestaudio/best")
-                addOption("-x")
-                addOption("--audio-format", "m4a")
-                addOption("--audio-quality", "0")
-            } else {
-                addOption("-f", "bestvideo+bestaudio/best")
-                addOption("--merge-output-format", "mp4")
-            }
+            applyFormatSelection(this, item)
         }
 
         val lastCallback = AtomicLong(0L)
@@ -182,6 +175,38 @@ class YoutubeDownloader(
         }
     }
 
+    /**
+     * Builds the yt-dlp format selection from the user's choice. The explicit
+     * height ceiling keeps the request honest, and falls back to the best
+     * available stream when YouTube does not offer that height.
+     */
+    private fun applyFormatSelection(request: YoutubeDLRequest, item: DownloadEntity) {
+        val quality = MediaQuality.fromValue(item.quality)
+        val audioFormat = AudioFormat.fromValue(item.audioFormat)
+        if (quality.isAudioOnly || item.category == DownloadCategory.AUDIO) {
+            val target = if (item.category == DownloadCategory.AUDIO && item.quality == null) {
+                AudioFormat.M4A
+            } else {
+                audioFormat
+            }
+            request.addOption("-f", "bestaudio/best")
+            request.addOption("-x")
+            request.addOption("--audio-format", target.value)
+            request.addOption("--audio-quality", if (target == AudioFormat.OPUS) "5" else "0")
+            request.addOption("--embed-metadata")
+            return
+        }
+
+        val height = quality.maxHeight
+        val selector = if (height == null) {
+            "bestvideo+bestaudio/best"
+        } else {
+            "bestvideo[height<=$height]+bestaudio/best[height<=$height]/best"
+        }
+        request.addOption("-f", selector)
+        request.addOption("--merge-output-format", "mp4")
+    }
+
     private fun estimateTotal(exact: Long, approximate: Long): Long = when {
         exact > 0 -> exact
         approximate > 0 -> approximate
@@ -196,6 +221,8 @@ class YoutubeDownloader(
         "mp3" -> "audio/mpeg"
         "opus" -> "audio/opus"
         "ogg" -> "audio/ogg"
+        "wav" -> "audio/wav"
+        "aiff" -> "audio/aiff"
         else -> "application/octet-stream"
     }
 

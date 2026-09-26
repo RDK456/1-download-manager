@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudDownload
@@ -61,9 +63,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.documentfile.provider.DocumentFile
 import com.downloadhub.app.data.local.DownloadEntity
+import com.downloadhub.app.data.model.DownloadCategory
 import com.downloadhub.app.data.model.DownloadSource
 import com.downloadhub.app.data.model.DownloadStatus
 import com.downloadhub.app.data.model.ThemeMode
+import com.downloadhub.app.data.model.label
 import com.downloadhub.app.ui.theme.DownloadHubTheme
 import kotlinx.coroutines.flow.collectLatest
 
@@ -89,6 +93,7 @@ fun DownloadHubApp(
         val selectedItem by viewModel.selectedDownload.collectAsStateWithLifecycle()
         val editorSeed by viewModel.editorSeed.collectAsStateWithLifecycle()
         val filter by viewModel.currentFilter.collectAsStateWithLifecycle()
+        val category by viewModel.currentCategory.collectAsStateWithLifecycle()
         val query by viewModel.searchQuery.collectAsStateWithLifecycle()
         val destinationTreeUri by viewModel.destinationTreeUri.collectAsStateWithLifecycle()
         val downloaderVersion by viewModel.downloaderVersion.collectAsStateWithLifecycle()
@@ -177,24 +182,29 @@ fun DownloadHubApp(
                         items = visibleItems,
                         allItems = allItems,
                         filter = filter,
+                        category = category,
                         query = query,
                         onQueryChange = viewModel::setQuery,
                         onFilterChange = viewModel::setFilter,
+                        onCategoryChange = viewModel::setCategoryFilter,
                         onSelect = viewModel::select,
                         onPause = viewModel::pause,
                         onResume = viewModel::resume,
                         onPauseAll = viewModel::pauseAll,
                         onResumeAll = viewModel::resumeAll,
                         onRetry = viewModel::retry,
-                        onDelete = viewModel::delete
+                        onDelete = viewModel::delete,
+                        onPickTorrent = viewModel::addTorrentFile
                     )
                     AppDestination.TORRENTS -> DownloadsScreen(
                         items = allItems.filter { it.source == DownloadSource.TORRENT },
                         allItems = allItems,
                         filter = DownloadFilter.TORRENTS,
+                        category = null,
                         query = query,
                         onQueryChange = viewModel::setQuery,
                         onFilterChange = viewModel::setFilter,
+                        onCategoryChange = viewModel::setCategoryFilter,
                         onSelect = viewModel::select,
                         onPause = viewModel::pause,
                         onResume = viewModel::resume,
@@ -203,7 +213,8 @@ fun DownloadHubApp(
                         onRetry = viewModel::retry,
                         onDelete = viewModel::delete,
                         emptyTitle = "No torrents yet",
-                        emptyAction = "Add torrent"
+                        emptyAction = "Add torrent",
+                        onPickTorrent = viewModel::addTorrentFile
                     )
                     AppDestination.SETTINGS -> SettingsScreen(
                         themeMode = themeMode,
@@ -253,9 +264,11 @@ private fun DownloadsScreen(
     items: List<DownloadEntity>,
     allItems: List<DownloadEntity>,
     filter: DownloadFilter,
+    category: DownloadCategory?,
     query: String,
     onQueryChange: (String) -> Unit,
     onFilterChange: (DownloadFilter) -> Unit,
+    onCategoryChange: (DownloadCategory?) -> Unit,
     onSelect: (String) -> Unit,
     onPause: (String) -> Unit,
     onResume: (String) -> Unit,
@@ -264,11 +277,16 @@ private fun DownloadsScreen(
     onRetry: (String) -> Unit,
     onDelete: (String) -> Unit,
     emptyTitle: String = "Your queue is empty",
-    emptyAction: String = "Add a download"
+    emptyAction: String = "Add a download",
+    onPickTorrent: (Uri) -> Unit
 ) {
+    val torrentPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(onPickTorrent) }
     val activeCount = allItems.count { it.status.isActiveUi }
     val pausedCount = allItems.count { it.status == DownloadStatus.PAUSED }
     val completedCount = allItems.count { it.status == DownloadStatus.COMPLETED }
+    val categoryCounts = remember(allItems) { allItems.groupingBy { it.category }.eachCount() }
     Column(modifier = Modifier.fillMaxSize()) {
         SummaryBand(activeCount, completedCount, allItems.size)
         androidx.compose.material3.OutlinedTextField(
@@ -296,6 +314,11 @@ private fun DownloadsScreen(
                     )
                 }
             }
+            CategoryFilterRow(
+                selected = category,
+                counts = categoryCounts,
+                onSelect = onCategoryChange
+            )
         }
         if (activeCount > 0 || pausedCount > 0) {
             Row(
@@ -317,7 +340,34 @@ private fun DownloadsScreen(
             }
         }
         if (items.isEmpty()) {
-            EmptyDownloads(title = emptyTitle, action = emptyAction)
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                EmptyDownloads(
+                    modifier = Modifier.weight(1f),
+                    title = emptyTitle,
+                    action = emptyAction
+                )
+                OutlinedButton(
+                    onClick = {
+                        torrentPicker.launch(
+                            arrayOf(
+                                "application/x-bittorrent",
+                                "application/vnd.torrent",
+                                "application/octet-stream"
+                            )
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp, vertical = 24.dp)
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Open a .torrent file")
+                }
+            }
         } else {
             LazyColumn(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
@@ -370,10 +420,59 @@ private fun SummaryValue(value: Int, label: String) {
 }
 
 @Composable
-private fun EmptyDownloads(title: String, action: String) {
-    Column(
+private fun CategoryFilterRow(
+    selected: DownloadCategory?,
+    counts: Map<DownloadCategory, Int>,
+    onSelect: (DownloadCategory?) -> Unit
+) {
+    val options = remember(counts) {
+        listOf<DownloadCategory?>(null) + DownloadCategory.entries.filter { candidate ->
+            val count = counts[candidate] ?: 0
+            val legacy = if (candidate == DownloadCategory.COMPRESSED) {
+                counts[DownloadCategory.ARCHIVE] ?: 0
+            } else {
+                0
+            }
+            count + legacy > 0 || candidate in setOf(
+                DownloadCategory.PROGRAM,
+                DownloadCategory.COMPRESSED,
+                DownloadCategory.FILE
+            )
+        }
+    }
+    Row(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        options.forEach { option ->
+            val label = option?.label ?: "All types"
+            val count = if (option == null) {
+                counts.values.sum()
+            } else {
+                (counts[option] ?: 0) +
+                    if (option == DownloadCategory.COMPRESSED) counts[DownloadCategory.ARCHIVE] ?: 0 else 0
+            }
+            androidx.compose.material3.FilterChip(
+                selected = selected == option,
+                onClick = { onSelect(option) },
+                label = { Text(if (count > 0) "$label ($count)" else label) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyDownloads(
+    title: String,
+    action: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center

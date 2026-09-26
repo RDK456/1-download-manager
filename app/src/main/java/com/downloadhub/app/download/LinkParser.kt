@@ -37,6 +37,45 @@ object LinkParser {
             host == "youtube-nocookie.com"
     }
 
+    /**
+     * File providers are inconsistent about the MIME type they report for
+     * torrents, so accept either a well-known bittorrent type or a .torrent name.
+     */
+    fun looksLikeTorrent(name: String?, mimeType: String? = null): Boolean {
+        val mime = mimeType?.lowercase(Locale.US).orEmpty()
+        if (mime.contains("torrent") || mime.contains("bittorrent")) return true
+        val candidate = name?.lowercase(Locale.US).orEmpty()
+        return candidate.endsWith(".torrent") ||
+            candidate.substringAfterLast('/', "").endsWith(".torrent")
+    }
+
+    private val programExtensions = setOf(
+        "exe", "msi", "msix", "apk", "xapk", "apks", "deb", "rpm", "appimage", "pkg",
+        "dmg", "jar", "war", "run", "app", "msu", "snap", "flatpak", "msc", "bat", "cmd", "sh"
+    )
+
+    private val compressedExtensions = setOf(
+        "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "lz", "lzma",
+        "iso", "cab", "arj", "sit", "jar", "apkm"
+    )
+
+    private val documentExtensions = setOf(
+        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "epub",
+        "odt", "ods", "odp", "rtf", "md", "json", "xml", "html", "htm"
+    )
+
+    private val audioExtensions = setOf(
+        "mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "wma", "aiff", "m4b"
+    )
+
+    private val videoExtensions = setOf(
+        "mp4", "mkv", "webm", "mov", "avi", "m4v", "flv", "wmv", "mpg", "mpeg", "ts", "3gp"
+    )
+
+    private val imageExtensions = setOf(
+        "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "tiff", "svg", "ico"
+    )
+
     fun categoryFor(
         source: DownloadSource,
         fileName: String,
@@ -45,20 +84,26 @@ object LinkParser {
         val extension = fileName.substringAfterLast('.', "").lowercase(Locale.US)
         val mime = mimeType?.lowercase(Locale.US).orEmpty()
         return when {
-            source == DownloadSource.YOUTUBE && extension == "mp3" || mime.contains("audio") ->
+            extension in audioExtensions || mime.startsWith("audio/") ->
                 DownloadCategory.AUDIO
-            extension in setOf("mp4", "mkv", "webm", "mov", "avi", "m4v") || mime.startsWith("video/") ->
+            extension in videoExtensions || mime.startsWith("video/") ->
                 DownloadCategory.VIDEO
-            extension in setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus") ->
-                DownloadCategory.AUDIO
-            extension in setOf("jpg", "jpeg", "png", "gif", "webp", "heic") || mime.startsWith("image/") ->
+            extension in imageExtensions || mime.startsWith("image/") ->
                 DownloadCategory.IMAGE
-            extension in setOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz") ->
-                DownloadCategory.ARCHIVE
-            extension in setOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "epub") ||
-                mime.startsWith("text/") || mime.contains("pdf") -> DownloadCategory.DOCUMENT
-            source == DownloadSource.TORRENT -> DownloadCategory.ARCHIVE
-            else -> DownloadCategory.OTHER
+            extension in programExtensions || mime.contains("android.package") ||
+                mime.contains("msdownload") || mime.contains("x-msdownload") ||
+                mime.contains("x-executable") || mime.contains("x-msdos-program") ->
+                DownloadCategory.PROGRAM
+            extension in compressedExtensions || mime.contains("zip") || mime.contains("compressed") ||
+                mime.contains("x-tar") || mime.contains("x-7z") || mime.contains("x-rar") ->
+                DownloadCategory.COMPRESSED
+            extension in documentExtensions || mime.startsWith("text/") || mime.contains("pdf") ||
+                mime.contains("officedocument") || mime.contains("msword") || mime.contains("vnd.ms-") ->
+                DownloadCategory.DOCUMENT
+            source == DownloadSource.YOUTUBE -> DownloadCategory.VIDEO
+            source == DownloadSource.TORRENT -> DownloadCategory.OTHER
+            mime.contains("bittorrent") || extension == "torrent" -> DownloadCategory.FILE
+            else -> DownloadCategory.FILE
         }
     }
 

@@ -10,12 +10,22 @@ import com.downloadhub.app.data.model.DownloadStatus
 
 @Database(
     entities = [DownloadEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(DownloadConverters::class)
 abstract class DownloadDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
+
+    companion object {
+        /** Adds the YouTube quality/audio-format columns without wiping the queue. */
+        val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN quality TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN audioFormat TEXT")
+            }
+        }
+    }
 }
 
 class DownloadConverters {

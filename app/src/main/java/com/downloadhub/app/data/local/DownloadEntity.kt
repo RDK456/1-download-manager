@@ -32,5 +32,7 @@ data class DownloadEntity(
     val lastModified: String?,
     val errorMessage: String?,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val quality: String? = null,
+    val audioFormat: String? = null
 )

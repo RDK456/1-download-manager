@@ -15,7 +15,10 @@ class AppContainer(context: Context) {
         appContext,
         DownloadDatabase::class.java,
         "download-hub.db"
-    ).fallbackToDestructiveMigration().build()
+    )
+        .addMigrations(DownloadDatabase.MIGRATION_1_2)
+        .fallbackToDestructiveMigration()
+        .build()
 
     val storage = DownloadStorage(appContext)
     val settings = SettingsRepository(appContext)

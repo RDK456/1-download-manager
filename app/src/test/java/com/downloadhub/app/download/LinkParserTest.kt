@@ -51,7 +51,7 @@ class LinkParserTest {
             LinkParser.categoryFor(DownloadSource.HTTP, "movie.mkv")
         )
         assertEquals(
-            DownloadCategory.ARCHIVE,
+            DownloadCategory.COMPRESSED,
             LinkParser.categoryFor(DownloadSource.TORRENT, "archive.zip")
         )
         assertEquals(

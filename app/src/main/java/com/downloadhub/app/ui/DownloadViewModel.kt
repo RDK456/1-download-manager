@@ -11,10 +11,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.downloadhub.app.DownloadHubApplication
 import com.downloadhub.app.data.local.DownloadEntity
+import com.downloadhub.app.data.model.AudioFormat
 import com.downloadhub.app.data.model.DownloadCategory
 import com.downloadhub.app.data.model.DownloadCreateRequest
 import com.downloadhub.app.data.model.DownloadSource
 import com.downloadhub.app.data.model.DownloadStatus
+import com.downloadhub.app.data.model.MediaQuality
 import com.downloadhub.app.data.model.ThemeMode
 import com.downloadhub.app.download.DownloadService
 import com.downloadhub.app.download.LinkParser
@@ -44,7 +46,9 @@ data class EditorSeed(
     val fileName: String? = null,
     val category: DownloadCategory? = null,
     val userAgent: String? = null,
-    val contentDisposition: String? = null
+    val contentDisposition: String? = null,
+    val quality: MediaQuality = MediaQuality.BEST,
+    val audioFormat: AudioFormat = AudioFormat.M4A
 )
 
 sealed interface DownloadEvent {
@@ -69,6 +73,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 
     private val query = MutableStateFlow("")
     private val filter = MutableStateFlow(DownloadFilter.ALL)
+    private val categoryFilter = MutableStateFlow<DownloadCategory?>(null)
     private val _selectedId = MutableStateFlow<String?>(null)
     private val _editorSeed = MutableStateFlow<EditorSeed?>(null)
     private val _events = MutableSharedFlow<DownloadEvent>(extraBufferCapacity = 8)
@@ -77,13 +82,15 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     val selectedId: StateFlow<String?> = _selectedId
     val editorSeed: StateFlow<EditorSeed?> = _editorSeed
     val currentFilter: StateFlow<DownloadFilter> = filter
+    val currentCategory: StateFlow<DownloadCategory?> = categoryFilter
     val searchQuery: StateFlow<String> = query
 
     val visibleDownloads: StateFlow<List<DownloadEntity>> = combine(
         allDownloads,
         query,
-        filter
-    ) { items, search, selectedFilter ->
+        filter,
+        categoryFilter
+    ) { items, search, selectedFilter, selectedCategory ->
         val normalized = search.trim().lowercase()
         items.filter { item ->
             val matchesSearch = normalized.isBlank() ||
@@ -95,7 +102,8 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 DownloadFilter.COMPLETED -> item.status == com.downloadhub.app.data.model.DownloadStatus.COMPLETED
                 DownloadFilter.TORRENTS -> item.source == DownloadSource.TORRENT
             }
-            matchesSearch && matchesFilter
+            val matchesCategory = selectedCategory == null || item.category.matchesFilter(selectedCategory)
+            matchesSearch && matchesFilter && matchesCategory
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -109,6 +117,10 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 
     fun setQuery(value: String) {
         query.value = value
+    }
+
+    fun setCategoryFilter(value: DownloadCategory?) {
+        categoryFilter.value = if (categoryFilter.value == value) null else value
     }
 
     fun select(id: String?) {
@@ -132,7 +144,9 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         category: DownloadCategory? = null,
         sourceOverride: DownloadSource? = null,
         userAgent: String? = null,
-        contentDisposition: String? = null
+        contentDisposition: String? = null,
+        quality: MediaQuality? = null,
+        audioFormat: AudioFormat? = null
     ) {
         viewModelScope.launch {
             val link = LinkParser.extractFirstLink(rawLink) ?: rawLink.trim()
@@ -144,10 +158,12 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             } else {
                 sourceOverride
             }
-            val effectiveCategory = category ?: if (source == DownloadSource.YOUTUBE) {
-                DownloadCategory.VIDEO
-            } else {
-                null
+            val chosenQuality = quality ?: MediaQuality.BEST
+            val audioOnly = source == DownloadSource.YOUTUBE && chosenQuality.isAudioOnly
+            val effectiveCategory = category ?: when {
+                source == DownloadSource.YOUTUBE && audioOnly -> DownloadCategory.AUDIO
+                source == DownloadSource.YOUTUBE -> DownloadCategory.VIDEO
+                else -> null
             }
             if (source == DownloadSource.TORRENT && !link.startsWith("magnet:", ignoreCase = true)) {
                 if (!link.startsWith("http", ignoreCase = true)) {
@@ -165,7 +181,13 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 fileName = fileName,
                 category = effectiveCategory,
                 userAgent = userAgent,
-                contentDisposition = contentDisposition
+                contentDisposition = contentDisposition,
+                quality = if (source == DownloadSource.YOUTUBE) chosenQuality.value else null,
+                audioFormat = if (source == DownloadSource.YOUTUBE) {
+                    (audioFormat ?: AudioFormat.M4A).value
+                } else {
+                    null
+                }
             )
             runCatching { repository.create(request) }
                 .onSuccess {
@@ -177,18 +199,28 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * Copies a picked .torrent file into app-private storage (so the download can
+     * be resumed later without holding onto a transient content grant) and queues it.
+     */
     fun addTorrentFile(uri: Uri) {
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val resolver = getApplication<Application>().contentResolver
-                    val name = resolver.displayName(uri) ?: "download.torrent"
-                    val inputDir = File(getApplication<Application>().filesDir, "torrent-inputs")
+                    val app = getApplication<Application>()
+                    val name = app.contentResolver.displayName(uri)
+                        ?: uri.lastPathSegment
+                        ?: "download.torrent"
+                    if (!LinkParser.looksLikeTorrent(name, app.contentResolver.getType(uri))) {
+                        error("Select a .torrent file")
+                    }
+                    val inputDir = File(app.filesDir, "torrent-inputs")
                     inputDir.mkdirs()
                     val target = File(inputDir, "${UUID.randomUUID()}.torrent")
-                    resolver.openInputStream(uri)?.use { input ->
+                    app.contentResolver.openInputStream(uri)?.use { input ->
                         target.outputStream().use { output -> input.copyTo(output) }
                     } ?: error("Could not read the selected torrent")
+                    if (target.length() <= 0L) error("The selected .torrent file is empty")
                     requestFromTorrent(name, target.absolutePath)
                 }
             }.onSuccess { request ->
@@ -217,6 +249,10 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 _events.emit(DownloadEvent.Message("Download removed"))
             }
         }
+    }
+
+    fun notify(text: String) {
+        viewModelScope.launch { _events.emit(DownloadEvent.Message(text)) }
     }
 
     fun setTheme(mode: ThemeMode) {
@@ -288,9 +324,16 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             source = DownloadSource.TORRENT,
             url = path,
             fileName = name,
-            category = DownloadCategory.ARCHIVE,
+            category = null,
             torrentFilePath = path
         )
+}
+
+/** A "Compressed" chip should also catch rows that were stored as ARCHIVE. */
+private fun DownloadCategory.matchesFilter(filter: DownloadCategory): Boolean = when (filter) {
+    DownloadCategory.COMPRESSED -> this == DownloadCategory.COMPRESSED || this == DownloadCategory.ARCHIVE
+    DownloadCategory.ARCHIVE -> this == DownloadCategory.ARCHIVE || this == DownloadCategory.COMPRESSED
+    else -> this == filter
 }
 
 private val DownloadStatus.isActiveCompat: Boolean

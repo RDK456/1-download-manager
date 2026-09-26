@@ -38,7 +38,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.downloadhub.app.data.local.DownloadEntity
+import com.downloadhub.app.data.model.AudioFormat
+import com.downloadhub.app.data.model.DownloadSource
 import com.downloadhub.app.data.model.DownloadStatus
+import com.downloadhub.app.data.model.MediaQuality
+import com.downloadhub.app.data.model.label
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,8 +95,19 @@ fun DownloadDetailsSheet(
                 )
             }
             HorizontalDivider()
-            DetailRow("Source", item.source.name.lowercase().replaceFirstChar { it.uppercase() })
-            DetailRow("Type", item.category.name.lowercase().replaceFirstChar { it.uppercase() })
+            DetailRow("Source", sourceLabel(item.source))
+            DetailRow("Category", item.category.label)
+            if (item.source == DownloadSource.YOUTUBE) {
+                val quality = MediaQuality.fromValue(item.quality)
+                DetailRow(
+                    "Quality",
+                    if (quality.isAudioOnly) {
+                        "Audio only · ${AudioFormat.fromValue(item.audioFormat).label}"
+                    } else {
+                        quality.label
+                    }
+                )
+            }
             item.mimeType?.let { DetailRow("Format", it) }
             item.outputPath?.let { DetailRow("Location", it, maxLines = 2) }
             if (item.status == DownloadStatus.FAILED) {

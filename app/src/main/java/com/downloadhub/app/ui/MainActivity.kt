@@ -66,36 +66,43 @@ class MainActivity : ComponentActivity() {
         val data = intent.data
         val clipUri = clipItem?.uri
         val streamUri = intent.extras?.getParcelable<Uri>(Intent.EXTRA_STREAM)
+
+        // A .torrent handed to us by a file manager or another app wins over text,
+        // so "Open with" starts the torrent instead of showing an empty editor.
+        val torrentUri = listOfNotNull(data, clipUri, streamUri)
+            .firstOrNull { isTorrentContent(it) }
+        if (torrentUri != null) {
+            viewModel.addTorrentFile(torrentUri)
+            return
+        }
+
         val link = LinkParser.extractFirstLink(sharedText.orEmpty())
             ?: LinkParser.extractFirstLink(clipText.orEmpty())
-            ?: when {
-                data != null && (data.scheme == "http" || data.scheme == "https" || data.scheme == "magnet") ->
-                    data.toString()
-                clipUri != null -> clipUri.toString()
-                streamUri != null -> streamUri.toString()
-                else -> null
-            }
+            ?: listOfNotNull(data, clipUri, streamUri)
+                .firstOrNull { it.scheme == "http" || it.scheme == "https" || it.scheme == "magnet" }
+                ?.toString()
         if (link != null) incomingLink = link
 
-        val sharedContentUri = when {
-            data?.scheme == "content" -> data
-            clipUri?.scheme == "content" -> clipUri
-            streamUri?.scheme == "content" -> streamUri
-            else -> null
+        // Anything else that arrived as a file (a PDF, an APK, an image) is not a
+        // link we can queue, so say so instead of opening an unusable editor.
+        val unusableFile = listOfNotNull(data, clipUri, streamUri).any {
+            it.scheme == "content" || it.scheme == "file"
         }
-        if (sharedContentUri != null && isTorrentContent(sharedContentUri)) {
-            viewModel.addTorrentFile(sharedContentUri)
+        if (link == null && unusableFile) {
+            viewModel.notify("Only .torrent files can be opened here. Use a link for other downloads.")
         }
         incomingDownloadId = intent.getStringExtra(EXTRA_DOWNLOAD_ID) ?: incomingDownloadId
     }
 
     private fun isTorrentContent(uri: Uri): Boolean = runCatching {
-        val mime = contentResolver.getType(uri).orEmpty()
-        val name = queryName(uri).orEmpty()
-        mime.contains("torrent", ignoreCase = true) ||
-            mime.contains("bittorrent", ignoreCase = true) ||
-            name.endsWith(".torrent", ignoreCase = true) ||
-            uri.toString().contains("torrent", ignoreCase = true)
+        if (uri.scheme != "content" && uri.scheme != "file") return@runCatching false
+        val mime = runCatching { contentResolver.getType(uri) }.getOrNull()
+        val name = runCatching { queryName(uri) }.getOrNull()
+            ?: uri.lastPathSegment
+            ?: uri.path
+            ?: ""
+        LinkParser.looksLikeTorrent(name, mime) ||
+            name.substringAfterLast('/').endsWith(".torrent", ignoreCase = true)
     }.getOrDefault(false)
 
     private fun queryName(uri: Uri): String? {

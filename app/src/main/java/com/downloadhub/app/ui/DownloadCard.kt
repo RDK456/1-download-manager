@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Description
@@ -50,6 +51,7 @@ import com.downloadhub.app.data.local.DownloadEntity
 import com.downloadhub.app.data.model.DownloadCategory
 import com.downloadhub.app.data.model.DownloadSource
 import com.downloadhub.app.data.model.DownloadStatus
+import com.downloadhub.app.data.model.label
 
 @Composable
 fun DownloadCard(
@@ -97,7 +99,7 @@ fun DownloadCard(
                     )
                     Spacer(Modifier.size(2.dp))
                     Text(
-                        "${sourceLabel(item.source)} • ${statusLabel(item.status)}",
+                        "${item.category.label} • ${statusLabel(item.status)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = statusColor(item.status),
                         maxLines = 1,
@@ -213,9 +215,10 @@ private fun iconFor(item: DownloadEntity): ImageVector = when {
         DownloadCategory.VIDEO -> Icons.Default.Movie
         DownloadCategory.AUDIO -> Icons.Default.MusicNote
         DownloadCategory.IMAGE -> Icons.Default.Image
-        DownloadCategory.ARCHIVE -> Icons.Default.Archive
+        DownloadCategory.COMPRESSED, DownloadCategory.ARCHIVE -> Icons.Default.Archive
         DownloadCategory.DOCUMENT -> Icons.Default.Description
-        DownloadCategory.OTHER -> Icons.Default.InsertDriveFile
+        DownloadCategory.PROGRAM -> Icons.Default.Apps
+        DownloadCategory.FILE, DownloadCategory.OTHER -> Icons.Default.InsertDriveFile
     }
 }
 
@@ -223,8 +226,10 @@ private fun categoryColor(category: DownloadCategory): Color = when (category) {
     DownloadCategory.VIDEO -> Color(0xFF7C3AED)
     DownloadCategory.AUDIO -> Color(0xFF00796B)
     DownloadCategory.DOCUMENT -> Color(0xFF1769E0)
-    DownloadCategory.ARCHIVE -> Color(0xFFB45309)
+    DownloadCategory.COMPRESSED, DownloadCategory.ARCHIVE -> Color(0xFFB45309)
     DownloadCategory.IMAGE -> Color(0xFFBE185D)
+    DownloadCategory.PROGRAM -> Color(0xFF0F766E)
+    DownloadCategory.FILE -> Color(0xFF334155)
     DownloadCategory.OTHER -> Color(0xFF64748B)
 }
 
