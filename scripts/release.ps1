@@ -54,6 +54,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+$Repository = 'RDK456/1-download-manager'
 $GradleFile = Join-Path $RepoRoot 'app\build.gradle.kts'
 $DebugApkBuilt = Join-Path $RepoRoot 'app\build\outputs\apk\debug\app-debug.apk'
 $ReleaseApkBuilt = Join-Path $RepoRoot 'app\build\outputs\apk\release\app-release.apk'
@@ -198,8 +199,10 @@ Open this app's Settings -> Check for updates to install this release.
         if ($LASTEXITCODE -ne 0) { throw "Could not update release $tag." }
     }
 
-    # Confirm GitHub really has it before claiming success.
-    $published = & $gh release view $tag --repo 'RDK456/1-download-manager' --json tagName,assets --jq '.tagName + " " + (.assets | length | tostring)' 2>$null
+    # Confirm GitHub really has it before claiming success. Quote the --json list:
+    # PowerShell would otherwise split "tagName,assets" into two arguments.
+    $published = & $gh release view $tag --repo $Repository --json 'tagName,assets' `
+        --jq '.tagName + " assets=" + (.assets | length | tostring)' 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $published) {
         throw "Release $tag could not be read back from GitHub; treating the publish as failed."
     }
