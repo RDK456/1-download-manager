@@ -133,16 +133,21 @@ try {
     # --- 4. verify the published signature ----------------------------------
     $sdkRoot = $env:ANDROID_HOME
     if (-not $sdkRoot) { $sdkRoot = $env:ANDROID_SDK_ROOT }
-    $aapt = $null
+    $apksigner = $null
     if ($sdkRoot) {
-        $aapt = Get-ChildItem (Join-Path $sdkRoot 'build-tools') -Recurse -Filter 'aapt2.exe' `
+        $apksigner = Get-ChildItem (Join-Path $sdkRoot 'build-tools') -Recurse -Filter 'apksigner.bat' `
             -ErrorAction SilentlyContinue |
             Sort-Object FullName -Descending | Select-Object -First 1
     }
-    if ($aapt) {
-        $badging = & $aapt.FullName dump badging $apkAsset 2>&1
-        $signed = ($badging | Select-String -Pattern "v2 scheme" | Select-Object -First 1)
-        Write-Host ("Signature: " + $(if ($signed) { 'v2/v3 present' } else { 'v1 only' })) -ForegroundColor DarkGray
+    if ($apksigner) {
+        $verify = & $apksigner.FullName verify -v $apkAsset 2>&1
+        $verifies = [bool]($verify | Select-String -Pattern '^Verifies')
+        $v2 = [bool]($verify | Select-String -Pattern 'v2 scheme.*true')
+        $v3 = [bool]($verify | Select-String -Pattern 'v3 scheme.*true')
+        $signer = ($verify | Select-String -Pattern 'certificate DN' | Select-Object -First 1)
+        Write-Host ("Signature: " + $(if ($verifies) { "verified (v2=$v2 v3=$v3)" } else { 'NOT VERIFIED' })) -ForegroundColor DarkGray
+        if ($signer) { Write-Host ("Signer   : " + $signer.ToString().Trim()) -ForegroundColor DarkGray }
+        if (-not $verifies) { throw 'The APK signature did not verify; refusing to publish.' }
     }
 
     # --- 5. commit + tag + push --------------------------------------------
