@@ -242,7 +242,11 @@ private fun SettingSwitch(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = settingSwitchColors()
+        )
     }
 }
 

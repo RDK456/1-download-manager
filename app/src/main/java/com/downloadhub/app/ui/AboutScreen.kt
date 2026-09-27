@@ -198,7 +198,11 @@ fun AboutScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(checked = autoCheckUpdates, onCheckedChange = onAutoCheckChange)
+                Switch(
+                    checked = autoCheckUpdates,
+                    onCheckedChange = onAutoCheckChange,
+                    colors = settingSwitchColors()
+                )
             }
         }
 

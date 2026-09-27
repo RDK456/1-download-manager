@@ -85,6 +85,28 @@ class DownloadSettingsTest {
     }
 
     @Test
+    fun uncheckedTogglesAreVisibleToo() {
+        // A screenshot showed empty pale pills: the unchecked track
+        // (surfaceVariant) and thumb (outline) were both dark greys in dark
+        // palettes, so the knob disappeared. Explicit switch colours now derive
+        // the unchecked thumb from onSurface.
+        AppTheme.entries.forEach { theme ->
+            listOf(true, false).forEach { dark ->
+                val scheme = theme.colorScheme(dark)
+                val difference = kotlin.math.abs(
+                    scheme.onSurface.luminance() - scheme.surfaceVariant.luminance()
+                )
+                assertTrue(
+                    "${theme.name} dark=$dark unchecked toggle knob is invisible " +
+                        "(track=${scheme.surfaceVariant.luminance()} " +
+                        "knob=${scheme.onSurface.luminance()})",
+                    difference > 0.3f
+                )
+            }
+        }
+    }
+
+    @Test
     fun amoledContainersStayVisibleOnBlack() {
         val scheme = AppTheme.AMOLED.colorScheme(dark = true)
         // Compose's luminance() is linearised, so compare sRGB channels directly:

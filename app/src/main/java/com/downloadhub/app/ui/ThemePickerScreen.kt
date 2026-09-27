@@ -25,6 +25,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -76,6 +78,15 @@ fun ThemePickerScreen(
             fontWeight = FontWeight.Bold
         )
 
+        Text(
+            "Tap a theme to apply it immediately. AMOLED uses a pure black background, " +
+                "so it is much darker than the other dark themes.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        LiveThemePreview(theme = appTheme, dark = isDarkMode(themeMode))
+
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             modifier = Modifier
@@ -94,6 +105,102 @@ fun ThemePickerScreen(
         }
     }
 }
+
+/** True when the resolved palette is a dark one. */
+@Composable
+private fun isDarkMode(mode: ThemeMode): Boolean = when (mode) {
+    ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK, ThemeMode.AMOLED -> true
+}
+
+/**
+ * A miniature of the real UI rendered in the selected palette, so the choice is
+ * obvious before leaving the page. The screen behind it already uses this theme,
+ * which is what made a slow or invisible change easy to miss.
+ */
+@Composable
+private fun LiveThemePreview(theme: AppTheme, dark: Boolean) {
+    val scheme = theme.colorScheme(dark)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = scheme.background),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "Preview",
+                style = MaterialTheme.typography.labelMedium,
+                color = scheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(34.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .background(scheme.surfaceVariant),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    modifier = Modifier
+                        .size(14.dp)
+                        .clip(CircleShape)
+                        .background(scheme.primary)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Video Ã¢â‚¬Â¢ Downloading",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurface
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(34.dp)
+                        .clip(MaterialTheme.shapes.small)
+                        .background(scheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Active",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = scheme.onSecondaryContainer
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(34.dp)
+                        .clip(MaterialTheme.shapes.small)
+                        .background(scheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Switch(checked = true, onCheckedChange = {}, colors = previewSwitchColors(scheme))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun previewSwitchColors(scheme: androidx.compose.material3.ColorScheme) =
+    androidx.compose.material3.SwitchDefaults.colors(
+        checkedThumbColor = Color.White,
+        checkedTrackColor = scheme.primary,
+        checkedBorderColor = scheme.primary,
+        uncheckedThumbColor = scheme.onSurface,
+        uncheckedTrackColor = scheme.surfaceVariant,
+        uncheckedBorderColor = scheme.outline
+    )
 
 @Composable
 private fun ThemeCard(
@@ -138,12 +245,20 @@ private fun ThemeCard(
             }
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    theme.label,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        theme.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (theme == AppTheme.AMOLED) {
+                        Text(
+                            "Pure black",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 if (selected) {
                     Icon(
                         Icons.Default.Check,
