@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
     private val updateViewModel: AppUpdateViewModel by viewModels()
     private var incomingLink by mutableStateOf<String?>(null)
     private var incomingDownloadId by mutableStateOf<String?>(null)
+    private var openUpdates by mutableStateOf(false)
 
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -43,10 +44,12 @@ class MainActivity : ComponentActivity() {
                 updateViewModel = updateViewModel,
                 incomingLink = incomingLink,
                 incomingDownloadId = incomingDownloadId,
+                openUpdates = openUpdates,
                 onIncomingConsumed = {
                     incomingLink = null
                     incomingDownloadId = null
-                }
+                },
+                onUpdatesConsumed = { openUpdates = false }
             )
         }
     }
@@ -59,6 +62,12 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
+
+        // Tapping the "update ready" notification opens the update screen directly.
+        if (intent.getBooleanExtra(EXTRA_OPEN_UPDATES, false)) {
+            intent.removeExtra(EXTRA_OPEN_UPDATES)
+            openUpdates = true
+        }
 
         val sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
             ?: intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
@@ -116,5 +125,8 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_DOWNLOAD_ID = "download_id"
+
+        /** Set by the update notification so tapping it lands on the update screen. */
+        const val EXTRA_OPEN_UPDATES = "open_updates"
     }
 }

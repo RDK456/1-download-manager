@@ -100,7 +100,10 @@ fun DownloadHubApp(
     updateViewModel: AppUpdateViewModel,
     incomingLink: String?,
     incomingDownloadId: String?,
-    onIncomingConsumed: () -> Unit
+    /** True when the update notification was tapped; jumps to the update screen. */
+    openUpdates: Boolean = false,
+    onIncomingConsumed: () -> Unit,
+    onUpdatesConsumed: () -> Unit = {}
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val appTheme by viewModel.appTheme.collectAsStateWithLifecycle()
@@ -218,6 +221,14 @@ fun DownloadHubApp(
                 viewModel.select(it)
                 onIncomingConsumed()
             }
+        }
+        LaunchedEffect(openUpdates) {
+            if (!openUpdates) return@LaunchedEffect
+            // From the "update ready" notification: land on About, which is where
+            // the install hand-off lives.
+            navigate(AppDestination.SETTINGS)
+            navigate(AppDestination.ABOUT)
+            onUpdatesConsumed()
         }
 
         Scaffold(

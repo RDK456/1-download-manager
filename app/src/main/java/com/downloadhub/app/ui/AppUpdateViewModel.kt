@@ -13,10 +13,10 @@ import com.downloadhub.app.BuildConfig
 import com.downloadhub.app.DownloadHubApplication
 import com.downloadhub.app.update.AppUpdateChecker
 import com.downloadhub.app.update.ReleaseInfo
+import com.downloadhub.app.update.TransferState
+import com.downloadhub.app.update.UpdateService
+import com.downloadhub.app.update.UpdateTransferState
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,7 +24,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /** Result of comparing the installed version with the newest GitHub release. */
 sealed interface UpdateStatus {
@@ -90,6 +89,7 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
     val messages: StateFlow<String?> = _messages.asStateFlow()
 
     init {
+        observeTransferState()
         viewModelScope.launch {
             val pendingVersion = settings.pendingInstallVersion()
             if (pendingVersion.isNullOrBlank()) return@launch
@@ -177,35 +177,97 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
             }
     }
 
+    /**
+     * Hands the transfer to [UpdateService] instead of downloading here.
+     *
+     * Running it in `viewModelScope` tied the download to this Activity: minimising
+     * the app or leaving the page cancelled it. A foreground service keeps the
+     * transfer alive in the background and shows its own notification, and it
+     * publishes the finished APK through [UpdateTransferState] so the install can
+     * still be offered after the app was gone.
+     */
     fun downloadUpdate() {
         val release = (_snapshot.value.status as? UpdateStatus.Available)?.release ?: return
         val asset = release.installAsset() ?: return
+        // Clear the "available" status so its dialog gives way to the download
+        // progress dialog instead of two dialogs fighting for the screen.
+        _snapshot.value = _snapshot.value.copy(
+            status = UpdateStatus.Idle,
+            progress = DownloadProgress(release, 0, 0L, asset.size),
+            pending = null
+        )
+        UpdateService.start(app, asset.downloadUrl, release.version, release.displayName)
+    }
+
+    /**
+     * Mirrors the service's transfer state into [snapshot] so the UI can be on any
+     * page: a download started here keeps reporting progress, and one that
+     * finished in the background becomes an install prompt on return.
+     */
+    private fun observeTransferState() {
         viewModelScope.launch {
-            // Clear the "available" status so its dialog gives way to the download
-            // progress dialog instead of two dialogs fighting for the screen.
-            _snapshot.value = _snapshot.value.copy(
-                status = UpdateStatus.Idle,
-                progress = DownloadProgress(release, 0, 0L, asset.size),
-                pending = null
-            )
-            runCatching {
-                withContext(Dispatchers.IO) { downloadUpdateApk(asset.downloadUrl, release.version) }
-            }.onSuccess { file ->
-                settings.setPendingInstallVersion(release.version)
-                _snapshot.value = _snapshot.value.copy(
-                    progress = null,
-                    pending = PendingInstall(
-                        release = release,
-                        apk = file,
-                        needsPermission = !canRequestInstalls(),
-                        signatureMatches = isSignedBySameKey(file)
-                    )
-                )
-            }.onFailure { error ->
-                _snapshot.value = _snapshot.value.copy(
-                    progress = null,
-                    status = UpdateStatus.Failed(error.message ?: "Update download failed")
-                )
+            UpdateTransferState.state.collect { transfer ->
+                when (transfer) {
+                    is TransferState.Idle -> Unit
+                    is TransferState.Running -> {
+                        val release = ReleaseInfo(
+                            tag = "v${transfer.version}",
+                            name = "Version ${transfer.version}",
+                            notes = "",
+                            pageUrl = BuildConfig.GITHUB_URL,
+                            publishedAt = "",
+                            assets = emptyList()
+                        )
+                        _snapshot.value = _snapshot.value.copy(
+                            progress = DownloadProgress(
+                                release = release,
+                                percent = transfer.percent,
+                                downloadedBytes = transfer.downloadedBytes,
+                                totalBytes = transfer.totalBytes
+                            ),
+                            status = UpdateStatus.Idle
+                        )
+                    }
+                    is TransferState.Done -> {
+                        val apk = transfer.apk
+                        if (!apk.isFile || apk.length() <= 0L) {
+                            // A file that is not there cannot be installed; drop it
+                            // rather than offering a broken install.
+                            _snapshot.value = _snapshot.value.copy(
+                                progress = null,
+                                status = UpdateStatus.Failed("The downloaded update is no longer available")
+                            )
+                            return@collect
+                        }
+                        viewModelScope.launch {
+                            settings.setPendingInstallVersion(transfer.version)
+                            _snapshot.value = _snapshot.value.copy(
+                                progress = null,
+                                pending = PendingInstall(
+                                    release = ReleaseInfo(
+                                        tag = "v${transfer.version}",
+                                        name = "Version ${transfer.version}",
+                                        notes = "",
+                                        pageUrl = BuildConfig.GITHUB_URL,
+                                        publishedAt = "",
+                                        assets = emptyList()
+                                    ),
+                                    apk = apk,
+                                    needsPermission = !canRequestInstalls(),
+                                    signatureMatches = isSignedBySameKey(apk)
+                                )
+                            )
+                        }
+                        UpdateTransferState.acknowledge()
+                    }
+                    is TransferState.Failed -> {
+                        _snapshot.value = _snapshot.value.copy(
+                            progress = null,
+                            status = UpdateStatus.Failed(transfer.message)
+                        )
+                        UpdateTransferState.acknowledge()
+                    }
+                }
             }
         }
     }
@@ -350,70 +412,8 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
     private fun updateFile(version: String): File =
         File(File(app.filesDir, "updates"), "1-download-manager-$version.apk")
 
-    private fun downloadUpdateApk(url: String, version: String): File {
-        val directory = File(app.filesDir, "updates").apply { mkdirs() }
-        val target = File(directory, "1-download-manager-$version.apk")
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = CONNECT_TIMEOUT_MILLIS
-            readTimeout = READ_TIMEOUT_MILLIS
-            instanceFollowRedirects = true
-            setRequestProperty("Accept", APK_MIME_TYPE)
-            setRequestProperty("User-Agent", "1-download-manager/$currentVersion")
-        }
-        try {
-            val status = connection.responseCode
-            if (status !in 200..299) error("Download failed with HTTP $status")
-            val total = connection.contentLengthLong.coerceAtLeast(0L)
-            var downloaded = 0L
-            var lastPublished = 0L
-            connection.inputStream.use { input ->
-                target.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read <= 0) break
-                        output.write(buffer, 0, read)
-                        downloaded += read
-                        val now = System.currentTimeMillis()
-                        if (now - lastPublished >= PROGRESS_INTERVAL_MILLIS) {
-                            lastPublished = now
-                            val percent = if (total > 0) {
-                                ((downloaded * 100L) / total).toInt().coerceIn(0, 100)
-                            } else {
-                                0
-                            }
-                            _snapshot.value = _snapshot.value.copy(
-                                progress = DownloadProgress(
-                                    release = ReleaseInfo(
-                                        tag = "v$version",
-                                        name = "Version $version",
-                                        notes = "",
-                                        pageUrl = BuildConfig.GITHUB_URL,
-                                        publishedAt = "",
-                                        assets = emptyList()
-                                    ),
-                                    percent = percent,
-                                    downloadedBytes = downloaded,
-                                    totalBytes = total
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-            if (target.length() <= 0L) error("The downloaded update was empty")
-            return target
-        } finally {
-            connection.disconnect()
-        }
-    }
-
     private companion object {
         const val APK_MIME_TYPE = "application/vnd.android.package-archive"
-        const val CONNECT_TIMEOUT_MILLIS = 15_000
-        const val READ_TIMEOUT_MILLIS = 30_000
-        const val PROGRESS_INTERVAL_MILLIS = 250L
         const val AUTO_CHECK_INTERVAL_MILLIS = 6L * 60L * 60L * 1000L
     }
 }

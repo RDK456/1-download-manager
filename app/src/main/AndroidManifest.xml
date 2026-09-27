@@ -145,6 +145,17 @@
             </intent-filter>
         </activity>
 
+        <!--
+            The app updates itself. This has to be a foreground service: the
+            transfer used to run in a ViewModel coroutine, so minimising the app
+            or leaving the page cancelled it. dataSync keeps it alive in the
+            background with an ongoing notification until the APK is fetched.
+        -->
+        <service
+            android:name=".update.UpdateService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <service
             android:name=".download.DownloadService"
             android:exported="false"
