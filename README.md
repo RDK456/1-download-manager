@@ -154,3 +154,14 @@ otherwise the summary just reports that the installed version is current.
 ## Media and torrent notice
 
 Only download media you own or have permission to download. YouTube availability and stream URLs change over time, and the bundled extractor can need an update when the site changes. Torrent clients should be used only with content you are legally permitted to access.
+
+## Troubleshooting
+
+**"Cannot access output property 'dummyOutputDirectory'" or the Kotlin compiler crashes with an
+internal error** — something on the drive holding the project (an antivirus or EDR filter driver)
+is rewriting or locking files. The symptom is directories that report "not empty" while appearing
+empty, and build output that cannot be stat-ed. Move the project to another drive, or exclude the
+folder from the security agent, and delete `app/build` and `.gradle` once the lock is gone.
+
+If a source file looks garbled (binary content, unreadable), the same cause is usually to blame.
+Nothing in the repository needs repairing: `git clone` a fresh copy, or fetch and check out again.
