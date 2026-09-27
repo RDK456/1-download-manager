@@ -1,0 +1,173 @@
+package com.downloadhub.desktop
+
+import com.downloadhub.core.DownloadCategory
+import com.downloadhub.core.DownloadSource
+import com.downloadhub.core.DownloadStatus
+import java.io.File
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
+/**
+ * Where the desktop app keeps its state.
+ *
+ * Settings and the download queue live under the user's profile rather than beside
+ * the executable, so replacing or upgrading the install never loses the queue.
+ */
+object AppPaths {
+    private const val APP_DIR = "1DownloadManager"
+
+    val home: File by lazy {
+        val base = System.getProperty("user.home") ?: "."
+        File(base, "AppData" + File.separator + "Roaming" + File.separator + APP_DIR).apply { mkdirs() }
+    }
+
+    val settingsFile: File get() = File(home, "settings.json")
+    val queueFile: File get() = File(home, "queue.json")
+
+    /** Scratch space for in-flight transfers, kept off the destination folder. */
+    val workDir: File by lazy { File(home, "work").apply { mkdirs() } }
+
+    val defaultDownloadDir: File by lazy {
+        File(System.getProperty("user.home") ?: ".", "Downloads" + File.separator + "DownloadHub")
+            .apply { mkdirs() }
+    }
+
+    val toolsDir: File by lazy { File(home, "tools").apply { mkdirs() } }
+}
+
+object DesktopJson {
+    val format = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+        prettyPrint = true
+    }
+}
+
+/** User-facing settings, persisted as JSON. */
+@Serializable
+data class DesktopSettings(
+    val downloadDir: String = AppPaths.defaultDownloadDir.absolutePath,
+    val maxConcurrent: Int = 3,
+    val speedLimitBytesPerSecond: Long = 0L,
+    val maxRetries: Int = 2,
+    val closeToTray: Boolean = true,
+    val startMinimised: Boolean = false
+) {
+    val speedLimitEnabled: Boolean get() = speedLimitBytesPerSecond > 0L
+
+    fun downloadDirFile(): File = File(downloadDir)
+
+    companion object {
+        fun load(): DesktopSettings {
+            val file = AppPaths.settingsFile
+            if (!file.isFile) return DesktopSettings()
+            return runCatching { DesktopJson.format.decodeFromString<DesktopSettings>(file.readText()) }
+                .getOrDefault(DesktopSettings())
+        }
+
+        fun save(settings: DesktopSettings) {
+            runCatching {
+                AppPaths.settingsFile.writeText(DesktopJson.format.encodeToString(settings))
+            }
+        }
+    }
+}
+
+/** Persisted queue entry. */
+@Serializable
+data class QueuedDownload(
+    val id: String,
+    val url: String,
+    val fileName: String,
+    val source: DownloadSource = DownloadSource.HTTP,
+    val category: DownloadCategory = DownloadCategory.OTHER,
+    val status: DownloadStatus = DownloadStatus.QUEUED,
+    val bytesDownloaded: Long = 0L,
+    val totalBytes: Long = 0L,
+    val speedBytesPerSecond: Long = 0L,
+    val errorMessage: String? = null,
+    val location: String? = null,
+    val etag: String? = null,
+    val lastModified: String? = null,
+    val mimeType: String? = null,
+    val quality: String? = null,
+    val audioFormat: String? = null,
+    val playlist: Boolean = false
+)
+
+/** JSON-backed queue, loaded once and written on change (debounced by the caller). */
+class DesktopStore(initial: List<QueuedDownload> = emptyList()) {
+
+    private val items = LinkedHashMap<String, QueuedDownload>()
+
+    init {
+        initial.forEach { items[it.id] = it }
+    }
+
+    @Synchronized
+    fun snapshot(): List<QueuedDownload> = items.values.toList()
+
+    @Synchronized
+    fun get(id: String): QueuedDownload? = items[id]
+
+    @Synchronized
+    fun add(item: QueuedDownload) {
+        items[item.id] = item
+    }
+
+    @Synchronized
+    fun remove(id: String) {
+        items.remove(id)
+    }
+
+    @Synchronized
+    fun update(id: String, transform: (QueuedDownload) -> QueuedDownload) {
+        items[id]?.let { items[id] = transform(it) }
+    }
+
+    @Synchronized
+    fun clearFinished() {
+        items.values
+            .filter { it.status == DownloadStatus.COMPLETED }
+            .forEach { items.remove(it.id) }
+    }
+
+    /** Deletes the saved file and the scratch copy. */
+    @Synchronized
+    fun delete(id: String) {
+        val item = items.remove(id) ?: return
+        item.location?.let { runCatching { File(it).delete() } }
+        runCatching { AppPaths.workDir.resolve(id).deleteRecursively() }
+    }
+
+    fun persist() {
+        runCatching {
+            AppPaths.queueFile.writeText(
+                DesktopJson.format.encodeToString(snapshot())
+            )
+        }
+    }
+
+    companion object {
+        fun load(): DesktopStore {
+            val file = AppPaths.queueFile
+            if (!file.isFile) return DesktopStore()
+            val restored = runCatching {
+                DesktopJson.format.decodeFromString<List<QueuedDownload>>(file.readText())
+            }.getOrDefault(emptyList())
+            // Nothing can be running yet after a restart, so anything mid-flight
+            // comes back paused rather than claiming to transfer.
+            return DesktopStore(
+                restored.map {
+                    if (it.status.isRunning()) it.copy(status = DownloadStatus.PAUSED) else it
+                }
+            )
+        }
+
+        private fun DownloadStatus.isRunning() =
+            this == DownloadStatus.RUNNING || this == DownloadStatus.QUEUED ||
+                this == DownloadStatus.RESOLVING
+    }
+}

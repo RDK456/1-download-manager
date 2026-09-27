@@ -128,8 +128,23 @@ try {
     $apkAsset = Join-Path $RepoRoot ("1-download-manager-$newVersion.apk")
     Copy-Item $apkBuilt $apkAsset -Force
     $apkHash = (Get-FileHash $apkAsset -Algorithm SHA256).Hash
-    $apkSize = (Get-Item $apkAsset).Length
+    $apkSize = (Get-Item $apkBuilt).Length
     Write-Host ("APK {0} bytes, sha256 {1}" -f $apkSize, $apkHash) -ForegroundColor DarkGray
+
+    # The Windows installer, when one has been built. Absent builds are not an
+    # error: the Android release must still be publishable on its own.
+    $msiBuilt = Get-ChildItem (Join-Path $RepoRoot 'desktop\build\compose\binaries\main\msi') `
+        -Filter '*.msi' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "*$newVersion*" } |
+        Select-Object -First 1
+    $msiAsset = $null
+    if ($msiBuilt) {
+        $msiAsset = Join-Path $RepoRoot ("1-download-manager-$newVersion.msi")
+        Copy-Item $msiBuilt.FullName $msiAsset -Force
+        Write-Host ("MSI {0} bytes" -f (Get-Item $msiBuilt.FullName).Length) -ForegroundColor DarkGray
+    } else {
+        Write-Host 'No Windows installer found; publishing the APK only.' -ForegroundColor Yellow
+    }
 
     # --- 4. verify the published signature ----------------------------------
     $sdkRoot = $env:ANDROID_HOME
@@ -207,13 +222,17 @@ Open this app's Settings -> Check for updates to install this release.
     [System.IO.File]::WriteAllText($notesFile, $Notes)
     $notesArgs = @('--notes-file', $notesFile)
 
-    $releaseArgs = @('release', 'create', $tag, $apkAsset, '--title', "1 download manager $newVersion") + $notesArgs
+    $assets = @($apkAsset)
+    if ($msiAsset) { $assets += $msiAsset }
+
+    $releaseArgs = @('release', 'create', $tag) + $assets +
+        @('--title', "1 download manager $newVersion") + $notesArgs
     if ($Draft) { $releaseArgs += '--draft' }
     & $gh @releaseArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Release already exists; updating it instead.' -ForegroundColor Yellow
-        & $gh release upload $tag $apkAsset --clobber
-        if ($LASTEXITCODE -ne 0) { throw "Could not upload the APK to release $tag." }
+        & $gh release upload $tag @assets --clobber
+        if ($LASTEXITCODE -ne 0) { throw "Could not upload the assets to release $tag." }
         & $gh release edit $tag --title "1 download manager $newVersion" @notesArgs
         if ($LASTEXITCODE -ne 0) { throw "Could not update release $tag." }
     }
