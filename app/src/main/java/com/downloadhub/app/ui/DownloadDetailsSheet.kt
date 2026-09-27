@@ -85,7 +85,7 @@ fun DownloadDetailsSheet(
                 if (item.status == DownloadStatus.COMPLETED) {
                     sourceLabel(item.source)
                 } else {
-                    "${sourceLabel(item.source)} Ã¢â‚¬Â¢ ${statusLabel(item.status)}"
+    "${sourceLabel(item.source)} \u00B7 ${statusLabel(item.status)}"
                 },
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary
@@ -151,7 +151,7 @@ fun DownloadDetailsSheet(
                 DetailRow(
                     "Quality",
                     if (quality.isAudioOnly) {
-                        "Audio only Ã‚Â· ${AudioFormat.fromValue(item.audioFormat).label}"
+    "Audio only \u00B7 ${AudioFormat.fromValue(item.audioFormat).label}"
                     } else {
                         quality.label
                     }

@@ -51,6 +51,7 @@ class SettingsRepository(private val context: Context) {
     private val destinationTreeKey = stringPreferencesKey("destination_tree_uri")
     private val skippedVersionKey = stringPreferencesKey("skipped_app_version")
     private val lastUpdateCheckKey = longPreferencesKey("last_app_update_check")
+    private val lastYtDlpCheckKey = longPreferencesKey("last_ytdlp_check")
     private val autoUpdateCheckKey = booleanPreferencesKey("auto_app_update_check")
     private val pendingInstallKey = stringPreferencesKey("pending_install_version")
     private val maxConcurrentKey = intPreferencesKey("max_concurrent_downloads")
@@ -145,6 +146,17 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun lastUpdateCheckOnce(): Long = lastUpdateCheck.first()
+
+    /**
+     * When yt-dlp was last checked. yt-dlp releases often, so the automatic pass is
+     * throttled to once a day rather than hitting the feed on every launch.
+     */
+    suspend fun lastYtDlpCheck(): Long =
+        context.downloadHubDataStore.data.map { it[lastYtDlpCheckKey] ?: 0L }.first()
+
+    suspend fun markYtDlpCheck(now: Long = System.currentTimeMillis()) {
+        context.downloadHubDataStore.edit { it[lastYtDlpCheckKey] = now }
+    }
 
     /** Version of an update APK already downloaded but maybe not yet installed. */
     suspend fun pendingInstallVersion(): String? = context.downloadHubDataStore.data

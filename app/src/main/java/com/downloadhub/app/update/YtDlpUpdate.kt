@@ -45,14 +45,37 @@ class YtDlpUpdateChecker(
 
 const val YTDLP_STABLE_RELEASES = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
 
-/** Outcome of comparing the installed yt-dlp with the newest stable release. */
+/**
+ * Outcome of comparing the installed yt-dlp with the newest stable release.
+ *
+ * The update installs itself, so there is no "apply" action in the steady state.
+ * The row is read-only unless a check failed (which offers a retry) or an install
+ * did not take (which offers a retry), which is what keeps it greyed out the rest
+ * of the time instead of offering a button that does nothing.
+ */
 sealed interface YtDlpUpdateState {
     data object Idle : YtDlpUpdateState
     data object Checking : YtDlpUpdateState
+
+    /** A newer release is being installed right now. */
+    data class Updating(val installed: String, val latest: String) : YtDlpUpdateState
+
     data class UpToDate(val installed: String) : YtDlpUpdateState
+
+    /** An update exists but the install did not complete; retrying is worthwhile. */
     data class Available(val installed: String, val latest: String) : YtDlpUpdateState
+
     data class Failed(val message: String) : YtDlpUpdateState
 
-    /** True only when an update can actually be installed right now. */
+    /** True while the state is still settling, so the row shows a spinner. */
+    val isBusy: Boolean get() = this is Checking || this is Updating
+
+    /**
+     * True when the app will do something further without a fresh check. A healthy
+     * install needs no action, so the row stays read-only.
+     */
+    val needsAction: Boolean get() = this is Available || this is Failed
+
+    /** True only when an update exists and is not being installed already. */
     val hasUpdate: Boolean get() = this is Available
 }

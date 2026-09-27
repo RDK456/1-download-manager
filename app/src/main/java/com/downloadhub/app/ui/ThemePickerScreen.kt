@@ -161,7 +161,7 @@ private fun LiveThemePreview(theme: AppTheme, dark: Boolean, pureBlack: Boolean)
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Video Ã¢â‚¬Â¢ Downloading",
+                    "Video \u00B7 Downloading",
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurface
                 )

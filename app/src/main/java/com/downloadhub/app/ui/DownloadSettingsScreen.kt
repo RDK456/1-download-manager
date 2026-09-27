@@ -1,6 +1,7 @@
 package com.downloadhub.app.ui
 
 import android.content.Intent
+import com.downloadhub.app.update.YtDlpUpdateState
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -55,7 +56,10 @@ fun DownloadSettingsScreen(
     onMaxRetriesChange: (Int) -> Unit,
     onAutoRemoveChange: (Boolean) -> Unit,
     onDestinationChange: (String?) -> Unit,
-    onRequestBatteryExemption: () -> Unit
+    onRequestBatteryExemption: () -> Unit,
+    downloaderVersion: String,
+    ytdlpUpdate: YtDlpUpdateState,
+    onRetryYtDlp: () -> Unit
 ) {
     val context = LocalContext.current
     val folderPicker = rememberLauncherForActivityResult(
@@ -193,6 +197,14 @@ fun DownloadSettingsScreen(
                     "so they keep going when you leave the app or lock the screen.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        SettingsSection("YouTube downloader") {
+            YtDlpStatusRow(
+                installed = downloaderVersion,
+                state = ytdlpUpdate,
+                onRetry = onRetryYtDlp
             )
         }
     }

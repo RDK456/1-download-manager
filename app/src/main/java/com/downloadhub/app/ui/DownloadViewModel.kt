@@ -98,47 +98,71 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     private val _ytdlpUpdate = MutableStateFlow<YtDlpUpdateState>(YtDlpUpdateState.Idle)
     val ytdlpUpdate: StateFlow<YtDlpUpdateState> = _ytdlpUpdate.asStateFlow()
 
-    /** Read-only check of the newest stable yt-dlp; installs nothing. */
-    fun checkYtDlpUpdate() {
+    /**
+     * Checks the yt-dlp release feed and installs a newer build without asking.
+     *
+     * This used to be a "Check for update" button followed by a second tap to
+     * install, and the checking state flickered because both steps rewrote the
+     * status row. One pass now owns the whole thing, so the row can only move
+     * Idle -> Checking -> a settled result.
+     *
+     * It is throttled per day: yt-dlp releases often, and a network round trip on
+     * every launch would be wasteful.
+     */
+    fun syncYtDlpInBackground() {
         if (_ytdlpUpdate.value is YtDlpUpdateState.Checking) return
         viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val last = settings.lastYtDlpCheck()
+            if (now - last < YTDLP_CHECK_INTERVAL_MILLIS) return@launch
+
             _ytdlpUpdate.value = YtDlpUpdateState.Checking
             val installed = app.container.youtubeDownloader.currentVersion()
             val latest = runCatching {
                 app.container.youtubeDownloader.latestStableVersion()
             }.getOrNull()
-            _ytdlpUpdate.value = when {
-                latest.isNullOrBlank() ->
-                    YtDlpUpdateState.Failed("Could not reach the yt-dlp release feed")
-                compareVersions(latest, installed) > 0 ->
-                    YtDlpUpdateState.Available(installed, latest)
-                else -> YtDlpUpdateState.UpToDate(installed)
-            }
-        }
-    }
 
-    /** Installs the newer yt-dlp and refreshes the reported version. */
-    fun applyYtDlpUpdate() {
-        val target = (_ytdlpUpdate.value as? YtDlpUpdateState.Available)?.latest ?: return
-        viewModelScope.launch {
-            _ytdlpUpdate.value = YtDlpUpdateState.Checking
+            if (latest.isNullOrBlank()) {
+                // Do not mark the day as checked: a network blip should be retried
+                // on the next launch rather than silently waiting a full day.
+                _ytdlpUpdate.value = YtDlpUpdateState.Failed("Could not reach the yt-dlp release feed")
+                return@launch
+            }
+            settings.markYtDlpCheck()
+
+            if (compareVersions(latest, installed) <= 0) {
+                _ytdlpUpdate.value = YtDlpUpdateState.UpToDate(installed)
+                return@launch
+            }
+
+            // A newer release exists, so install it rather than asking.
+            _ytdlpUpdate.value = YtDlpUpdateState.Updating(installed, latest)
             runCatching {
                 app.container.youtubeDownloader.updateYtDlpIfNeeded(force = true)
             }.onSuccess { version ->
-                val installed = version ?: app.container.youtubeDownloader.currentVersion()
-                _downloaderVersion.value = installed
-                _ytdlpUpdate.value = if (compareVersions(target, installed) > 0) {
-                    YtDlpUpdateState.Available(installed, target)
+                val now2 = version ?: app.container.youtubeDownloader.currentVersion()
+                _downloaderVersion.value = now2
+                if (compareVersions(latest, now2) > 0) {
+                    // The install did not take. Leave the target visible so the
+                    // next launch retries instead of claiming success.
+                    _ytdlpUpdate.value = YtDlpUpdateState.Available(now2, latest)
                 } else {
-                    YtDlpUpdateState.UpToDate(installed)
+                    _ytdlpUpdate.value = YtDlpUpdateState.UpToDate(now2)
+                    _events.emit(DownloadEvent.Message("yt-dlp updated to $now2"))
                 }
-                _events.emit(DownloadEvent.Message("yt-dlp updated to $installed"))
             }.onFailure { error ->
                 _ytdlpUpdate.value = YtDlpUpdateState.Failed(
                     error.message ?: "yt-dlp update failed"
                 )
             }
         }
+    }
+
+    /** Retries a failed check immediately; only offered when something went wrong. */
+    fun retryYtDlpSync() {
+        viewModelScope.launch { settings.markYtDlpCheck(0L) }
+        _ytdlpUpdate.value = YtDlpUpdateState.Idle
+        syncYtDlpInBackground()
     }
 
     private val query = MutableStateFlow("")
@@ -789,6 +813,13 @@ private fun DownloadCategory.matchesFilter(filter: DownloadCategory): Boolean = 
 
 private val PLAYABLE_EXTENSIONS = setOf("mp4", "m4v", "mkv", "webm", "avi", "mov", "flv", "3gp", "ts", "mp3", "m4a", "aac", "opus", "ogg", "flac", "wav")
 private const val FOLDER_MIME = "resource/folder"
+
+/**
+ * yt-dlp publishes releases often, so the automatic check runs at most once a day.
+ * A failed check is deliberately not recorded, so a network blip retries on the
+ * next launch instead of being remembered for a whole day.
+ */
+private const val YTDLP_CHECK_INTERVAL_MILLIS = 24L * 60L * 60L * 1000L
 
 private val DownloadStatus.isActiveCompat: Boolean
     get() = this == com.downloadhub.app.data.model.DownloadStatus.QUEUED ||
