@@ -6,6 +6,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      Required for the partial wake lock that keeps the CPU awake while a download
+      runs. Without it, acquire() throws a SecurityException and transfers stall
+      in Doze once the app is backgrounded.
+    -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Lets Settings offer to exempt the app from battery optimisation. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Lets the in-app updater hand a downloaded release APK to the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission

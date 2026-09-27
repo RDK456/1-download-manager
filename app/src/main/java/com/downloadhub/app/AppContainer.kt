@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.downloadhub.app.data.DownloadRepository
 import com.downloadhub.app.data.SettingsRepository
 import com.downloadhub.app.data.local.DownloadDatabase
+import com.downloadhub.app.download.BatteryOptimisation
 import com.downloadhub.app.download.DownloadStorage
 import com.downloadhub.app.download.NetworkMonitor
 import com.downloadhub.app.download.SpeedLimiter
@@ -30,6 +31,7 @@ class AppContainer(context: Context) {
     val thumbnailCache = ThumbnailCache(appContext)
     val speedLimiter = SpeedLimiter()
     val networkMonitor = NetworkMonitor(appContext)
+    val batteryOptimisation = BatteryOptimisation(appContext)
 
     val storage = DownloadStorage(appContext)
     val settings = SettingsRepository(appContext)

@@ -106,7 +106,8 @@ class HttpDownloader(
 
                 connection.inputStream.use { input ->
                     FileOutputStream(work, append).use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        // A larger read buffer keeps the socket busy on fast links.
+                        val buffer = ByteArray(TRANSFER_BUFFER_BYTES)
                         while (true) {
                             ensureActive()
                             val count = input.read(buffer)
@@ -212,5 +213,9 @@ class HttpDownloader(
     private fun estimateEta(total: Long, downloaded: Long, speed: Long): Long {
         if (total <= 0 || speed <= 0 || downloaded >= total) return -1
         return (total - downloaded) / speed
+    }
+
+    private companion object {
+        const val TRANSFER_BUFFER_BYTES = 64 * 1024
     }
 }

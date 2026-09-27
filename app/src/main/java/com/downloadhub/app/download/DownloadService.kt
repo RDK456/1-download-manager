@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import android.os.PowerManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -15,6 +16,8 @@ import com.downloadhub.app.DownloadHubApplication
 import com.downloadhub.app.data.model.DownloadSource
 import com.downloadhub.app.data.model.DownloadStatus
 import com.downloadhub.app.data.model.isActive
+import com.downloadhub.app.ui.classifyTorrent
+import com.downloadhub.app.ui.largestFileIn
 import com.downloadhub.app.data.local.DownloadDao
 import com.downloadhub.app.data.local.DownloadEntity
 import java.io.File
@@ -276,6 +279,7 @@ class DownloadService : Service() {
             System.currentTimeMillis()
         )
         if (started == 0 || dao.getById(current.id)?.status != DownloadStatus.RUNNING) return
+        holdWakeLock(true)
         var snapshot = torrentEngine.start(current)
             ?: throw IOException("The torrent engine could not start this item")
         while (scope.isActive && current.status != DownloadStatus.PAUSED) {
@@ -330,6 +334,8 @@ class DownloadService : Service() {
                 val now = System.currentTimeMillis()
                 val finalTotal = if (total > 0) total else snapshot.bytesDownloaded
                 dao.updateOutputPath(current.id, published.location, now)
+                // Now that the payload is on disk we know what it actually is.
+                refreshTorrentMetadata(current, published.location, finalTotal, now)
                 dao.updateProgress(
                     current.id,
                     snapshot.bytesDownloaded,
@@ -348,6 +354,35 @@ class DownloadService : Service() {
             }
             delay(750)
         }
+    }
+
+    /**
+     * After a torrent lands, re-derive the real file name and category from the
+     * published payload, so the category filter and previews mean something for
+     * torrents too.
+     */
+    private suspend fun refreshTorrentMetadata(
+        item: DownloadEntity,
+        location: String,
+        total: Long,
+        now: Long
+    ) {
+        val file = location.takeIf { !it.startsWith("content:") }?.let { File(it) }
+        val payload = when {
+            file == null -> null
+            file.isDirectory -> largestFileIn(file)
+            file.isFile -> file
+            else -> null
+        }
+        val refined = item.copy(outputPath = location, fileName = payload?.name ?: item.fileName)
+        val category = classifyTorrent(refined)
+        val displayName = if (file?.isDirectory == true) {
+            LinkParser.sanitizeFileName(item.fileName)
+        } else {
+            LinkParser.sanitizeFileName(payload?.name ?: item.fileName)
+        }
+        val mime = payload?.extension?.lowercase()?.takeIf { it.isNotEmpty() }
+        dao.updateMetadata(item.id, displayName, mime, category, total, now)
     }
 
     private suspend fun fetchTorrentMetadata(item: DownloadEntity): String {
@@ -474,20 +509,56 @@ class DownloadService : Service() {
         }
     }
 
-    /** Keeps the CPU awake while transfers run, so the screen being off is harmless. */
+    /**
+     * Keeps the CPU awake while transfers run, so the screen being off or the app
+     * being in the background is harmless.
+     *
+     * A missing WAKE_LOCK permission throws here. That used to be swallowed by a
+     * runCatching, which left downloads to stall in Doze, so it is now logged and
+     * the caller can see the failure.
+     */
     private fun holdWakeLock(acquire: Boolean) {
         val power = applicationContext.getSystemService(PowerManager::class.java) ?: return
         val lock = wakeLock ?: power
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
             .apply { setReferenceCounted(false) }
             .also { wakeLock = it }
-        runCatching {
+        try {
             if (acquire) {
-                if (!lock.isHeld) lock.acquire(WAKE_LOCK_TIMEOUT_MILLIS)
+                if (!lock.isHeld) {
+                    lock.acquire(WAKE_LOCK_TIMEOUT_MILLIS)
+                    Log.i(TAG, "Download wake lock acquired")
+                }
             } else if (lock.isHeld) {
                 lock.release()
+                Log.i(TAG, "Download wake lock released")
+            }
+        } catch (error: SecurityException) {
+            Log.e(TAG, "Cannot hold a wake lock; background transfers may stall", error)
+        }
+    }
+
+    /**
+     * Android 15 caps how long a `dataSync` foreground service may run and then
+     * calls this. The queue is paused with a readable reason so the next launch
+     * resumes it, instead of leaving rows stuck in RUNNING.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        super.onTimeout(startId, fgsType)
+        scope.launch {
+            Log.w(TAG, "Foreground service time budget exhausted; pausing the queue")
+            dao.getByStatuses(ACTIVE_STATUSES).forEach { item ->
+                dao.setStatus(
+                    item.id,
+                    DownloadStatus.PAUSED,
+                    "Paused by Android after the background time limit",
+                    System.currentTimeMillis()
+                )
             }
         }
+        holdWakeLock(false)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun startForegroundCompat(notification: android.app.Notification) {
@@ -516,7 +587,8 @@ class DownloadService : Service() {
         private const val MAX_TORRENT_METADATA_BYTES = 10L * 1024L * 1024L
         private const val RETRY_DELAY_MILLIS = 3_000L
         private const val WAKE_LOCK_TAG = "1-download-manager:downloads"
-        private const val WAKE_LOCK_TIMEOUT_MILLIS = 6L * 60L * 60L * 1000L
+        private const val WAKE_LOCK_TIMEOUT_MILLIS = 3L * 60L * 60L * 1000L
+        private const val TAG = "DownloadService"
 
         private val ACTIVE_STATUSES = listOf(
             DownloadStatus.QUEUED,

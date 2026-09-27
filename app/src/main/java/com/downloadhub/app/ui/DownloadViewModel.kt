@@ -179,13 +179,15 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     val visibleTorrents: StateFlow<List<DownloadEntity>> = combine(
         allDownloads,
         query,
-        filter
-    ) { items, search, selectedFilter ->
+        filter,
+        categoryFilter
+    ) { items, search, selectedFilter, selectedCategory ->
         val normalized = search.trim().lowercase()
         items.filter { item ->
             item.source == DownloadSource.TORRENT &&
                 matchesSearch(item, normalized) &&
-                matchesStatus(item, selectedFilter)
+                matchesStatus(item, selectedFilter) &&
+                matchesCategory(item, selectedCategory)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -197,13 +199,14 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         .map { list -> list.filter { it.source == DownloadSource.TORRENT }.toSummary() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TabSummary())
 
-    /** Category counts for the filter sheet, based on the Downloads tab. */
+    /** Category counts for the filter sheet; torrents and files are counted apart. */
     val categoryCounts: StateFlow<Map<DownloadCategory, Int>> = allDownloads
-        .map { list ->
-            list.filter { it.source != DownloadSource.TORRENT }
-                .groupingBy { it.category }
-                .eachCount()
-        }
+        .map { list -> list.countCategories { it.source != DownloadSource.TORRENT } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Counts for the Torrents tab, whose categories are derived from the payload. */
+    val torrentCategoryCounts: StateFlow<Map<DownloadCategory, Int>> = allDownloads
+        .map { list -> list.countCategories { it.source == DownloadSource.TORRENT } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     val selectedDownload: StateFlow<DownloadEntity?> = combine(allDownloads, _selectedId) { items, id ->
@@ -485,6 +488,18 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { settings.setMaxRetries(value) }
     }
 
+    /** True when Android will not throttle this app for battery use. */
+    fun isBatteryExempt(): Boolean = app.container.batteryOptimisation.isExempt()
+
+    /** Sends the user to the system prompt that exempts the app from throttling. */
+    fun requestBatteryExemption() {
+        val context = getApplication<Application>()
+        val intent = app.container.batteryOptimisation.requestIntent()
+            ?: app.container.batteryOptimisation.settingsIntent()
+        runCatching { context.startActivity(intent) }
+            .onFailure { notify("Open Settings > Apps > 1 download manager > Battery > Unrestricted") }
+    }
+
     fun setAutoRemoveCompleted(enabled: Boolean) {
         viewModelScope.launch { settings.setAutoRemoveCompleted(enabled) }
     }
@@ -725,6 +740,38 @@ private fun matchesStatus(item: DownloadEntity, filter: DownloadFilter): Boolean
 
 private fun matchesCategory(item: DownloadEntity, category: DownloadCategory?): Boolean =
     category == null || item.category.matchesFilter(category)
+
+fun List<DownloadEntity>.countCategories(
+    predicate: (DownloadEntity) -> Boolean
+): Map<DownloadCategory, Int> = filter(predicate)
+    .groupingBy { it.category }
+    .eachCount()
+
+/**
+ * A torrent arrives as one row whose type is unknown until it lands, so the
+ * category is refined from the published payload (or the torrent name) once known.
+ */
+fun classifyTorrent(item: DownloadEntity): DownloadCategory {
+    val output = item.outputPath
+    if (!output.isNullOrBlank() && !output.startsWith("content:")) {
+        val file = File(output)
+        val payload = if (file.isDirectory) largestFileIn(file) else file.takeIf { it.isFile }
+        if (payload != null) {
+            val byExtension = LinkParser.categoryFor(DownloadSource.HTTP, payload.name, null)
+            if (byExtension.isSpecific()) return byExtension
+        }
+    }
+    val byName = LinkParser.categoryFor(DownloadSource.HTTP, item.fileName, item.mimeType)
+    if (byName.isSpecific()) return byName
+    return DownloadCategory.FILE
+}
+
+private fun DownloadCategory.isSpecific(): Boolean =
+    this != DownloadCategory.FILE && this != DownloadCategory.OTHER
+
+fun largestFileIn(directory: File): File? = runCatching {
+    directory.walkTopDown().filter { it.isFile }.maxByOrNull { it.length() }
+}.getOrNull()
 
 private fun List<DownloadEntity>.toSummary() = TabSummary(
     active = count { it.status.isActiveCompat },

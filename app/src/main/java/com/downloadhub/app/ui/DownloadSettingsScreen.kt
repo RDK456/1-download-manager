@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BatteryAlert
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Card
@@ -47,12 +48,14 @@ import com.downloadhub.app.data.DownloadSettings
 fun DownloadSettingsScreen(
     settings: DownloadSettings,
     destinationTreeUri: String?,
+    isBatteryExempt: Boolean,
     onMaxConcurrentChange: (Int) -> Unit,
     onSpeedLimitChange: (Long) -> Unit,
     onWifiOnlyChange: (Boolean) -> Unit,
     onMaxRetriesChange: (Int) -> Unit,
     onAutoRemoveChange: (Boolean) -> Unit,
-    onDestinationChange: (String?) -> Unit
+    onDestinationChange: (String?) -> Unit,
+    onRequestBatteryExemption: () -> Unit
 ) {
     val context = LocalContext.current
     val folderPicker = rememberLauncherForActivityResult(
@@ -139,7 +142,39 @@ fun DownloadSettingsScreen(
             )
         }
 
-        SettingsSection("Reliability") {
+        SettingsSection("Background reliability") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Battery optimisation", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    if (isBatteryExempt) {
+                        "Exempt. Downloads keep running in the background."
+                    } else {
+                        "Not exempt. Android may pause or throttle transfers while the " +
+                            "app is in the background, which is the usual cause of a " +
+                            "download that only speeds up when the screen is on."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isBatteryExempt) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    }
+                )
+            }
+            if (!isBatteryExempt) {
+                OutlinedButton(
+                    onClick = onRequestBatteryExemption,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Default.BatteryAlert,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Allow background downloads")
+                }
+            }
             StepperRow(
                 title = "Automatic retries",
                 subtitle = "Retry a failed transfer this many times",
