@@ -41,6 +41,55 @@ class DownloadSettingsTest {
     }
 
     @Test
+    fun amoledModeKeepsTheChosenColourTheme() {
+        // Regression: the AMOLED mode used to swap the entire palette for
+        // AppTheme.AMOLED, whose accent is mint green, so picking Sunset under
+        // AMOLED still painted every other page green.
+        AppTheme.entries.forEach { theme ->
+            val black = theme.colorScheme(dark = true, pureBlack = true)
+            assertEquals(
+                "${theme.name} lost its accent under AMOLED",
+                theme.accentDark,
+                black.primary
+            )
+            assertEquals(
+                androidx.compose.ui.graphics.Color.Black,
+                black.background
+            )
+        }
+    }
+
+    @Test
+    fun amoledModeDoesNotForceTheMintAccent() {
+        AppTheme.entries
+            .filter { it != AppTheme.MINT && it != AppTheme.AMOLED }
+            .forEach { theme ->
+                assertNotEquals(
+                    "${theme.name} renders mint green under AMOLED",
+                    AppTheme.MINT.accentDark,
+                    theme.colorScheme(dark = true, pureBlack = true).primary
+                )
+            }
+    }
+
+    @Test
+    fun amoledModeKeepsTogglesVisibleForEveryTheme() {
+        // The pure-black scheme has to be built per theme, so its switch colours
+        // need the same contrast guarantees as the light and dark ones.
+        AppTheme.entries.forEach { theme ->
+            val scheme = theme.colorScheme(dark = true, pureBlack = true)
+            val checked = kotlin.math.abs(
+                scheme.secondaryContainer.luminance() - scheme.onSecondaryContainer.luminance()
+            )
+            val unchecked = kotlin.math.abs(
+                scheme.surfaceVariant.luminance() - scheme.onSurface.luminance()
+            )
+            assertTrue("${theme.name} checked toggle invisible", checked > 0.25f)
+            assertTrue("${theme.name} unchecked toggle invisible", unchecked > 0.3f)
+        }
+    }
+
+    @Test
     fun amoledIsPureBlack() {
         val scheme = AppTheme.AMOLED.colorScheme(dark = true)
         assertEquals(androidx.compose.ui.graphics.Color.Black, scheme.background)

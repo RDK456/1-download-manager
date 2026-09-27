@@ -65,7 +65,8 @@ fun ThemePickerScreen(
                 }
             }
             Text(
-                "AMOLED forces a pure black background in either mode.",
+                "AMOLED forces a pure black background in either mode and keeps the " +
+                "colour theme you pick below.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -79,13 +80,17 @@ fun ThemePickerScreen(
         )
 
         Text(
-            "Tap a theme to apply it immediately. AMOLED uses a pure black background, " +
-                "so it is much darker than the other dark themes.",
+            "Tap a theme to change the accent colour. The AMOLED mode above turns " +
+                "every one of them into a pure black background.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        LiveThemePreview(theme = appTheme, dark = isDarkMode(themeMode))
+        LiveThemePreview(
+            theme = appTheme,
+            dark = isDarkMode(themeMode),
+            pureBlack = themeMode == ThemeMode.AMOLED
+        )
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -120,8 +125,8 @@ private fun isDarkMode(mode: ThemeMode): Boolean = when (mode) {
  * which is what made a slow or invisible change easy to miss.
  */
 @Composable
-private fun LiveThemePreview(theme: AppTheme, dark: Boolean) {
-    val scheme = theme.colorScheme(dark)
+private fun LiveThemePreview(theme: AppTheme, dark: Boolean, pureBlack: Boolean) {
+    val scheme = theme.colorScheme(dark, pureBlack = pureBlack)
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,

@@ -61,6 +61,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -86,15 +90,6 @@ import com.downloadhub.app.download.PageScanState
 import com.downloadhub.app.update.YtDlpUpdateState
 import com.downloadhub.app.ui.theme.DownloadHubTheme
 import kotlinx.coroutines.flow.collectLatest
-
-private enum class AppDestination {
-    DOWNLOADS,
-    TORRENTS,
-    SETTINGS,
-    DOWNLOAD_SETTINGS,
-    THEMES,
-    ABOUT
-}
 
 private const val APP_TITLE = "1 download manager"
 
@@ -131,24 +126,56 @@ fun DownloadHubApp(
         val update by updateViewModel.snapshot.collectAsStateWithLifecycle()
         val autoCheckUpdates by updateViewModel.autoCheckUpdates.collectAsStateWithLifecycle()
         val updateMessage by updateViewModel.messages.collectAsStateWithLifecycle()
-        var rootDestination by remember { mutableStateOf(AppDestination.DOWNLOADS) }
-        var destination by remember { mutableStateOf(AppDestination.DOWNLOADS) }
+        // Navigation is a real stack, so back walks parent -> child in the order
+        // the user came from. Flat "current page" state made the back gesture
+        // close the app from Download settings and Themes, because the handler
+        // only covered Settings and About.
+        //
+        // The stack is persisted as one string ("ROOT>CHILD>GRANDCHILD") so it
+        // survives rotation and process death through the default saver.
+        var navKey by rememberSaveable { mutableStateOf(AppDestination.DOWNLOADS.name) }
+        val nav = remember(navKey) { decodeNav(navKey) }
+        val rootDestination = nav.root
+        val destination = nav.current
         var dismissedRelease by rememberSaveable { mutableStateOf<String?>(null) }
+        var confirmExit by rememberSaveable { mutableStateOf(false) }
         val snackbarHostState = remember { SnackbarHostState() }
 
         fun navigate(target: AppDestination) {
-            if (target == AppDestination.DOWNLOADS || target == AppDestination.TORRENTS) {
-                rootDestination = target
-            }
-            destination = target
+            navKey = encodeNav(nav.navigate(target))
         }
 
-        BackHandler(enabled = destination == AppDestination.ABOUT || destination == AppDestination.SETTINGS) {
-            if (destination == AppDestination.ABOUT) {
-                navigate(AppDestination.SETTINGS)
-            } else {
-                navigate(rootDestination)
-            }
+        // Always enabled so back is never swallowed: on a sub-page it pops the
+        // stack, and on a root tab it asks before leaving the app.
+        BackHandler {
+            val parent = nav.back()
+            if (parent == null) confirmExit = true else navKey = encodeNav(parent)
+        }
+
+        if (confirmExit) {
+            AlertDialog(
+                onDismissRequest = { confirmExit = false },
+                title = { Text("Close $APP_TITLE?") },
+                text = {
+                    Text(
+                        if (mainSummary.active > 0) {
+                            "${mainSummary.active} download(s) are still running. " +
+                                "They will keep going after the app closes."
+                        } else {
+                            "You can reopen the app from your launcher at any time."
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmExit = false
+                        context.findActivity()?.finish()
+                    }) { Text("Close") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmExit = false }) { Text("Keep open") }
+                }
+            )
         }
 
         fun openExternal(url: String) {
@@ -211,13 +238,9 @@ fun DownloadHubApp(
                                 )
                             }
                             else -> {
-                                IconButton(onClick = {
-                                    if (destination == AppDestination.ABOUT) {
-                                        navigate(AppDestination.SETTINGS)
-                                    } else {
-                                        navigate(rootDestination)
-                                    }
-                                }) {
+                                // Same behaviour as the system back gesture: pop
+                                // one level rather than jumping to a parent by hand.
+                                IconButton(onClick = { nav.back()?.let { navKey = encodeNav(it) } }) {
                                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                                 }
                             }
@@ -879,3 +902,13 @@ private val DownloadStatus.isActiveUi: Boolean
     get() = this == DownloadStatus.QUEUED ||
         this == DownloadStatus.RESOLVING ||
         this == DownloadStatus.RUNNING
+
+/** Unwraps the Activity behind a composable context, or null if there is none. */
+private fun Context.findActivity(): Activity? {
+    var current: Context? = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return current as? Activity
+}

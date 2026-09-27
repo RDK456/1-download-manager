@@ -38,9 +38,12 @@ fun DownloadHubTheme(
         ThemeMode.LIGHT -> false
         ThemeMode.DARK, ThemeMode.AMOLED -> true
     }
-    val effectiveTheme = if (themeMode == ThemeMode.AMOLED) AppTheme.AMOLED else appTheme
+    // The AMOLED mode forces true-black backgrounds but keeps the accent of the
+    // colour theme, so "AMOLED + Sunset" is black with orange accents. Swapping
+    // the whole palette here would silently discard the chosen colour.
+    val pureBlack = themeMode == ThemeMode.AMOLED
     MaterialTheme(
-        colorScheme = effectiveTheme.colorScheme(dark),
+        colorScheme = appTheme.colorScheme(dark, pureBlack = pureBlack),
         typography = AppTypography,
         content = {
             MatchSystemBarsToTheme()

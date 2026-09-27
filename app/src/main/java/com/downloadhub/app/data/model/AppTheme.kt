@@ -26,13 +26,19 @@ enum class AppTheme(
     SLATE("Slate", Color(0xFF475569), Color(0xFF94A3B8), Color(0xFFEEF1F5)),
     AMOLED("AMOLED", Color(0xFF22C55E), Color(0xFF4ADE80), Color(0xFF000000));
 
-    fun colorScheme(dark: Boolean): ColorScheme = if (this == AMOLED) {
-        amoledScheme()
-    } else if (dark) {
-        darkScheme()
-    } else {
-        lightScheme()
-    }
+    /**
+ * Resolves the palette for a mode.
+ *
+ * [pureBlack] is the AMOLED *mode*. It only replaces the background and surface
+ * with true black; the accent still comes from this theme. The AMOLED mode
+ * therefore composes with any colour theme, and selecting it no longer discards
+ * the colour the user chose.
+ */
+fun colorScheme(dark: Boolean, pureBlack: Boolean = false): ColorScheme = when {
+    pureBlack || this == AMOLED -> blackScheme()
+    dark -> darkScheme()
+    else -> lightScheme()
+}
 
     private fun lightScheme(): ColorScheme = lightColorScheme(
         primary = accent,
@@ -85,30 +91,33 @@ enum class AppTheme(
         onError = Color(0xFF690005)
     )
 
-    private fun amoledScheme(): ColorScheme = darkColorScheme(
-        primary = accent,
-        onPrimary = Color(0xFF04220D),
-        primaryContainer = shade(accent, 0.7f),
-        onPrimaryContainer = Color(0xFFDFFFF0),
-        secondary = shade(accent, 0.75f),
-        onSecondary = Color(0xFF04220D),
-        secondaryContainer = shade(accent, 0.55f),
-        onSecondaryContainer = Color(0xFFEFFCF4),
-        tertiary = tint(accent, 0.6f),
-        onTertiary = Color(0xFF04220D),
-        // True black, with just enough lift on containers that switches, chips
-        // and cards remain visible instead of vanishing into the background.
-        background = Color(0xFF000000),
-        onBackground = Color(0xFFEDF3F3),
-        surface = Color(0xFF000000),
-        onSurface = Color(0xFFEDF3F3),
-        surfaceVariant = Color(0xFF0D0F0F),
-        onSurfaceVariant = Color(0xFFA8B4B5),
-        outline = Color(0xFF3A3A3A),
-        outlineVariant = Color(0xFF1B1B1B),
-        error = Color(0xFFFFB4AB),
-        onError = Color(0xFF690005)
-    )
+    /**
+ * True black, built from this theme's own accent so AMOLED works with every
+ * colour theme rather than imposing one. Containers get a small lift off black,
+ * otherwise switches, chips and cards disappear into the background.
+ */
+private fun blackScheme(): ColorScheme = darkColorScheme(
+    primary = accentDark,
+    onPrimary = Color(0xFF06180C),
+    primaryContainer = shade(accentDark, 0.7f),
+    onPrimaryContainer = Color(0xFFEFFCF4),
+    secondary = shade(accentDark, 0.75f),
+    onSecondary = Color(0xFF06180C),
+    secondaryContainer = shade(accentDark, 0.55f),
+    onSecondaryContainer = Color(0xFFEFFCF4),
+    tertiary = tint(accentDark, 0.6f),
+    onTertiary = Color(0xFF06180C),
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFEDF3F3),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFEDF3F3),
+    surfaceVariant = Color(0xFF0D0F0F),
+    onSurfaceVariant = Color(0xFFA8B4B5),
+    outline = Color(0xFF3A3A3A),
+    outlineVariant = Color(0xFF1B1B1B),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005)
+)
 
     /** Perceived brightness of this theme's accent, used by tests and previews. */
     fun accentLuminance(): Float = 0.299f * accent.red + 0.587f * accent.green + 0.114f * accent.blue
