@@ -188,14 +188,22 @@ Open this app's Settings -> Check for updates to install this release.
     }
 
     # --- 7. publish ---------------------------------------------------------
-    $releaseArgs = @('release', 'create', $tag, $apkAsset, '--title', "1 download manager $newVersion", '--notes', $Notes)
+    # The notes go through a file, never as a command-line argument. Windows
+    # PowerShell re-parses native-command arguments, so a multi-line notes body
+    # containing quotes, backticks or a line starting with "-" gets mangled and
+    # the upload fails (or publishes truncated text).
+    $notesFile = Join-Path ([System.IO.Path]::GetTempPath()) "dlm-notes-$tag.txt"
+    [System.IO.File]::WriteAllText($notesFile, $Notes)
+    $notesArgs = @('--notes-file', $notesFile)
+
+    $releaseArgs = @('release', 'create', $tag, $apkAsset, '--title', "1 download manager $newVersion") + $notesArgs
     if ($Draft) { $releaseArgs += '--draft' }
     & $gh @releaseArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Release already exists; updating it instead.' -ForegroundColor Yellow
         & $gh release upload $tag $apkAsset --clobber
         if ($LASTEXITCODE -ne 0) { throw "Could not upload the APK to release $tag." }
-        & $gh release edit $tag --title "1 download manager $newVersion" --notes $Notes
+        & $gh release edit $tag --title "1 download manager $newVersion" @notesArgs
         if ($LASTEXITCODE -ne 0) { throw "Could not update release $tag." }
     }
 
