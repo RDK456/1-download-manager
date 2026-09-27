@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import androidx.compose.ui.graphics.luminance
 import org.junit.Test
 
 class DownloadSettingsTest {
@@ -44,6 +45,78 @@ class DownloadSettingsTest {
         val scheme = AppTheme.AMOLED.colorScheme(dark = true)
         assertEquals(androidx.compose.ui.graphics.Color.Black, scheme.background)
         assertEquals(androidx.compose.ui.graphics.Color.Black, scheme.surface)
+    }
+
+    @Test
+    fun amoledIsVisiblyDifferentFromTheRegularDarkThemes() {
+        val amoled = AppTheme.AMOLED.colorScheme(dark = true)
+        AppTheme.entries.filter { it != AppTheme.AMOLED }.forEach { theme ->
+            val dark = theme.colorScheme(dark = true)
+            assertNotEquals(
+                "${theme.name} dark looks the same as AMOLED",
+                amoled.background,
+                dark.background
+            )
+            assertNotEquals(
+                "${theme.name} dark surface looks the same as AMOLED",
+                amoled.surface,
+                dark.surface
+            )
+        }
+    }
+
+    @Test
+    fun checkedTogglesHaveAVisibleThumb() {
+        // A checked Switch paints the track with secondaryContainer and the thumb
+        // with onSecondaryContainer, so they must not be the same brightness.
+        AppTheme.entries.forEach { theme ->
+            listOf(true, false).forEach { dark ->
+                val scheme = theme.colorScheme(dark)
+                val track = scheme.secondaryContainer.luminance()
+                val thumb = scheme.onSecondaryContainer.luminance()
+                val difference = kotlin.math.abs(track - thumb)
+                assertTrue(
+                    "${theme.name} dark=$dark toggle thumb is invisible " +
+                        "(track=$track thumb=$thumb)",
+                    difference > 0.25f
+                )
+            }
+        }
+    }
+
+    @Test
+    fun amoledContainersStayVisibleOnBlack() {
+        val scheme = AppTheme.AMOLED.colorScheme(dark = true)
+        // Compose's luminance() is linearised, so compare sRGB channels directly:
+        // containers need a visible lift off pure black or controls disappear.
+        assertTrue(
+            "surfaceVariant must lift off black (was ${scheme.surfaceVariant.red})",
+            scheme.surfaceVariant.red > 0.04f
+        )
+        assertTrue(
+            "outline must be visible on black (was ${scheme.outline.red})",
+            scheme.outline.red > 0.15f
+        )
+        assertTrue(
+            "onSurfaceVariant must read on black",
+            scheme.onSurfaceVariant.red > 0.4f
+        )
+    }
+
+    @Test
+    fun bodyTextIsLegibleOnEveryBackground() {
+        AppTheme.entries.forEach { theme ->
+            listOf(true, false).forEach { dark ->
+                val scheme = theme.colorScheme(dark)
+                val textOnBackground = kotlin.math.abs(
+                    scheme.onBackground.luminance() - scheme.background.luminance()
+                )
+                assertTrue(
+                    "${theme.name} dark=$dark text is unreadable on its background",
+                    textOnBackground > 0.5f
+                )
+            }
+        }
     }
 
     @Test

@@ -38,40 +38,51 @@ enum class AppTheme(
         primary = accent,
         onPrimary = Color.White,
         primaryContainer = surfaceHint,
-        onPrimaryContainer = shade(accent, 0.82f),
-        secondary = shade(accent, 0.78f),
+        onPrimaryContainer = shade(accent, 0.75f),
+        secondary = shade(accent, 0.72f),
         onSecondary = Color.White,
-        secondaryContainer = tint(accent, 0.14f),
-        onSecondaryContainer = shade(accent, 0.78f),
-        tertiary = shade(accent, 0.86f),
+        // A checked Switch paints its track with secondaryContainer and its
+        // thumb with onSecondaryContainer, so these two must differ in
+        // brightness or the toggle looks like an empty pill.
+        secondaryContainer = tint(accent, 0.25f),
+        onSecondaryContainer = Color.White,
+        tertiary = shade(accent, 0.55f),
+        onTertiary = Color.White,
         background = Color(0xFFFBFCFC),
         onBackground = Color(0xFF11181A),
         surface = Color(0xFFFFFFFF),
         onSurface = Color(0xFF11181A),
-        surfaceVariant = tint(accent, 0.08f),
-        onSurfaceVariant = Color(0xFF4B5A5D),
-        outline = tint(accent, 0.35f),
-        outlineVariant = tint(accent, 0.16f)
+        surfaceVariant = Color(0xFFEDF2F3),
+        onSurfaceVariant = Color(0xFF445457),
+        outline = Color(0xFFB7C3C5),
+        outlineVariant = Color(0xFFDCE3E4),
+        error = Color(0xFFBA1A1A),
+        onError = Color.White
     )
 
     private fun darkScheme(): ColorScheme = darkColorScheme(
         primary = accentDark,
         onPrimary = Color(0xFF06210F),
-        primaryContainer = shade(accentDark, 0.68f),
+        primaryContainer = shade(accentDark, 0.62f),
         onPrimaryContainer = Color(0xFFE6FFF2),
         secondary = shade(accentDark, 0.72f),
         onSecondary = Color(0xFF06180C),
-        secondaryContainer = shade(accentDark, 0.62f),
-        onSecondaryContainer = Color(0xFFE6FFF2),
-        tertiary = shade(accentDark, 0.8f),
-        background = Color(0xFF0D1213),
-        onBackground = Color(0xFFE3EAEB),
-        surface = Color(0xFF141A1C),
-        onSurface = Color(0xFFE3EAEB),
-        surfaceVariant = tint(accentDark, 0.14f),
-        onSurfaceVariant = Color(0xFFA9B6B8),
-        outline = tint(accentDark, 0.4f),
-        outlineVariant = tint(accentDark, 0.2f)
+        // Dark themes keep a visibly grey surface so that AMOLED (pure black)
+        // reads as a deliberate choice rather than a slightly darker shade.
+        secondaryContainer = shade(accentDark, 0.55f),
+        onSecondaryContainer = Color(0xFFEFFCF4),
+        tertiary = tint(accentDark, 0.6f),
+        onTertiary = Color(0xFF06210F),
+        background = Color(0xFF12171A),
+        onBackground = Color(0xFFE6EDEE),
+        surface = Color(0xFF1A2124),
+        onSurface = Color(0xFFE6EDEE),
+        surfaceVariant = Color(0xFF262F33),
+        onSurfaceVariant = Color(0xFFB4C0C2),
+        outline = Color(0xFF46545A),
+        outlineVariant = Color(0xFF2C3639),
+        error = Color(0xFFFFB4AB),
+        onError = Color(0xFF690005)
     )
 
     private fun amoledScheme(): ColorScheme = darkColorScheme(
@@ -81,17 +92,22 @@ enum class AppTheme(
         onPrimaryContainer = Color(0xFFDFFFF0),
         secondary = shade(accent, 0.75f),
         onSecondary = Color(0xFF04220D),
-        secondaryContainer = shade(accent, 0.6f),
-        onSecondaryContainer = Color(0xFFDFFFF0),
-        tertiary = shade(accent, 0.85f),
+        secondaryContainer = shade(accent, 0.55f),
+        onSecondaryContainer = Color(0xFFEFFCF4),
+        tertiary = tint(accent, 0.6f),
+        onTertiary = Color(0xFF04220D),
+        // True black, with just enough lift on containers that switches, chips
+        // and cards remain visible instead of vanishing into the background.
         background = Color(0xFF000000),
         onBackground = Color(0xFFEDF3F3),
         surface = Color(0xFF000000),
         onSurface = Color(0xFFEDF3F3),
-        surfaceVariant = Color(0xFF101716),
-        onSurfaceVariant = Color(0xFF9FADAC),
-        outline = Color(0xFF2A3A38),
-        outlineVariant = Color(0xFF172220)
+        surfaceVariant = Color(0xFF0D0F0F),
+        onSurfaceVariant = Color(0xFFA8B4B5),
+        outline = Color(0xFF3A3A3A),
+        outlineVariant = Color(0xFF1B1B1B),
+        error = Color(0xFFFFB4AB),
+        onError = Color(0xFF690005)
     )
 
     /** Perceived brightness of this theme's accent, used by tests and previews. */
