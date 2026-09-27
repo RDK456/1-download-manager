@@ -152,15 +152,26 @@ try {
     }
 
     # --- 5. commit + tag + push --------------------------------------------
+    # git and gh write ordinary progress to stderr ("Everything up-to-date",
+    # "* [new tag] ..."). Under $ErrorActionPreference = 'Stop' Windows
+    # PowerShell turns that into a terminating NativeCommandError, so a
+    # successful publish reported failure. Relax the preference for the noisy
+    # calls and keep $LASTEXITCODE as the only success signal.
+    $strictPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+
     & $git add --all
     & $git commit -m "Release $tag"
-    if ($LASTEXITCODE -ne 0) { throw 'Nothing to commit or the commit failed.' }
+    if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $strictPreference; throw 'Nothing to commit or the commit failed.' }
     & $git tag -a $tag -m "1 download manager $newVersion"
+    if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $strictPreference; throw "Creating tag $tag failed." }
 
     & $git push origin main
-    if ($LASTEXITCODE -ne 0) { throw "Pushing main failed. Nothing was tagged remotely; re-run after fixing connectivity." }
+    if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $strictPreference; throw "Pushing main failed. Nothing was tagged remotely; re-run after fixing connectivity." }
     & $git push origin "refs/tags/$tag"
-    if ($LASTEXITCODE -ne 0) { throw "Pushing tag $tag failed; the release was not published." }
+    if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $strictPreference; throw "Pushing tag $tag failed; the release was not published." }
+
+    $ErrorActionPreference = $strictPreference
 
     # --- 6. release notes ---------------------------------------------------
     $previousTag = (& $git describe --tags --abbrev=0 "$tag^" 2>$null)
@@ -227,3 +238,7 @@ Open this app's Settings -> Check for updates to install this release.
 finally {
     Pop-Location
 }
+
+# Reached only when the publish was verified above; a failure throws and skips
+# this. Without it the script inherits a stale non-zero $LASTEXITCODE.
+exit 0
