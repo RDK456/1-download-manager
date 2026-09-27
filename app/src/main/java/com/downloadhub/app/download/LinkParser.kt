@@ -50,30 +50,37 @@ object LinkParser {
     }
 
     private val programExtensions = setOf(
-        "exe", "msi", "msix", "apk", "xapk", "apks", "deb", "rpm", "appimage", "pkg",
-        "dmg", "jar", "war", "run", "app", "msu", "snap", "flatpak", "msc", "bat", "cmd", "sh"
+        "exe", "msi", "msix", "apk", "xapk", "apks", "deb", "rpm", "appimage", "pkg", "dmg",
+        "jar", "war", "run", "app", "msu", "snap", "flatpak", "msc", "bat", "cmd", "sh",
+        "elf", "so", "dll", "dylib", "pak", "nupkg", "crx", "xpi"
     )
 
     private val compressedExtensions = setOf(
-        "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "lz", "lzma",
-        "iso", "cab", "arj", "sit", "jar", "apkm"
+        "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "lz", "lzma", "iso", "cab",
+        "arj", "sit", "jar", "apkm", "txz", "tbz2", "z", "lha", "pak", "wim", "qcow2",
+        "img", "vhd", "vhdx", "squashfs", "br"
     )
 
     private val documentExtensions = setOf(
-        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "epub",
-        "odt", "ods", "odp", "rtf", "md", "json", "xml", "html", "htm"
+        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "epub", "odt", "ods",
+        "odp", "rtf", "md", "markdown", "json", "xml", "yml", "yaml", "html", "htm", "srt", "vtt",
+        "ass", "ssa", "tex", "log", "db", "sqlite", "ics", "eml", "msg"
     )
 
     private val audioExtensions = setOf(
-        "mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "wma", "aiff", "m4b"
+        "mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma", "aiff", "aif", "m4b",
+        "amr", "ac3", "dts", "mid", "midi", "ape", "wv", "alac", "caf", "mka"
     )
 
     private val videoExtensions = setOf(
-        "mp4", "mkv", "webm", "mov", "avi", "m4v", "flv", "wmv", "mpg", "mpeg", "ts", "3gp"
+        "mp4", "mkv", "webm", "mov", "avi", "m4v", "flv", "wmv", "mpg", "mpeg", "ts", "3gp",
+        "3g2", "mts", "m2ts", "ogv", "vob", "rm", "rmvb", "asf", "divx", "f4v", "mxf", "y4m",
+        "dv", "mpe", "qt", "swf"
     )
 
     private val imageExtensions = setOf(
-        "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "tiff", "svg", "ico"
+        "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "tiff", "tif", "svg",
+        "ico", "avif", "jfif", "pjpeg", "raw", "cr2", "nef", "dng"
     )
 
     fun categoryFor(
@@ -149,6 +156,10 @@ object LinkParser {
     private fun extensionForMime(mimeType: String?): String = when {
         mimeType == null -> ""
         mimeType.contains("zip") -> "zip"
+        mimeType.contains("torrent") || mimeType.contains("bittorrent") -> "torrent"
+        mimeType.contains("matroska") -> "mkv"
+        mimeType.contains("quicktime") -> "mov"
+        mimeType.contains("x-matroska") -> "mkv"
         mimeType.contains("pdf") -> "pdf"
         mimeType.contains("json") -> "json"
         mimeType.contains("image") -> "jpg"

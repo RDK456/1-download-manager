@@ -143,6 +143,10 @@ interface DownloadDao {
     @Query("UPDATE downloads SET etag = :etag, lastModified = :lastModified, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateValidators(id: String, etag: String?, lastModified: String?, updatedAt: Long)
 
+    /** Bumps the retry counter used by the automatic retry policy. */
+    @Query("UPDATE downloads SET retryCount = :retryCount WHERE id = :id")
+    suspend fun updateRetryCount(id: String, retryCount: Int)
+
     @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, updatedAt = :updatedAt WHERE status IN ('RUNNING', 'RESOLVING')")
     suspend fun recoverInterrupted(updatedAt: Long)
 

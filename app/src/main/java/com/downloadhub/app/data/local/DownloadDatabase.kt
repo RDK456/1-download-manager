@@ -10,7 +10,7 @@ import com.downloadhub.app.data.model.DownloadStatus
 
 @Database(
     entities = [DownloadEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(DownloadConverters::class)
@@ -32,6 +32,13 @@ abstract class DownloadDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE downloads ADD COLUMN thumbnailUrl TEXT")
                 db.execSQL("ALTER TABLE downloads ADD COLUMN thumbnailPath TEXT")
                 db.execSQL("ALTER TABLE downloads ADD COLUMN durationSeconds INTEGER")
+            }
+        }
+
+        /** Adds the automatic-retry counter. */
+        val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN retryCount INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

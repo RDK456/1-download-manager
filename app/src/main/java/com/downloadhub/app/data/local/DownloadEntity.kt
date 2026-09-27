@@ -37,5 +37,6 @@ data class DownloadEntity(
     val audioFormat: String? = null,
     val thumbnailUrl: String? = null,
     val thumbnailPath: String? = null,
-    val durationSeconds: Long? = null
+    val durationSeconds: Long? = null,
+    val retryCount: Int = 0
 )

@@ -17,7 +17,8 @@ import kotlinx.coroutines.withContext
 class HttpDownloader(
     private val dao: DownloadDao,
     private val storage: DownloadStorage,
-    private val settings: SettingsRepository
+    private val settings: SettingsRepository,
+    private val speedLimiter: SpeedLimiter
 ) {
     suspend fun download(item: DownloadEntity) = withContext(Dispatchers.IO) {
         val work = storage.workFile(item.id)
@@ -110,6 +111,8 @@ class HttpDownloader(
                             ensureActive()
                             val count = input.read(buffer)
                             if (count < 0) break
+                            // Shared bucket: caps the whole app's download rate.
+                            speedLimiter.acquire(count)
                             output.write(buffer, 0, count)
                             downloaded += count
                             windowBytes += count

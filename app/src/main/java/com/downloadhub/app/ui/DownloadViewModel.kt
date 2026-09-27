@@ -10,7 +10,9 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.downloadhub.app.DownloadHubApplication
+import com.downloadhub.app.data.DownloadSettings
 import com.downloadhub.app.data.local.DownloadEntity
+import com.downloadhub.app.data.model.AppTheme
 import com.downloadhub.app.data.model.AudioFormat
 import com.downloadhub.app.data.model.DownloadCategory
 import com.downloadhub.app.data.model.DownloadCreateRequest
@@ -82,6 +84,10 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val themeMode: StateFlow<ThemeMode> = settings.themeMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThemeMode.SYSTEM)
+    val appTheme: StateFlow<AppTheme> = settings.appTheme
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppTheme.MINT)
+    val downloadSettings: StateFlow<DownloadSettings> = settings.downloadSettings
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadSettings())
     val destinationTreeUri: StateFlow<String?> = settings.destinationTreeUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val _downloaderVersion = MutableStateFlow(
@@ -452,6 +458,36 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { _events.emit(DownloadEvent.Message(text)) }
     }
 
+    fun setAppTheme(theme: AppTheme) {
+        viewModelScope.launch { settings.setAppTheme(theme) }
+    }
+
+    fun setMaxConcurrent(value: Int) {
+        viewModelScope.launch {
+            settings.setMaxConcurrent(value)
+            // Apply immediately without waiting for a restart.
+            DownloadService.start(getApplication(), emptyList())
+        }
+    }
+
+    fun setSpeedLimit(bytesPerSecond: Long) {
+        viewModelScope.launch {
+            settings.setSpeedLimit(bytesPerSecond)
+            app.container.speedLimiter.setLimit(bytesPerSecond)
+        }
+    }
+
+    fun setWifiOnly(enabled: Boolean) {
+        viewModelScope.launch { settings.setWifiOnly(enabled) }
+    }
+
+    fun setMaxRetries(value: Int) {
+        viewModelScope.launch { settings.setMaxRetries(value) }
+    }
+
+    fun setAutoRemoveCompleted(enabled: Boolean) {
+        viewModelScope.launch { settings.setAutoRemoveCompleted(enabled) }
+    }
     fun setTheme(mode: ThemeMode) {
         viewModelScope.launch { settings.setThemeMode(mode) }
     }
@@ -463,42 +499,205 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     fun pauseAll() = DownloadService.action(getApplication(), DownloadService.ACTION_PAUSE_ALL)
     fun resumeAll() = DownloadService.action(getApplication(), DownloadService.ACTION_RESUME_ALL)
 
-    fun intentFor(item: DownloadEntity, share: Boolean = false): Intent? {
-        val path = item.outputPath ?: return null
+    /** Result of trying to hand a finished download to another app. */
+    sealed interface OpenResult {
+        data class Ready(val intent: Intent) : OpenResult
+        data class Unavailable(val reason: String) : OpenResult
+    }
+
+    /**
+     * Builds a VIEW intent for a finished download, verifying that some app can
+     * actually handle it. Torrent output is a folder, so a single file inside it
+     * is opened when possible and the folder itself otherwise.
+     */
+    fun openFor(item: DownloadEntity): OpenResult {
+        if (item.status != DownloadStatus.COMPLETED) {
+            return OpenResult.Unavailable("This download has not finished yet")
+        }
+        val path = item.outputPath
+        if (path.isNullOrBlank()) return OpenResult.Unavailable("This download has no saved file")
+
+        val context = getApplication<Application>()
+        if (path.startsWith("content:")) {
+            val uri = Uri.parse(path)
+            val document = runCatching { DocumentFile.fromSingleUri(context, uri) }.getOrNull()
+            val isDirectory = document?.isDirectory == true
+            val name = document?.name ?: item.fileName
+            val mime = document?.type ?: mimeGuess(name)
+            return resolveView(context, uri, if (isDirectory) FOLDER_MIME else mime, name, isDirectory)
+        }
+
+        val file = File(path)
+        if (!file.exists()) return OpenResult.Unavailable("The saved file is no longer on this device")
+        if (file.isDirectory) {
+            val playable = largestPlayableFile(file)
+            if (playable != null) {
+                return resolveView(
+                    context,
+                    fileUri(playable),
+                    mimeGuess(playable.name),
+                    playable.name,
+                    isDirectory = false
+                )
+            }
+            return resolveView(context, fileUri(file), FOLDER_MIME, file.name, isDirectory = true)
+        }
+        return resolveView(context, fileUri(file), mimeGuess(file.name), file.name, isDirectory = false)
+    }
+
+    /** Wraps [openFor] in a system chooser so the user can pick "Open with". */
+    fun openWithFor(item: DownloadEntity): OpenResult = when (val open = openFor(item)) {
+        is OpenResult.Unavailable -> open
+        is OpenResult.Ready -> OpenResult.Ready(
+            Intent.createChooser(open.intent, "Open with").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
+    }
+
+    fun shareFor(item: DownloadEntity): OpenResult {
+        if (item.status != DownloadStatus.COMPLETED) {
+            return OpenResult.Unavailable("This download has not finished yet")
+        }
+        val path = item.outputPath
+            ?: return OpenResult.Unavailable("This download has no saved file")
+        val context = getApplication<Application>()
         val uri: Uri
         val isDirectory: Boolean
         if (path.startsWith("content:")) {
             uri = Uri.parse(path)
             isDirectory = runCatching {
-                DocumentFile.fromSingleUri(getApplication<Application>(), uri)?.isDirectory == true
+                DocumentFile.fromSingleUri(context, uri)?.isDirectory == true
             }.getOrDefault(item.source == DownloadSource.TORRENT)
         } else {
             val file = File(path)
-            if (!file.exists()) return null
+            if (!file.exists()) return OpenResult.Unavailable("The saved file is no longer on this device")
             isDirectory = file.isDirectory
-            uri = runCatching {
-                FileProvider.getUriForFile(
-                    getApplication(),
-                    "${getApplication<Application>().packageName}.files",
-                    file
-                )
-            }.getOrNull() ?: return null
+            uri = fileUri(file) ?: return OpenResult.Unavailable("This file cannot be shared")
         }
-        val mime = if (isDirectory) "resource/folder" else item.mimeType ?: "application/octet-stream"
-        return if (share) {
-            Intent(Intent.ACTION_SEND).apply {
-                type = mime
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val mime = if (isDirectory) FOLDER_MIME else (item.mimeType ?: mimeGuess(item.fileName))
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = mime
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        return OpenResult.Ready(Intent.createChooser(intent, "Share").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+    }
+
+    private fun resolveView(
+        context: android.content.Context,
+        uri: Uri?,
+        mime: String,
+        displayName: String,
+        isDirectory: Boolean
+    ): OpenResult {
+        if (uri == null) return OpenResult.Unavailable("This file could not be shared")
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val resolvable = runCatching {
+            if (intent.resolveActivity(context.packageManager) != null) {
+                true
+            } else {
+                // Some file managers only respond without an explicit MIME type.
+                val relaxed = Intent(Intent.ACTION_VIEW).apply {
+                    setData(uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                relaxed.resolveActivity(context.packageManager) != null
             }
-        } else {
-            Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, mime)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }.getOrDefault(false)
+        if (resolvable) return OpenResult.Ready(intent)
+        return OpenResult.Unavailable(
+            if (isDirectory) {
+                "No app can open this folder"
+            } else {
+                "No app on this device can open $displayName"
             }
+        )
+    }
+
+    private fun fileUri(file: File): Uri? = runCatching {
+        FileProvider.getUriForFile(
+            getApplication(),
+            "${getApplication<Application>().packageName}.files",
+            file
+        )
+    }.getOrNull()
+
+    private fun mimeGuess(name: String): String {
+        val extension = name.substringAfterLast('.', "").lowercase()
+        return when (extension) {
+            "mp4", "m4v" -> "video/mp4"
+            "mkv" -> "video/x-matroska"
+            "webm" -> "video/webm"
+            "avi" -> "video/x-msvideo"
+            "mov" -> "video/quicktime"
+            "ts" -> "video/mp2t"
+            "3gp" -> "video/3gpp"
+            "flv" -> "video/x-flv"
+            "wmv" -> "video/x-ms-wmv"
+            "mp3" -> "audio/mpeg"
+            "m4a", "m4b" -> "audio/mp4"
+            "aac" -> "audio/aac"
+            "opus" -> "audio/opus"
+            "ogg", "oga" -> "audio/ogg"
+            "flac" -> "audio/flac"
+            "wav" -> "audio/wav"
+            "wma" -> "audio/x-ms-wma"
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "heic" -> "image/heic"
+            "bmp" -> "image/bmp"
+            "pdf" -> "application/pdf"
+            "epub" -> "application/epub+zip"
+            "txt" -> "text/plain"
+            "srt", "vtt" -> "text/plain"
+            "zip" -> "application/zip"
+            "rar" -> "application/vnd.rar"
+            "7z" -> "application/x-7z-compressed"
+            "apk" -> "application/vnd.android.package-archive"
+            "torrent" -> "application/x-bittorrent"
+            else -> "application/octet-stream"
         }
     }
 
+    /** Largest video/audio file in a torrent payload, used for open and preview. */
+    private fun largestPlayableFile(directory: File): File? =
+        directory.walkTopDown()
+            .filter { it.isFile }
+            .filter { file ->
+                val extension = file.extension.lowercase()
+                extension in PLAYABLE_EXTENSIONS
+            }
+            .maxByOrNull { it.length() }
+    /** Starts the resolved open/open-with intent, or explains why it cannot. */
+    fun launchOpen(item: DownloadEntity, open: Boolean) {
+        val result = if (open) openFor(item) else openWithFor(item)
+        startOrExplain(result)
+    }
+
+    fun launchShare(item: DownloadEntity) {
+        startOrExplain(shareFor(item))
+    }
+
+    private fun startOrExplain(result: OpenResult) {
+        when (result) {
+            is OpenResult.Ready -> runCatching {
+                getApplication<Application>().startActivity(result.intent)
+            }.onFailure {
+                viewModelScope.launch {
+                    _events.emit(DownloadEvent.Message("Could not open that file"))
+                }
+            }
+            is OpenResult.Unavailable -> viewModelScope.launch {
+                _events.emit(DownloadEvent.Message(result.reason))
+            }
+        }
+    }
     private fun sendAction(action: String, id: String) {
         DownloadService.action(getApplication(), action, id)
     }
@@ -540,6 +739,9 @@ private fun DownloadCategory.matchesFilter(filter: DownloadCategory): Boolean = 
     DownloadCategory.ARCHIVE -> this == DownloadCategory.ARCHIVE || this == DownloadCategory.COMPRESSED
     else -> this == filter
 }
+
+private val PLAYABLE_EXTENSIONS = setOf("mp4", "m4v", "mkv", "webm", "avi", "mov", "flv", "3gp", "ts", "mp3", "m4a", "aac", "opus", "ogg", "flac", "wav")
+private const val FOLDER_MIME = "resource/folder"
 
 private val DownloadStatus.isActiveCompat: Boolean
     get() = this == com.downloadhub.app.data.model.DownloadStatus.QUEUED ||

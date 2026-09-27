@@ -266,19 +266,45 @@ private fun DownloadThumbnail(
     }
 }
 
-/** A finished image file is its own thumbnail; otherwise use the cached artwork. */
+/**
+ * Where to look for artwork: the cached thumbnail, or the finished file itself
+ * for images, audio and video (a frame or cover is pulled out of it).
+ */
 private fun localThumbnailFor(item: DownloadEntity): String? {
     if (item.thumbnailPath?.let { File(it).isFile } == true) return item.thumbnailPath
-    val isImage = item.category == DownloadCategory.IMAGE ||
-        item.mimeType?.startsWith("image/") == true
-    if (isImage && item.status == DownloadStatus.COMPLETED) {
+    val kind = item.category
+    val mimeIsMedia = item.mimeType?.let { mime ->
+        mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/")
+    } == true
+    val playable = kind == DownloadCategory.IMAGE ||
+        kind == DownloadCategory.VIDEO ||
+        kind == DownloadCategory.AUDIO ||
+        mimeIsMedia
+    if (playable && item.status == DownloadStatus.COMPLETED) {
         val output = item.outputPath
-        if (!output.isNullOrBlank() && !output.startsWith("content:") && File(output).isFile) {
-            return output
+        if (!output.isNullOrBlank() && !output.startsWith("content:")) {
+            val file = File(output)
+            if (file.isFile) return file.absolutePath
+            // A torrent publishes a folder: preview its largest media file.
+            if (file.isDirectory) {
+                return file.walkTopDown()
+                    .filter { it.isFile }
+                    .maxByOrNull { candidate -> candidate.length() }
+                    ?.takeIf { candidate ->
+                        candidate.extension.lowercase() in MEDIA_PREVIEW_EXTENSIONS
+                    }
+                    ?.absolutePath
+            }
         }
     }
     return null
 }
+
+private val MEDIA_PREVIEW_EXTENSIONS = setOf(
+    "mp4", "m4v", "mkv", "webm", "mov", "avi", "3gp", "ts", "flv", "mpg", "mpeg", "wmv", "ogv",
+    "mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma",
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic"
+)
 
 @Composable
 private fun CompletedFooter(item: DownloadEntity) {

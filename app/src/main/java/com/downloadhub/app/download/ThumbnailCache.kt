@@ -3,6 +3,7 @@ package com.downloadhub.app.download
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.util.LruCache
 import java.io.File
 import java.net.HttpURLConnection
@@ -60,7 +61,7 @@ class ThumbnailCache(private val context: Context) {
         if (!file.isFile || file.length() <= 0L) return null
         val memoryKey = "file:${file.absolutePath}:${file.lastModified()}"
         memory.get(memoryKey)?.let { return it }
-        return runCatching {
+        val decoded = runCatching {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.absolutePath, bounds)
             if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
@@ -74,6 +75,54 @@ class ThumbnailCache(private val context: Context) {
                 memory.put(memoryKey, it)
             }
         }.getOrNull()
+        return decoded ?: mediaFrame(file, memoryKey)
+    }
+
+    /**
+     * Pulls artwork out of a media file itself: embedded cover art for audio, a
+     * frame one second in for video. Container support varies, so this is always
+     * best effort and the caller falls back to the category icon.
+     */
+    private fun mediaFrame(file: File, memoryKey: String): Bitmap? {
+        val extension = file.extension.lowercase()
+        if (extension !in MEDIA_EXTENSIONS) return null
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            val embedded = retriever.embeddedPicture
+            val bitmap = when {
+                embedded != null && embedded.isNotEmpty() -> BitmapFactory.decodeByteArray(
+                    embedded,
+                    0,
+                    embedded.size
+                )
+                extension in VIDEO_EXTENSIONS ->
+                    retriever.getFrameAtTime(FRAME_AT_MICROS, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                else -> null
+            }
+            bitmap?.let { scaled ->
+                val result = scaleDown(scaled)
+                if (result !== scaled) scaled.recycle()
+                memory.put(memoryKey, result)
+                result
+            }
+        } catch (_: Throwable) {
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private fun scaleDown(bitmap: Bitmap): Bitmap {
+        val largest = maxOf(bitmap.width, bitmap.height)
+        if (largest <= TARGET_MAX_PX) return bitmap
+        val ratio = TARGET_MAX_PX.toFloat() / largest
+        return Bitmap.createScaledBitmap(
+            bitmap,
+            (bitmap.width * ratio).toInt().coerceAtLeast(1),
+            (bitmap.height * ratio).toInt().coerceAtLeast(1),
+            true
+        )
     }
 
     private fun download(url: String, target: File): Boolean = runCatching {
@@ -128,5 +177,12 @@ class ThumbnailCache(private val context: Context) {
         const val TARGET_MAX_PX = 320
         const val CONNECT_TIMEOUT_MILLIS = 8_000
         const val READ_TIMEOUT_MILLIS = 8_000
+        const val FRAME_AT_MICROS = 1_000_000L
+        val VIDEO_EXTENSIONS = setOf(
+            "mp4", "m4v", "mkv", "webm", "mov", "avi", "3gp", "ts", "flv", "mpg", "mpeg", "wmv", "ogv"
+        )
+        val MEDIA_EXTENSIONS = VIDEO_EXTENSIONS + setOf(
+            "mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma", "m4b", "aiff"
+        )
     }
 }

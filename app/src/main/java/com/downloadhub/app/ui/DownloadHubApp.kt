@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Badge
@@ -63,6 +65,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -88,6 +91,8 @@ private enum class AppDestination {
     DOWNLOADS,
     TORRENTS,
     SETTINGS,
+    DOWNLOAD_SETTINGS,
+    THEMES,
     ABOUT
 }
 
@@ -103,7 +108,8 @@ fun DownloadHubApp(
     onIncomingConsumed: () -> Unit
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    DownloadHubTheme(themeMode) {
+    val appTheme by viewModel.appTheme.collectAsStateWithLifecycle()
+    DownloadHubTheme(themeMode, appTheme) {
         val context = LocalContext.current
         val visibleItems by viewModel.visibleDownloads.collectAsStateWithLifecycle()
         val visibleTorrents by viewModel.visibleTorrents.collectAsStateWithLifecycle()
@@ -120,6 +126,7 @@ fun DownloadHubApp(
         val destinationTreeUri by viewModel.destinationTreeUri.collectAsStateWithLifecycle()
         val downloaderVersion by viewModel.downloaderVersion.collectAsStateWithLifecycle()
         val ytdlpUpdate by viewModel.ytdlpUpdate.collectAsStateWithLifecycle()
+        val downloadSettings by viewModel.downloadSettings.collectAsStateWithLifecycle()
         val update by updateViewModel.snapshot.collectAsStateWithLifecycle()
         val autoCheckUpdates by updateViewModel.autoCheckUpdates.collectAsStateWithLifecycle()
         val updateMessage by updateViewModel.messages.collectAsStateWithLifecycle()
@@ -250,7 +257,7 @@ fun DownloadHubApp(
                 )
             },
             bottomBar = {
-                if (destination != AppDestination.ABOUT) {
+                if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) {
                     NavigationBar(modifier = Modifier.navigationBarsPadding()) {
                         NavigationBarItem(
                             selected = destination == AppDestination.DOWNLOADS,
@@ -335,7 +342,25 @@ fun DownloadHubApp(
                         onCheckYtDlp = viewModel::checkYtDlpUpdate,
                         onApplyYtDlp = viewModel::applyYtDlpUpdate,
                         onAbout = { navigate(AppDestination.ABOUT) },
+                        onDownloadSettings = { navigate(AppDestination.DOWNLOAD_SETTINGS) },
+                        onThemes = { navigate(AppDestination.THEMES) },
                         onCheckUpdates = updateViewModel::checkForUpdatesNow
+                    )
+                    AppDestination.DOWNLOAD_SETTINGS -> DownloadSettingsScreen(
+                        settings = downloadSettings,
+                        destinationTreeUri = destinationTreeUri,
+                        onMaxConcurrentChange = viewModel::setMaxConcurrent,
+                        onSpeedLimitChange = viewModel::setSpeedLimit,
+                        onWifiOnlyChange = viewModel::setWifiOnly,
+                        onMaxRetriesChange = viewModel::setMaxRetries,
+                        onAutoRemoveChange = viewModel::setAutoRemoveCompleted,
+                        onDestinationChange = viewModel::setDestinationTreeUri
+                    )
+                    AppDestination.THEMES -> ThemePickerScreen(
+                        appTheme = appTheme,
+                        themeMode = themeMode,
+                        onThemeChange = viewModel::setAppTheme,
+                        onModeChange = viewModel::setTheme
                     )
                     AppDestination.ABOUT -> AboutScreen(
                         appVersion = updateViewModel.currentVersion,
@@ -396,16 +421,9 @@ fun DownloadHubApp(
                 onResume = { viewModel.resume(item.id) },
                 onRetry = { viewModel.retry(item.id) },
                 onDelete = { viewModel.delete(item.id) },
-                onOpen = {
-                    viewModel.intentFor(item)?.let { intent ->
-                        runCatching { context.startActivity(intent) }
-                    }
-                },
-                onShare = {
-                    viewModel.intentFor(item, share = true)?.let { intent ->
-                        runCatching { context.startActivity(intent) }
-                    }
-                }
+                onOpen = { viewModel.launchOpen(item, open = true) },
+                onOpenWith = { viewModel.launchOpen(item, open = false) },
+                onShare = { viewModel.launchShare(item) }
             )
         }
 
@@ -686,6 +704,8 @@ private fun SettingsScreen(
     onCheckYtDlp: () -> Unit,
     onApplyYtDlp: () -> Unit,
     onAbout: () -> Unit,
+    onDownloadSettings: () -> Unit,
+    onThemes: () -> Unit,
     onCheckUpdates: () -> Unit
 ) {
     val context = LocalContext.current
@@ -711,71 +731,33 @@ private fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("Appearance", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ThemeMode.entries.forEach { mode ->
-                androidx.compose.material3.FilterChip(
-                    selected = mode == themeMode,
-                    onClick = { onThemeChange(mode) },
-                    label = { Text(themeLabel(mode)) }
-                )
-            }
+        SettingsSection("General") {
+            SettingsNavRow(
+                icon = Icons.Default.Download,
+                title = "Download settings",
+                subtitle = "Folder, simultaneous downloads, speed limit, retries"
+            ) { onDownloadSettings() }
+            SettingsNavRow(
+                icon = Icons.Default.Palette,
+                title = "Themes",
+                subtitle = "Two-tone colour scheme, light or dark"
+            ) { onThemes() }
+            SettingsNavRow(
+                icon = Icons.Default.Info,
+                title = "About 1 download manager",
+                subtitle = "Version, source code and updates"
+            ) { onAbout() }
         }
-        Spacer(Modifier.height(8.dp))
-        Text("Download folder", style = MaterialTheme.typography.titleMedium)
-        Text(
-            folderName,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        OutlinedButton(
-            onClick = { folderPicker.launch(null) },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Default.FolderOpen, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Choose folder")
-        }
-        if (destinationTreeUri != null) {
-            TextButton(
-                onClick = { onDestinationChange(null) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Use default Download/DownloadHub")
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("YouTube downloader", style = MaterialTheme.typography.titleMedium)
-        Text(
-            ytdlpSummary(downloaderVersion, ytdlpUpdate),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        // Checking is always available; installing is only offered when a newer
-        // stable release actually exists.
-        OutlinedButton(
-            onClick = onCheckYtDlp,
-            enabled = ytdlpUpdate !is YtDlpUpdateState.Checking,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_system_update),
-                contentDescription = null
-            )
-            Spacer(Modifier.width(8.dp))
+
+        SettingsSection("YouTube downloader") {
             Text(
-                when (ytdlpUpdate) {
-                    is YtDlpUpdateState.Checking -> "Checking yt-dlp…"
-                    is YtDlpUpdateState.UpToDate -> "Check for update"
-                    else -> "Check for update"
-                }
+                ytdlpSummary(downloaderVersion, ytdlpUpdate),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-        val ytdlpTarget = (ytdlpUpdate as? YtDlpUpdateState.Available)?.latest
-        if (ytdlpTarget != null) {
-            Spacer(Modifier.height(6.dp))
-            Button(
-                onClick = onApplyYtDlp,
+            OutlinedButton(
+                onClick = onCheckYtDlp,
+                enabled = ytdlpUpdate !is YtDlpUpdateState.Checking,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
@@ -783,63 +765,82 @@ private fun SettingsScreen(
                     contentDescription = null
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Update yt-dlp to $ytdlpTarget")
+                Text(
+                    if (ytdlpUpdate is YtDlpUpdateState.Checking) {
+                        "Checking yt-dlp..."
+                    } else {
+                        "Check for update"
+                    }
+                )
+            }
+            val ytdlpTarget = (ytdlpUpdate as? YtDlpUpdateState.Available)?.latest
+            if (ytdlpTarget != null) {
+                Button(
+                    onClick = onApplyYtDlp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Update yt-dlp to $ytdlpTarget")
+                }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text("App updates", style = MaterialTheme.typography.titleMedium)
-        Text(
-            updateStatusText(update, appVersion),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        OutlinedButton(
-            onClick = onCheckUpdates,
-            enabled = update.status !is UpdateStatus.Checking && update.progress == null,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_system_update),
-                contentDescription = null
+
+        SettingsSection("App updates") {
+            Text(
+                updateStatusText(update, appVersion),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.width(8.dp))
-            Text("Check for updates")
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("About", style = MaterialTheme.typography.titleMedium)
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onAbout),
-            color = MaterialTheme.colorScheme.surface,
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
+            OutlinedButton(
+                onClick = onCheckUpdates,
+                enabled = update.status !is UpdateStatus.Checking && update.progress == null,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_info),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    painter = painterResource(R.drawable.ic_system_update),
+                    contentDescription = null
                 )
-                Spacer(Modifier.width(12.dp))
-                Text("About 1 download manager", modifier = Modifier.weight(1f))
-                Icon(
-                    painter = painterResource(R.drawable.ic_chevron_right),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(Modifier.width(8.dp))
+                Text("Check for updates")
             }
+            Text(
+                "Share links from other apps or paste one into the add sheet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        Text(
-            "Share links from other apps or paste one into the add sheet.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+    }
+}
+
+@Composable
+private fun SettingsNavRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_right),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -847,6 +848,8 @@ private fun destinationTitle(destination: AppDestination): String = when (destin
     AppDestination.DOWNLOADS -> APP_TITLE
     AppDestination.TORRENTS -> "Torrents"
     AppDestination.SETTINGS -> "Settings"
+    AppDestination.DOWNLOAD_SETTINGS -> "Download settings"
+    AppDestination.THEMES -> "Themes"
     AppDestination.ABOUT -> "About us"
 }
 
@@ -860,7 +863,7 @@ private fun themeLabel(mode: ThemeMode): String = when (mode) {
 /** One line describing the installed yt-dlp and the result of the last check. */
 fun ytdlpSummary(installed: String, state: YtDlpUpdateState): String = when (state) {
     YtDlpUpdateState.Idle -> "yt-dlp $installed"
-    YtDlpUpdateState.Checking -> "yt-dlp $installed - checking for a newer release…"
+    YtDlpUpdateState.Checking -> "yt-dlp $installed - checking for a newer releaseÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦"
     is YtDlpUpdateState.UpToDate -> "yt-dlp $installed is up to date"
     is YtDlpUpdateState.Available -> "yt-dlp $installed - version ${state.latest} is available"
     is YtDlpUpdateState.Failed -> "yt-dlp $installed - ${state.message}"

@@ -18,45 +18,59 @@ import com.downloadhub.app.data.model.DownloadStatus
 import com.downloadhub.app.ui.MainActivity
 import java.util.Locale
 
+/**
+ * Notification plumbing.
+ *
+ * Two channels: a quiet "progress" channel for the ongoing, non-dismissable
+ * foreground notification, and a high-importance "complete" channel so finished
+ * and failed downloads actually alert. Progress updates use `setOnlyAlertOnce`
+ * so a fast download does not buzz on every tick.
+ */
 object DownloadNotifications {
     const val FOREGROUND_ID = 4100
     private const val FINISHED_ID = 4200
     private const val FAILED_ID = 4300
     private const val PROGRESS_CHANNEL = "download_progress"
     private const val COMPLETE_CHANNEL = "download_complete"
-    private const val TORRENT_CHANNEL = "torrent_activity"
 
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        manager.createNotificationChannel(
-            NotificationChannel(
-                PROGRESS_CHANNEL,
-                context.getString(R.string.notification_channel_downloads),
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Progress and queue controls for active downloads"
-                setShowBadge(false)
-            }
-        )
-        manager.createNotificationChannel(
-            NotificationChannel(
-                COMPLETE_CHANNEL,
-                context.getString(R.string.notification_channel_complete),
-                NotificationManager.IMPORTANCE_DEFAULT
+        val progress = manager.getNotificationChannel(PROGRESS_CHANNEL)
+        if (progress == null || progress.importance != NotificationManager.IMPORTANCE_LOW) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    PROGRESS_CHANNEL,
+                    context.getString(R.string.notification_channel_downloads),
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Ongoing progress and queue controls for active downloads"
+                    setShowBadge(false)
+                    enableVibration(false)
+                    setSound(null, null)
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                }
             )
-        )
-        manager.createNotificationChannel(
-            NotificationChannel(
-                TORRENT_CHANNEL,
-                context.getString(R.string.notification_channel_torrent),
-                NotificationManager.IMPORTANCE_LOW
+        }
+        val complete = manager.getNotificationChannel(COMPLETE_CHANNEL)
+        if (complete == null || complete.importance != NotificationManager.IMPORTANCE_HIGH) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    COMPLETE_CHANNEL,
+                    context.getString(R.string.notification_channel_complete),
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Alerts when a download finishes or fails"
+                    enableVibration(true)
+                }
             )
-        )
+        }
     }
 
     fun foreground(context: Context, active: List<DownloadEntity>): Notification {
-        val running = active.count { it.status == DownloadStatus.RUNNING }
+        val running = active.count {
+            it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.RESOLVING
+        }
         val queued = active.size - running
         val first = active.firstOrNull()
         val percent = first?.progressPercent?.coerceIn(0, 100) ?: 0
@@ -66,10 +80,19 @@ object DownloadNotifications {
             else -> "$running active" + if (queued > 0) ", $queued queued" else ""
         }
         val text = first?.let {
-            if (it.totalBytes > 0) {
-                "${formatBytes(it.bytesDownloaded)} of ${formatBytes(it.totalBytes)}"
-            } else {
-                "${it.progressPercent}% • ${it.source.name.lowercase(Locale.US)}"
+            when {
+                it.status == DownloadStatus.QUEUED -> "Waiting in queue"
+                it.totalBytes > 0 -> buildString {
+                    append(formatBytes(it.bytesDownloaded))
+                    append(" of ")
+                    append(formatBytes(it.totalBytes))
+                    if (it.speedBytesPerSecond > 0) {
+                        append(" • ")
+                        append(formatBytes(it.speedBytesPerSecond))
+                        append("/s")
+                    }
+                }
+                else -> "${it.progressPercent}% • ${it.source.name.lowercase(Locale.US)}"
             }
         } ?: "Starting queue"
 
@@ -78,18 +101,31 @@ object DownloadNotifications {
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(contentIntent(context, first?.id))
+            // Ongoing + no dismiss: Android will not let it be swiped away, which
+            // is what makes the transfer feel like it survives leaving the app.
             .setOngoing(true)
+            .setAutoCancel(false)
             .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setSilent(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setProgress(100, percent, first?.totalBytes == 0L)
             .addAction(
                 R.drawable.ic_stat_download,
                 context.getString(R.string.notification_pause_all),
                 serviceAction(context, DownloadService.ACTION_PAUSE_ALL)
             )
-
-        active.firstOrNull()?.let { item ->
-            builder.setSubText(item.category.name.lowercase(Locale.US).replaceFirstChar { it.uppercase() })
+        if (active.size > 1) {
+            builder.setSubText("${active.size} in queue")
+        } else {
+            first?.let { item ->
+                builder.setSubText(
+                    item.category.name.lowercase(Locale.US).replaceFirstChar { it.uppercase() }
+                )
+            }
         }
         return builder.build()
     }
@@ -99,9 +135,20 @@ object DownloadNotifications {
             .setSmallIcon(R.drawable.ic_stat_download)
             .setContentTitle("Download complete")
             .setContentText(item.fileName)
+            .setStyle(
+                NotificationCompat.BigTextStyle().bigText(
+                    "${item.fileName}\n${formatBytes(item.bytesDownloaded)} saved"
+                )
+            )
             .setContentIntent(contentIntent(context, item.id))
             .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .addAction(
+                R.drawable.ic_stat_download,
+                "Open",
+                contentIntent(context, item.id)
+            )
             .build()
         notify(context, FINISHED_ID + item.id.hashCode(), notification)
     }
@@ -113,7 +160,13 @@ object DownloadNotifications {
             .setContentText(item.errorMessage ?: item.fileName)
             .setContentIntent(contentIntent(context, item.id))
             .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ERROR)
+            .addAction(
+                R.drawable.ic_stat_download,
+                "Retry",
+                serviceAction(context, DownloadService.ACTION_RETRY, item.id)
+            )
             .build()
         notify(context, FAILED_ID + item.id.hashCode(), notification)
     }
@@ -131,13 +184,19 @@ object DownloadNotifications {
         )
     }
 
-    private fun serviceAction(context: Context, action: String): PendingIntent =
-        PendingIntent.getService(
-            context,
-            action.hashCode(),
-            Intent(context, DownloadService::class.java).setAction(action),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+    private fun serviceAction(
+        context: Context,
+        action: String,
+        id: String? = null
+    ): PendingIntent = PendingIntent.getService(
+        context,
+        (action + id.orEmpty()).hashCode(),
+        Intent(context, DownloadService::class.java).apply {
+            this.action = action
+            if (id != null) putExtra(DownloadService.EXTRA_ID, id)
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
 
     private fun notify(context: Context, id: Int, notification: Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

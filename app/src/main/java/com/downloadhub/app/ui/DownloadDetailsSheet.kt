@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
@@ -59,6 +60,7 @@ fun DownloadDetailsSheet(
     onRetry: () -> Unit,
     onDelete: () -> Unit,
     onOpen: () -> Unit,
+    onOpenWith: () -> Unit,
     onShare: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -83,7 +85,7 @@ fun DownloadDetailsSheet(
                 if (item.status == DownloadStatus.COMPLETED) {
                     sourceLabel(item.source)
                 } else {
-                    "${sourceLabel(item.source)} • ${statusLabel(item.status)}"
+                    "${sourceLabel(item.source)} Ã¢â‚¬Â¢ ${statusLabel(item.status)}"
                 },
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary
@@ -149,7 +151,7 @@ fun DownloadDetailsSheet(
                 DetailRow(
                     "Quality",
                     if (quality.isAudioOnly) {
-                        "Audio only · ${AudioFormat.fromValue(item.audioFormat).label}"
+                        "Audio only Ã‚Â· ${AudioFormat.fromValue(item.audioFormat).label}"
                     } else {
                         quality.label
                     }
