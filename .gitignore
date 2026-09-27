@@ -25,3 +25,6 @@ Thumbs.db
 keystore/
 *.jks
 *.keystore
+
+# Kotlin session scratch
+.kotlin/
