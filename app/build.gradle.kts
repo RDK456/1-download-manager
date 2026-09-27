@@ -27,8 +27,8 @@ android {
         applicationId = "com.downloadhub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
-        versionName = "1.3.1"
+        versionCode = 22
+        versionName = "1.4.0"
 
         // Single source of truth for the About page and the in-app updater.
         buildConfigField("String", "GITHUB_OWNER", "\"RDK456\"")
@@ -120,6 +120,8 @@ ksp {
 }
 
 dependencies {
+    // Shared engine code, compiled into the Windows build from the same sources.
+    implementation(project(":core"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)

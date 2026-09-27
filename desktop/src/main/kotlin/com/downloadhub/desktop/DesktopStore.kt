@@ -35,6 +35,9 @@ object AppPaths {
     }
 
     val toolsDir: File by lazy { File(home, "tools").apply { mkdirs() } }
+
+    /** Staging area for torrents; libtorrent writes here before publication. */
+    val torrentRoot: File by lazy { File(home, "torrents").apply { mkdirs() } }
 }
 
 object DesktopJson {
@@ -94,7 +97,10 @@ data class QueuedDownload(
     val mimeType: String? = null,
     val quality: String? = null,
     val audioFormat: String? = null,
-    val playlist: Boolean = false
+    val playlist: Boolean = false,
+    val torrentFilePath: String? = null,
+    val torrentInfoHash: String? = null,
+    val outputPath: String? = null
 )
 
 /** JSON-backed queue, loaded once and written on change (debounced by the caller). */

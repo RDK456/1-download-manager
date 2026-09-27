@@ -80,6 +80,14 @@ class DownloadStorage(private val context: Context) {
         return File(workRoot, id)
     }
 
+    /**
+     * Root folder for in-progress torrents.
+     *
+     * The shared engine takes a path supplier rather than a Context, so the
+     * Windows build can hand it an equivalent folder of its own.
+     */
+    fun torrentRoot(): File = torrentRoot
+
     fun torrentDirectory(name: String): File {
         torrentRoot.mkdirs()
         val safe = LinkParser.sanitizeFileName(name)

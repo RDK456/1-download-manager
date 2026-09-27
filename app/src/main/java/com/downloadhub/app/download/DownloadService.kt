@@ -20,6 +20,7 @@ import com.downloadhub.app.ui.classifyTorrent
 import com.downloadhub.app.ui.largestFileIn
 import com.downloadhub.app.data.local.DownloadDao
 import com.downloadhub.app.data.local.DownloadEntity
+import com.downloadhub.core.TorrentEngine
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -72,7 +73,7 @@ class DownloadService : Service() {
         val settings = app.container.settings
         httpDownloader = HttpDownloader(dao, app.container.storage, settings, app.container.speedLimiter)
         youtubeDownloader = app.container.youtubeDownloader
-        torrentEngine = TorrentEngine(applicationContext)
+        torrentEngine = TorrentEngine { DownloadStorage(applicationContext).torrentRoot() }
         networkMonitor = app.container.networkMonitor
 
         // Post the ongoing notification immediately: without this Android can
@@ -280,11 +281,11 @@ class DownloadService : Service() {
         )
         if (started == 0 || dao.getById(current.id)?.status != DownloadStatus.RUNNING) return
         holdWakeLock(true)
-        var snapshot = torrentEngine.start(current)
+        var snapshot = torrentEngine.start(current.toCoreItem())
             ?: throw IOException("The torrent engine could not start this item")
         while (scope.isActive && current.status != DownloadStatus.PAUSED) {
             currentCoroutineContext().ensureActive()
-            snapshot = torrentEngine.poll(current) ?: snapshot
+            snapshot = torrentEngine.poll(current.toCoreItem()) ?: snapshot
             val currentStatus = dao.getById(current.id)?.status
             if (currentStatus != DownloadStatus.RUNNING) return@runTorrent
 
@@ -321,7 +322,7 @@ class DownloadService : Service() {
             }
             snapshot.error?.takeIf { it.isNotBlank() }?.let { throw IOException(it) }
             if (snapshot.isFinished) {
-                torrentEngine.pause(current)
+                torrentEngine.pause(current.toCoreItem())
                 val sourceDirectory = current.outputPath
                     ?.let { path -> File(path) }
                     ?.takeIf { it.exists() }
@@ -431,7 +432,7 @@ class DownloadService : Service() {
         if (item.source == DownloadSource.YOUTUBE) {
             com.yausername.youtubedl_android.YoutubeDL.getInstance().destroyProcessById(id)
         }
-        if (item.source == DownloadSource.TORRENT) torrentEngine.pause(item)
+        if (item.source == DownloadSource.TORRENT) torrentEngine.pause(item.toCoreItem())
         activeJobs[id]?.cancel()
     }
 
@@ -460,7 +461,7 @@ class DownloadService : Service() {
         if (item.source == DownloadSource.YOUTUBE) {
             com.yausername.youtubedl_android.YoutubeDL.getInstance().destroyProcessById(id)
         }
-        if (item.source == DownloadSource.TORRENT) torrentEngine.remove(item, deleteFiles = true)
+        if (item.source == DownloadSource.TORRENT) torrentEngine.remove(item.toCoreItem(), deleteFiles = true)
         activeJobs[id]?.cancel()
         app.container.storage.deleteWork(id)
         app.container.storage.deleteOutput(item.outputPath)

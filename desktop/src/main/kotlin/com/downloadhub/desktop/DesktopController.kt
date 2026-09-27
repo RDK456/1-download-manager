@@ -86,6 +86,14 @@ class DesktopController(
         onChange = ::refresh
     )
 
+    private val torrents = DesktopTorrentEngine(
+        store = store,
+        area = area,
+        settingsState = settingsState,
+        onChange = ::refresh,
+        scope = scope
+    )
+
     private val _ui = MutableStateFlow(DesktopUiState())
     val ui: StateFlow<DesktopUiState> = _ui.asStateFlow()
 
@@ -96,7 +104,11 @@ class DesktopController(
         engine.pump()
     }
 
-    fun start() = engine.pump()
+    fun start() {
+        engine.pump()
+        // Resume anything the user paused before closing, and pick up torrents.
+        torrents.startLoop()
+    }
 
     private fun refresh() {
         _ui.value = DesktopUiState(
@@ -110,11 +122,26 @@ class DesktopController(
 
     val actions: DesktopActions = DesktopActions(
         addDownload = ::addDownload,
-        pause = { engine.pause(it) },
-        resume = { engine.resume(it) },
-        retry = { engine.retry(it) },
+        pause = { id ->
+            val item = store.get(id)
+            if (item?.source == DownloadSource.TORRENT) torrents.pause(id) else engine.pause(id)
+        },
+        resume = { id ->
+            val item = store.get(id)
+            if (item?.source == DownloadSource.TORRENT) torrents.resume(id) else engine.resume(id)
+        },
+        retry = { id ->
+            val item = store.get(id)
+            if (item?.source == DownloadSource.TORRENT) torrents.resume(id) else engine.retry(id)
+        },
         remove = { id ->
-            engine.remove(id)
+            val item = store.get(id)
+            if (item?.source == DownloadSource.TORRENT) {
+                torrents.remove(id, deleteFiles = true)
+                engine.remove(id)
+            } else {
+                engine.remove(id)
+            }
             store.persist()
         },
         pauseAll = { engine.pauseAll() },
@@ -163,13 +190,8 @@ class DesktopController(
         if (source == DownloadSource.YOUTUBE) {
             scope.launch { runYtDlp(id) }
         } else if (source == DownloadSource.TORRENT) {
-            store.update(id) {
-                it.copy(
-                    status = DownloadStatus.FAILED,
-                    errorMessage = "Torrents are not available in this build yet"
-                )
-            }
-            refresh()
+            // libtorrent picks it up from the loop; nothing to do here.
+            torrents.startLoop()
         } else {
             engine.pump()
         }
@@ -240,6 +262,7 @@ class DesktopController(
 
     fun close() {
         store.persist()
+        torrents.close()
         engine.close()
     }
 }

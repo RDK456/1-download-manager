@@ -60,7 +60,13 @@ data class DownloadItem(
     val quality: String? = null,
     val audioFormat: String? = null,
     val playlist: Boolean = false,
-    val createdAt: Long = 0L
+    val createdAt: Long = 0L,
+    /** Absolute path of the saved .torrent file, when one was loaded from disk. */
+    val torrentFilePath: String? = null,
+    /** Hex info hash, learned once libtorrent has resolved the magnet. */
+    val torrentInfoHash: String? = null,
+    /** Where a finished torrent is published. */
+    val outputPath: String? = null
 ) {
     val progressPercent: Int
         get() = if (totalBytes > 0) {

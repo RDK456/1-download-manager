@@ -1,7 +1,5 @@
-package com.downloadhub.app.download
+package com.downloadhub.core
 
-import android.content.Context
-import com.downloadhub.app.data.local.DownloadEntity
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import org.libtorrent4j.AddTorrentParams
@@ -13,8 +11,16 @@ import org.libtorrent4j.TorrentFlags
 import org.libtorrent4j.TorrentHandle
 import org.libtorrent4j.TorrentInfo
 import org.libtorrent4j.TorrentStatus
+import org.libtorrent4j.swig.remove_flags_t
 
- data class TorrentSnapshot(
+/**
+ * A point-in-time reading of one torrent.
+ *
+ * libtorrent reports everything through alerts, but the app polls instead: a poll
+ * is cheap, cannot be missed, and keeps the Android service and the desktop loop
+ * driving the engine the same way.
+ */
+data class TorrentSnapshot(
     val infoHash: String,
     val bytesDownloaded: Long,
     val totalBytes: Long,
@@ -30,34 +36,48 @@ import org.libtorrent4j.TorrentStatus
     val error: String?
 )
 
-class TorrentEngine(context: Context) {
-    private val appContext = context.applicationContext
-    private val sessionManager = SessionManager()
+/**
+ * Torrent engine, shared by Android and Windows.
+ *
+ * libtorrent4j's JVM artifact is platform neutral, so the only thing that differed
+ * per platform was where files live. [torrentRoot] supplies that, which is why this
+ * class carries no Android reference and compiles into both builds.
+ */
+class TorrentEngine(private val torrentRoot: () -> File) {
+
+    private val sessionManager: SessionManager
     private val handles = ConcurrentHashMap<String, TorrentHandle>()
     private val lock = Any()
 
-    fun start(item: DownloadEntity): TorrentSnapshot? {
+    init {
+        // Must happen before SessionManager is constructed, because that class's
+        // initialiser performs the native load that fails on desktop without this.
+        LibtorrentNative.ensureReady()
+        sessionManager = SessionManager()
+    }
+
+    fun start(item: DownloadItem): TorrentSnapshot? {
         val hash = ensureSession(item)
-        val handle = findHandle(item, hash) ?: return null
+        val handle = findHandle(hash) ?: return null
         handles[item.id] = handle
         return snapshot(item, handle)
     }
 
-    fun poll(item: DownloadEntity): TorrentSnapshot? {
+    fun poll(item: DownloadItem): TorrentSnapshot? {
         val hash = item.torrentInfoHash ?: runCatching {
-            val params = AddTorrentParams.parseMagnetUri(item.url)
-            params.infoHashes.getBest().toHex()
+            AddTorrentParams.parseMagnetUri(item.url).infoHashes.getBest().toHex()
         }.getOrNull() ?: return handles[item.id]?.let { snapshot(item, it) }
-        val handle = sessionManager.find(Sha1Hash.parseHex(hash)) ?: return handles[item.id]?.let { snapshot(item, it) }
+        val handle = sessionManager.find(Sha1Hash.parseHex(hash))
+            ?: return handles[item.id]?.let { snapshot(item, it) }
         handles[item.id] = handle
         return snapshot(item, handle)
     }
 
-    fun pause(item: DownloadEntity) {
+    fun pause(item: DownloadItem) {
         handles[item.id]?.pause()
     }
 
-    fun resume(item: DownloadEntity) {
+    fun resume(item: DownloadItem) {
         val handle = handles[item.id] ?: run {
             start(item)
             handles[item.id]
@@ -65,14 +85,14 @@ class TorrentEngine(context: Context) {
         handle?.resume()
     }
 
-    fun remove(item: DownloadEntity, deleteFiles: Boolean) {
+    fun remove(item: DownloadItem, deleteFiles: Boolean) {
         val handle = handles[item.id] ?: item.torrentInfoHash?.let {
             runCatching { sessionManager.find(Sha1Hash.parseHex(it)) }.getOrNull()
         }
         if (handle != null) {
             sessionManager.remove(
                 handle,
-                if (deleteFiles) SessionHandle.DELETE_FILES else org.libtorrent4j.swig.remove_flags_t()
+                if (deleteFiles) SessionHandle.DELETE_FILES else remove_flags_t()
             )
         }
         handles.remove(item.id)
@@ -85,7 +105,7 @@ class TorrentEngine(context: Context) {
         }
     }
 
-    private fun ensureSession(item: DownloadEntity): String {
+    private fun ensureSession(item: DownloadItem): String {
         synchronized(lock) {
             if (!sessionManager.isRunning) {
                 val params = SessionParams()
@@ -95,7 +115,7 @@ class TorrentEngine(context: Context) {
         }
 
         val torrentFile = item.torrentFilePath?.let(::File)?.takeIf { it.exists() }
-        val saveDirectory = File(item.outputPath ?: DownloadStorage(appContext).torrentDirectory(item.fileName).path)
+        val saveDirectory = item.outputPath?.let(::File) ?: defaultSaveDirectory(item)
         saveDirectory.mkdirs()
         val flags = TorrentFlags.SEQUENTIAL_DOWNLOAD
             .or_(TorrentFlags.UPDATE_SUBSCRIBE)
@@ -114,8 +134,13 @@ class TorrentEngine(context: Context) {
         }
     }
 
-    private fun findHandle(item: DownloadEntity, hash: String): TorrentHandle? {
+    private fun defaultSaveDirectory(item: DownloadItem): File =
+        File(torrentRoot(), sanitise(item.fileName))
+
+    private fun findHandle(hash: String): TorrentHandle? {
         val parsed = runCatching { Sha1Hash.parseHex(hash) }.getOrNull() ?: return null
+        // libtorrent resolves a magnet asynchronously, so give the handle a moment
+        // to appear rather than reporting "unknown torrent" on the first poll.
         repeat(20) {
             sessionManager.find(parsed)?.let { return it }
             Thread.sleep(100)
@@ -123,10 +148,11 @@ class TorrentEngine(context: Context) {
         return sessionManager.find(parsed)
     }
 
-    private fun snapshot(item: DownloadEntity, handle: TorrentHandle): TorrentSnapshot? {
+    private fun snapshot(item: DownloadItem, handle: TorrentHandle): TorrentSnapshot? {
         if (!handle.isValid) return null
         val status = handle.status()
-        val infoHash = runCatching { handle.infoHash().toHex() }.getOrDefault(item.torrentInfoHash.orEmpty())
+        val infoHash = runCatching { handle.infoHash().toHex() }
+            .getOrDefault(item.torrentInfoHash.orEmpty())
         val total = status.total()
         val done = status.totalDone()
         val metadataName = runCatching { handle.torrentFile()?.name() }.getOrNull()
@@ -135,7 +161,11 @@ class TorrentEngine(context: Context) {
             infoHash = infoHash,
             bytesDownloaded = done,
             totalBytes = total,
-            percent = if (total > 0) (done * 100 / total).coerceIn(0, 100).toInt() else status.progress().let { (it * 100).toInt() },
+            percent = if (total > 0) {
+                (done * 100 / total).coerceIn(0, 100).toInt()
+            } else {
+                (status.progress() * 100).toInt()
+            },
             downloadRate = status.downloadPayloadRate().toLong().coerceAtLeast(0),
             uploadRate = status.uploadPayloadRate().toLong().coerceAtLeast(0),
             peers = status.numSeeds(),
@@ -147,4 +177,7 @@ class TorrentEngine(context: Context) {
             error = error
         )
     }
+
+    private fun sanitise(name: String): String =
+        name.replace(Regex("""[\\/:*?"<>|]"""), "_").ifBlank { "torrent" }
 }
