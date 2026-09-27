@@ -25,6 +25,14 @@ data class DesktopUiState(
     val settings: DesktopSettings = DesktopSettings(),
     val busyCount: Int = 0,
     val ytDlpStatus: String = "",
+    val captureActive: Boolean = false,
+    val capturePort: Int = 0,
+    val message: String? = null,
+    val appVersion: String = APP_VERSION,
+    val torrentsTab: Boolean = false,
+    val update: UpdateCheck = UpdateCheck.Idle,
+    val updateProgress: Int = -1,
+    val downloadedInstaller: String? = null,
     val palette: ColorScheme = DarkPalette
 )
 
@@ -39,6 +47,13 @@ data class DesktopActions(
     val resumeAll: () -> Unit,
     val updateSettings: (DesktopSettings) -> Unit,
     val chooseFolder: () -> File?,
+    val setBrowserCapture: (Boolean) -> Unit,
+    val consumeMessage: () -> Unit,
+    val setTorrentsTab: (Boolean) -> Unit,
+    val checkForUpdates: () -> Unit,
+    val downloadUpdate: () -> Unit,
+    val launchInstaller: () -> Unit,
+    val dismissUpdate: () -> Unit,
     val quit: () -> Unit
 )
 
@@ -94,12 +109,40 @@ class DesktopController(
         scope = scope
     )
 
+    /**
+     * Loopback endpoint the browser extension posts links to, so a download started
+     * in Chrome, Edge or Firefox lands in the queue instead of the browser's own
+     * downloader.
+     */
+    private val capture = CaptureServer(
+        token = settingsState.value.captureToken.ifBlank { CaptureServer.newToken() },
+        onQueue = ::acceptCapturedLink,
+        onMessage = { message -> scope.launch { _messages.value = message } }
+    )
+
+    private val _torrentsTab = MutableStateFlow(false)
+
+    private val _messages = MutableStateFlow<String?>(null)
+    val messages: StateFlow<String?> = _messages.asStateFlow()
+
     private val _ui = MutableStateFlow(DesktopUiState())
     val ui: StateFlow<DesktopUiState> = _ui.asStateFlow()
 
+    // --- in-app updates ------------------------------------------------------
+
+    private val updateChecker = DesktopUpdateChecker()
+    private val updateInstaller = UpdateInstaller()
+    private val _update = MutableStateFlow<UpdateCheck>(UpdateCheck.Idle)
+    private val _updateProgress = MutableStateFlow(-1)
+    private val _downloadedInstaller = MutableStateFlow<String?>(null)
     init {
         // Make the bundled binaries available in a writable location on first run.
-        scope.launch { tools.install() }
+        // The pairing token is generated on first run and has to reach disk, or it
+        // would change on every launch and silently unpair the extension.
+        if (settingsState.value.captureToken.isBlank()) {
+            settingsState.value = settingsState.value.copy(captureToken = CaptureServer.newToken())
+        }
+        DesktopSettings.save(settingsState.value)
         refresh()
         engine.pump()
     }
@@ -108,6 +151,115 @@ class DesktopController(
         engine.pump()
         // Resume anything the user paused before closing, and pick up torrents.
         torrents.startLoop()
+        if (settingsState.value.browserCaptureEnabled) {
+            capture.start()
+        }
+    }
+
+    /** Queues a link handed over by the browser. */
+    private fun acceptCapturedLink(request: CaptureRequest) {
+        val name = request.fileName?.takeIf { it.isNotBlank() }
+            ?: com.downloadhub.core.LinkParser.fileNameFrom(request.url)
+        addDownload(
+            link = request.url,
+            audioOnly = false,
+            format = "m4a",
+            height = null,
+            playlist = false,
+            preferredName = name
+        )
+    }
+
+    val capturePort: Int get() = capture.boundPort
+    val captureActive: Boolean get() = capture.isRunning
+
+    init {
+        scope.launch {
+            _messages.collect { refresh() }
+        }
+    }
+
+
+    /**
+     * Asks GitHub whether a newer Windows build exists.
+     *
+     * The Android build does this once a day and installs on its own; here the user
+     * asks, because a desktop app is not going to be replaced behind their back by
+     * an installer they never saw start.
+     */
+    fun checkForUpdates() {
+        if (_update.value is UpdateCheck.Checking) return
+        _update.value = UpdateCheck.Checking
+        _updateProgress.value = -1
+        scope.launch {
+            val release = updateChecker.latest()
+            _update.value = when {
+                release == null -> UpdateCheck.Failed("Could not reach GitHub")
+                // A release with no installer is a release only the Android side can
+                // use; say so instead of offering something that cannot be run.
+                release.installer() == null ->
+                    UpdateCheck.Failed("${release.displayName} has no Windows installer yet")
+
+                !isNewerVersion(release.version, APP_VERSION) -> UpdateCheck.UpToDate(APP_VERSION)
+                else -> UpdateCheck.Available(release, release.installer()!!)
+            }
+            refresh()
+        }
+    }
+
+    /** Fetches the installer, then offers to run it. */
+    fun downloadUpdate() {
+        val available = _update.value as? UpdateCheck.Available ?: return
+        if (_updateProgress.value >= 0) return
+        _updateProgress.value = 0
+        scope.launch {
+            val result = updateInstaller.download(available.asset.downloadUrl) { percent, _, _ ->
+                _updateProgress.value = percent
+            }
+            _updateProgress.value = -1
+            result
+                .onSuccess { _downloadedInstaller.value = it.absolutePath }
+                .onFailure { _update.value = UpdateCheck.Failed(it.message ?: "The update download failed") }
+            refresh()
+        }
+    }
+
+    /**
+     * Starts the downloaded installer.
+     *
+     * The app stays open: Windows Installer runs separately and the user can carry on
+     * using this window, which is better than the window vanishing mid-install.
+     */
+    fun launchInstaller() {
+        val path = _downloadedInstaller.value ?: return
+        updateInstaller.launch(File(path))
+            .onFailure { _update.value = UpdateCheck.Failed(it.message ?: "Could not start the installer") }
+        _downloadedInstaller.value = null
+        _update.value = UpdateCheck.Idle
+        refresh()
+    }
+
+    fun dismissUpdate() {
+        _downloadedInstaller.value = null
+        _updateProgress.value = -1
+        _update.value = UpdateCheck.Idle
+        refresh()
+    }
+
+    fun setTorrentsTab(enabled: Boolean) {
+        _torrentsTab.value = enabled
+    }
+
+    fun consumeMessage() {
+        _messages.value = null
+    }
+
+    fun setBrowserCapture(enabled: Boolean) {
+        val updated = settingsState.value.copy(browserCaptureEnabled = enabled)
+        settingsState.value = updated
+        DesktopSettings.save(updated)
+        if (enabled) capture.start() else capture.stop()
+        refresh()
     }
 
     private fun refresh() {
@@ -116,6 +268,13 @@ class DesktopController(
             settings = settingsState.value,
             busyCount = engine.busy.value,
             ytDlpStatus = tools.statusText(),
+            captureActive = capture.isRunning,
+            capturePort = capture.boundPort,
+            message = _messages.value,
+            torrentsTab = _torrentsTab.value,
+            update = _update.value,
+            updateProgress = _updateProgress.value,
+            downloadedInstaller = _downloadedInstaller.value,
             palette = DarkPalette
         )
     }
@@ -152,6 +311,13 @@ class DesktopController(
             refresh()
         },
         chooseFolder = ::chooseFolder,
+        setBrowserCapture = ::setBrowserCapture,
+        consumeMessage = ::consumeMessage,
+        setTorrentsTab = ::setTorrentsTab,
+        checkForUpdates = ::checkForUpdates,
+        downloadUpdate = ::downloadUpdate,
+        launchInstaller = ::launchInstaller,
+        dismissUpdate = ::dismissUpdate,
         quit = {
             store.persist()
             onQuitRequested()
@@ -164,12 +330,21 @@ class DesktopController(
      * A magnet or a .torrent URL goes to the torrent engine, a YouTube link goes
      * to yt-dlp, and anything else is a plain HTTP transfer.
      */
-    fun addDownload(link: String, audioOnly: Boolean, format: String, height: Int?, playlist: Boolean) {
+    fun addDownload(
+        link: String,
+        audioOnly: Boolean,
+        format: String,
+        height: Int?,
+        playlist: Boolean,
+        preferredName: String? = null
+    ) {
         val trimmed = link.trim()
         if (trimmed.isEmpty()) return
         val source = com.downloadhub.core.LinkParser.sourceFor(trimmed)
         val id = UUID.randomUUID().toString()
-        val name = com.downloadhub.core.LinkParser.fileNameFrom(trimmed)
+        val name = preferredName?.takeIf { it.isNotBlank() }
+            ?.let { com.downloadhub.core.LinkParser.sanitizeFileName(it) }
+            ?: com.downloadhub.core.LinkParser.fileNameFrom(trimmed)
 
         store.add(
             QueuedDownload(
@@ -262,6 +437,7 @@ class DesktopController(
 
     fun close() {
         store.persist()
+        capture.stop()
         torrents.close()
         engine.close()
     }
@@ -270,3 +446,13 @@ class DesktopController(
 private fun exitProcess(code: Int) {
     kotlin.system.exitProcess(code)
 }
+
+/**
+ * The app version, read from the packaged manifest.
+ *
+ * Reading it at runtime rather than hardcoding means the window title and the menu
+ * bar can never disagree with the build that produced them.
+ */
+internal val APP_VERSION: String = runCatching {
+    DesktopController::class.java.`package`?.implementationVersion ?: "1.0.0"
+}.getOrDefault("1.0.0")

@@ -30,6 +30,8 @@ dependencies {
     // instead of the Android ABIs. The JVM artifact itself is identical.
     implementation("org.libtorrent4j:libtorrent4j:2.1.0-39")
     implementation("org.libtorrent4j:libtorrent4j-windows:2.1.0-39")
+
+    testImplementation(libs.junit)
 }
 
 /**
@@ -149,6 +151,7 @@ val fetchFfmpeg by tasks.registering {
 compose.desktop {
     application {
         mainClass = "com.downloadhub.desktop.MainKt"
+
 
         nativeDistributions {
             // The user asked for a standard installer, so Msi is the primary target.

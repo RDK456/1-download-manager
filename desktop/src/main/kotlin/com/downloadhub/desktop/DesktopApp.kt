@@ -72,276 +72,8 @@ import java.util.Locale
  * service, SAF tree, WorkManager recovery) has no desktop equivalent and is
  * simply absent.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DownloadHubDesktopApp(
-    state: DesktopUiState,
-    actions: DesktopActions
-) {
-    var tab by remember { mutableIntStateOf(0) }
-    var showAdd by remember { mutableStateOf(false) }
-    var showSettings by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
-    var exitConfirm by remember { mutableStateOf(false) }
-
-    val visible = state.items.filter {
-        val matchesTab = if (tab == 0) !it.isTorrent() else it.isTorrent()
-        val matchesQuery = query.isBlank() ||
-            it.fileName.contains(query, ignoreCase = true) ||
-            it.url.contains(query, ignoreCase = true)
-        matchesTab && matchesQuery
-    }
-
-    MaterialTheme(colorScheme = state.palette) {
-        Scaffold { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(state.palette.background)
-            ) {
-                // Top bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "1 download manager",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.width(230.dp)
-                    )
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = null, Modifier.size(18.dp))
-                        },
-                        placeholder = { Text("Search", fontSize = 13.sp) },
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = { showAdd = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add a download")
-                    }
-                    IconButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                }
-
-                TabRow(selectedTabIndex = tab) {
-                    Tab(
-                        selected = tab == 0,
-                        onClick = { tab = 0 },
-                        text = { Text("Downloads") }
-                    )
-                    Tab(
-                        selected = tab == 1,
-                        onClick = { tab = 1 },
-                        text = { Text("Torrents") }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "${visible.size} shown",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = state.palette.onSurfaceVariant
-                    )
-                    Spacer(Modifier.weight(1f))
-                    if (state.busyCount > 0) {
-                        OutlinedButton(onClick = actions.pauseAll) {
-                            Icon(Icons.Default.Pause, null, Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Pause all")
-                        }
-                    } else {
-                        OutlinedButton(onClick = actions.resumeAll) {
-                            Icon(Icons.Default.PlayArrow, null, Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Resume all")
-                        }
-                    }
-                }
-
-                if (visible.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            if (query.isBlank()) "Nothing here yet. Use + to add a download." else "No match.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = state.palette.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            start = 16.dp, end = 16.dp, bottom = 24.dp
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(visible, key = { it.id }) { item ->
-                            DownloadRow(item, state, actions)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (showAdd) {
-        AddDownloadDialog(
-            onDismiss = { showAdd = false },
-            onAdd = { link, audioOnly, format, height, playlist ->
-                actions.addDownload(link, audioOnly, format, height, playlist)
-                showAdd = false
-            }
-        )
-    }
-
-    if (showSettings) {
-        SettingsDialog(
-            settings = state.settings,
-            ytDlp = state.ytDlpStatus,
-            onDismiss = { showSettings = false },
-            onSave = { updated ->
-                actions.updateSettings(updated)
-                showSettings = false
-            },
-            onChooseFolder = actions.chooseFolder
-        )
-    }
-
-    if (exitConfirm) {
-        AlertDialog(
-            onDismissRequest = { exitConfirm = false },
-            title = { Text("Close 1 download manager?") },
-            text = {
-                Text(
-                    if (state.busyCount > 0) {
-                        "${state.busyCount} transfer(s) are still running and will be cancelled."
-                    } else {
-                        "You can reopen it from the Start menu."
-                    }
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { exitConfirm = false; actions.quit() }) { Text("Close") }
-            },
-            dismissButton = {
-                TextButton(onClick = { exitConfirm = false }) { Text("Keep open") }
-            }
-        )
-    }
-}
-
-@Composable
-private fun DownloadRow(
-    item: QueuedDownload,
-    state: DesktopUiState,
-    actions: DesktopActions
-) {
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = state.palette.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    item.fileName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    statusLine(item),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (item.status == DownloadStatus.FAILED) {
-                        state.palette.error
-                    } else {
-                        state.palette.onSurfaceVariant
-                    }
-                )
-                if (item.status == DownloadStatus.RUNNING) {
-                    LinearProgressIndicator(
-                        progress = {
-                            if (item.totalBytes > 0) {
-                                (item.bytesDownloaded.toFloat() / item.totalBytes).coerceIn(0f, 1f)
-                            } else {
-                                0f
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 6.dp)
-                    )
-                }
-            }
-
-            IconButton(onClick = { openOutput(item.location) }) {
-                Icon(Icons.Default.FolderOpen, contentDescription = "Open the file", Modifier.size(18.dp))
-            }
-            when (item.status) {
-                DownloadStatus.RUNNING, DownloadStatus.QUEUED, DownloadStatus.RESOLVING ->
-                    IconButton(onClick = { actions.pause(item.id) }) {
-                        Icon(Icons.Default.Pause, contentDescription = "Pause", Modifier.size(18.dp))
-                    }
-
-                DownloadStatus.PAUSED ->
-                    IconButton(onClick = { actions.resume(item.id) }) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Resume", Modifier.size(18.dp))
-                    }
-
-                DownloadStatus.FAILED ->
-                    IconButton(onClick = { actions.retry(item.id) }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Retry", Modifier.size(18.dp))
-                    }
-
-                DownloadStatus.COMPLETED -> Unit
-            }
-            IconButton(onClick = { actions.remove(item.id) }) {
-                Icon(Icons.Default.Delete, contentDescription = "Remove", Modifier.size(18.dp))
-            }
-        }
-    }
-}
-
-private fun statusLine(item: QueuedDownload): String {
-    val size = "${formatBytes(item.bytesDownloaded)} of ${formatBytes(item.totalBytes)}"
-    return when (item.status) {
-        DownloadStatus.QUEUED -> "Waiting in the queue"
-        DownloadStatus.RESOLVING -> "Working out the link"
-        DownloadStatus.RUNNING -> if (item.totalBytes > 0) {
-            "$size - ${item.speedBytesPerSecond.asSpeed()}"
-        } else {
-            "$size downloaded"
-        }
-
-        DownloadStatus.PAUSED -> "Paused - $size"
-        DownloadStatus.COMPLETED -> "Completed - ${formatBytes(item.bytesDownloaded)}"
-        DownloadStatus.FAILED -> item.errorMessage ?: "Failed"
-    }
-}
-
-@Composable
-private fun AddDownloadDialog(
+fun AddDownloadDialog(
     onDismiss: () -> Unit,
     onAdd: (String, Boolean, String, Int?, Boolean) -> Unit
 ) {
@@ -419,12 +151,15 @@ private fun AddDownloadDialog(
 }
 
 @Composable
-private fun SettingsDialog(
+fun SettingsDialog(
     settings: DesktopSettings,
     ytDlp: String,
+    captureActive: Boolean,
+    capturePort: Int,
     onDismiss: () -> Unit,
     onSave: (DesktopSettings) -> Unit,
-    onChooseFolder: () -> File?
+    onChooseFolder: () -> File?,
+    onToggleCapture: (Boolean) -> Unit
 ) {
     var folder by remember { mutableStateOf(settings.downloadDir) }
     var concurrent by remember { mutableStateOf(settings.maxConcurrent.toString()) }
@@ -483,6 +218,42 @@ private fun SettingsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Browser downloads",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(
+                        checked = settings.browserCaptureEnabled,
+                        onCheckedChange = onToggleCapture
+                    )
+                    Text(
+                        "Catch downloads from the browser",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Text(
+                    if (captureActive) {
+                        "Listening on 127.0.0.1:$capturePort. Install the browser extension " +
+                            "and paste the code below to pair it."
+                    } else {
+                        "Turn this on, then install the browser extension."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (settings.browserCaptureEnabled && settings.captureToken.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Pairing code",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SelectionContainerCompat(settings.captureToken)
+                }
             }
         },
         confirmButton = {
@@ -517,7 +288,6 @@ private fun Long.asSpeed(): String = if (this <= 0) {
     "${formatBytes(this)}/s"
 }
 
-private fun QueuedDownload.isTorrent() = source == com.downloadhub.core.DownloadSource.TORRENT
 
 /** Opens the finished file, or reveals it in Explorer when that fails. */
 internal fun openOutput(path: String?) {
@@ -527,5 +297,22 @@ internal fun openOutput(path: String?) {
         val desktop = if (Desktop.isDesktopSupported()) Desktop.getDesktop() else null
         if (desktop != null && desktop.isSupported(Desktop.Action.OPEN)) desktop.open(file)
         else if (desktop != null && desktop.isSupported(Desktop.Action.BROWSE)) desktop.browse(file.parentFile.toURI())
+    }
+}
+
+/** Read-only, selectable token so it can be copied into the extension popup. */
+@Composable
+private fun SelectionContainerCompat(text: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(10.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+        )
     }
 }

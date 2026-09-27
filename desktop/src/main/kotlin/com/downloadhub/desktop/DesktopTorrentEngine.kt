@@ -236,23 +236,3 @@ class DesktopTorrentEngine(
         )
     }
 }
-
-private fun QueuedDownload.toCoreItem() = DownloadItem(
-    id = id,
-    url = url,
-    fileName = fileName,
-    source = source,
-    status = status,
-    category = category,
-    bytesDownloaded = bytesDownloaded,
-    totalBytes = totalBytes,
-    speedBytesPerSecond = speedBytesPerSecond,
-    errorMessage = errorMessage,
-    location = location,
-    quality = quality,
-    audioFormat = audioFormat,
-    playlist = playlist,
-    torrentFilePath = torrentFilePath,
-    torrentInfoHash = torrentInfoHash,
-    outputPath = outputPath
-)

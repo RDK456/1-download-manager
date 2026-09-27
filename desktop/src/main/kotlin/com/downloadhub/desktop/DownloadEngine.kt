@@ -223,23 +223,3 @@ class DownloadEngine(
 private fun DownloadStatus.isSettled() = this == DownloadStatus.COMPLETED || this == DownloadStatus.FAILED
 private fun DownloadStatus.isLive() =
     this == DownloadStatus.RUNNING || this == DownloadStatus.QUEUED || this == DownloadStatus.RESOLVING
-
-private fun QueuedDownload.toCoreItem() = DownloadItem(
-    id = id,
-    url = url,
-    fileName = fileName,
-    source = source,
-    status = status,
-    category = category,
-    bytesDownloaded = bytesDownloaded,
-    totalBytes = totalBytes,
-    speedBytesPerSecond = speedBytesPerSecond,
-    errorMessage = errorMessage,
-    location = location,
-    etag = etag,
-    lastModified = lastModified,
-    mimeType = mimeType,
-    quality = quality,
-    audioFormat = audioFormat,
-    playlist = playlist
-)

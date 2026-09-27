@@ -55,6 +55,9 @@ data class DesktopSettings(
     val maxConcurrent: Int = 3,
     val speedLimitBytesPerSecond: Long = 0L,
     val maxRetries: Int = 2,
+    /** Shared secret the browser extension must present. Generated once. */
+    val captureToken: String = "",
+    val browserCaptureEnabled: Boolean = true,
     val closeToTray: Boolean = true,
     val startMinimised: Boolean = false
 ) {
@@ -65,9 +68,18 @@ data class DesktopSettings(
     companion object {
         fun load(): DesktopSettings {
             val file = AppPaths.settingsFile
-            if (!file.isFile) return DesktopSettings()
-            return runCatching { DesktopJson.format.decodeFromString<DesktopSettings>(file.readText()) }
-                .getOrDefault(DesktopSettings())
+            val loaded = if (file.isFile) {
+                runCatching { DesktopJson.format.decodeFromString<DesktopSettings>(file.readText()) }
+                    .getOrDefault(DesktopSettings())
+            } else {
+                DesktopSettings()
+            }
+            // A token generated on first run means the extension can be paired
+            // immediately, with nothing for the user to copy out of a file.
+            if (loaded.captureToken.isBlank()) {
+                return loaded.copy(captureToken = CaptureServer.newToken())
+            }
+            return loaded
         }
 
         fun save(settings: DesktopSettings) {
@@ -100,7 +112,9 @@ data class QueuedDownload(
     val playlist: Boolean = false,
     val torrentFilePath: String? = null,
     val torrentInfoHash: String? = null,
-    val outputPath: String? = null
+    val outputPath: String? = null,
+    /** When the item was queued; drives Date Added and the default sort. */
+    val createdAt: Long = System.currentTimeMillis()
 )
 
 /** JSON-backed queue, loaded once and written on change (debounced by the caller). */
