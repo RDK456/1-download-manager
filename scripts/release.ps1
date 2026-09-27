@@ -114,6 +114,17 @@ try {
     $gradleText = $gradleText -replace 'versionName\s*=\s*"[^"]+"', "versionName = `"$newVersion`""
     [System.IO.File]::WriteAllText($GradleFile, $gradleText)
 
+    # The Windows installer reads its version from gradle.properties. Updating it
+    # here is what stops the two from drifting, which previously shipped a release
+    # whose MSI was named after a version nobody had released.
+    $propsFile = Join-Path $RepoRoot 'gradle.properties'
+    if (Test-Path $propsFile) {
+        $propsText = [System.IO.File]::ReadAllText($propsFile)
+        $propsText = [regex]::Replace($propsText, '(?m)^appVersion=.*$', "appVersion=$newVersion")
+        [System.IO.File]::WriteAllText($propsFile, $propsText)
+        Write-Host "gradle.properties appVersion -> $newVersion" -ForegroundColor DarkGray
+    }
+
     # --- 3. validate --------------------------------------------------------
     $variant = if ($useDebug) { 'Debug' } else { 'Release' }
     if (-not $SkipTests) {
