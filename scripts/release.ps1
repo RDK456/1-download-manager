@@ -101,6 +101,26 @@ try {
     $parts = $oldVersion -split '\.'
     while ($parts.Count -lt 3) { $parts += '0' }
     $major = [int]$parts[0]; $minor = [int]$parts[1]; $patch = [int]$parts[2]
+
+    # A desktop-only release leaves the Android version where it is, so the Android
+    # versionName is not the number that moves. Reading it anyway made every
+    # desktop-only run recompute the same version - v1.4.4 over and over - because the
+    # only thing that would have changed was the Android version, which by
+    # definition does not change. The Windows version lives in gradle.properties, so
+    # that is what has to be read here.
+    $baseVersion = $oldVersion
+    if ($DesktopOnly) {
+        $propsPath = Join-Path $RepoRoot 'gradle.properties'
+        if ((Test-Path $propsPath) -and ([System.IO.File]::ReadAllText($propsPath) -match '(?m)^appVersion=(.+?)\s*$')) {
+            $baseVersion = $Matches[1].Trim()
+        } else {
+            throw 'appVersion not found in gradle.properties; a desktop-only release needs it to compute the next version'
+        }
+        $bp = $baseVersion -split '\.'
+        while ($bp.Count -lt 3) { $bp += '0' }
+        $major = [int]$bp[0]; $minor = [int]$bp[1]; $patch = [int]$bp[2]
+    }
+
     switch ($Bump) {
         'Major' { $major++; $minor = 0; $patch = 0 }
         'Minor' { $minor++; $patch = 0 }
@@ -110,8 +130,12 @@ try {
     $newVersionCode = $oldVersionCode + 1
     $tag = "v$newVersion"
 
-    Write-Host "Version $oldVersion ($oldVersionCode)  ->  $newVersion ($newVersionCode)" -ForegroundColor Cyan
-    Write-Host ("Artifact: " + $(if ($useDebug) { 'debug-signed APK' } else { 'signed release APK' })) -ForegroundColor Cyan
+    if ($DesktopOnly) {
+        Write-Host "Windows $baseVersion  ->  $newVersion   (Android stays at $oldVersion)" -ForegroundColor Cyan
+    } else {
+        Write-Host "Version $oldVersion ($oldVersionCode)  ->  $newVersion ($newVersionCode)" -ForegroundColor Cyan
+        Write-Host ("Artifact: " + $(if ($useDebug) { 'debug-signed APK' } else { 'signed release APK' })) -ForegroundColor Cyan
+    }
 
     # --- 2. write it back ---------------------------------------------------
     # A desktop-only release must not move the Android version, or every existing
