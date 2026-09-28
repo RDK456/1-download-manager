@@ -18,7 +18,10 @@ local.properties
 Thumbs.db
 
 # Build artifacts
+# Both installers are copied to the repository root as release assets, and both are
+# well over GitHub's 100 MB limit, so they must never be committed.
 *.apk
+*.msi
 
 # Release signing material - keep the keystore and its passwords out of git.
 # Losing these means no future release can replace an already installed build.

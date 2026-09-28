@@ -127,10 +127,17 @@ try {
 
     # --- 3. validate --------------------------------------------------------
     $variant = if ($useDebug) { 'Debug' } else { 'Release' }
+    $gradlew = if ($env:OS -eq 'Windows_NT') { '.\gradlew.bat' } else { './gradlew' }
+
+    # The Windows installer is built from the same run. Leaving it to a separate
+    # manual step is how a release once shipped with no MSI at all: the APK was
+    # built, the release went out, and the installer was quietly missing.
+    $hasDesktop = Test-Path (Join-Path $RepoRoot 'desktop\build.gradle.kts')
     if (-not $SkipTests) {
-        Write-Host "Running tests, lint and assemble$variant..." -ForegroundColor Cyan
-        $gradlew = if ($env:OS -eq 'Windows_NT') { '.\gradlew.bat' } else { './gradlew' }
-        & $gradlew test lintDebug "assemble$variant"
+        $targets = @(':core:test', ':desktop:test', ':app:testDebugUnitTest', ':app:lintDebug', ":app:assemble$variant")
+        if ($hasDesktop) { $targets += ':desktop:packageMsi' }
+        Write-Host ("Running " + ($targets -join ' ') + "...") -ForegroundColor Cyan
+        & $gradlew @targets
         if ($LASTEXITCODE -ne 0) { throw 'Build failed; the version bump was left in place for inspection.' }
     }
 
@@ -154,7 +161,13 @@ try {
         Copy-Item $msiBuilt.FullName $msiAsset -Force
         Write-Host ("MSI {0} bytes" -f (Get-Item $msiBuilt.FullName).Length) -ForegroundColor DarkGray
     } else {
-        Write-Host 'No Windows installer found; publishing the APK only.' -ForegroundColor Yellow
+        if ($hasDesktop) {
+            # The desktop module exists, so an absent MSI means the build silently
+            # skipped it. Publishing an APK-only release would quietly remove the
+            # Windows download, so this stops the release instead.
+            throw "No Windows installer for $newVersion was produced by :desktop:packageMsi."
+        }
+        Write-Host 'No desktop module; publishing the APK only.' -ForegroundColor Yellow
     }
 
     # --- 4. verify the published signature ----------------------------------
