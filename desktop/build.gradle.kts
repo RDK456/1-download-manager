@@ -1,5 +1,4 @@
 import java.net.URI
-import java.util.zip.ZipFile
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -22,34 +21,26 @@ dependencies {
     implementation(project(":core"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
-    implementation(compose.materialIconsExtended)
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.kotlinx.serialization.json)
 
-    // Torrrents reuse the same engine as Android, with the Windows native library
-    // instead of the Android ABIs. The JVM artifact itself is identical.
-    implementation("org.libtorrent4j:libtorrent4j:2.1.0-39")
+    // The libtorrent4j JVM artifact carries no native code, so :core stays
+    // platform neutral and each app adds the native library it needs.
+    implementation(libs.libtorrent4j)
     implementation("org.libtorrent4j:libtorrent4j-windows:2.1.0-39")
 
     testImplementation(libs.junit)
 }
 
-/**
- * Fetches the standalone yt-dlp and ffmpeg executables and stages them in
- * `build/ytbin`, which is copied into the app's `lib` folder by the packaging
- * task. They are downloaded rather than committed so the repository stays small,
- * and the build fails loudly if a fetch breaks rather than shipping a build with
- * YouTube silently missing.
- */
 val ytBinDir = layout.buildDirectory.dir("ytbin")
 
 /**
  * Downloads a URL to a file.
  *
  * Uses curl.exe rather than java.net: GitHub redirects release assets to a
- * different host and HttpURLConnection times out on that redirect from this
- * network, while curl's -L follows it. curl ships with Windows 10 1803+, and the
- * JVM is only a fallback for unusual setups.
+ * different host and HttpURLConnection times out on that redirect from some
+ * networks, while curl's -L follows it. curl ships with Windows 10 1803+, and the
+ * JVM is only a fallback.
  */
 fun downloadTo(url: String, destination: File) {
     destination.parentFile.mkdirs()
@@ -78,6 +69,15 @@ fun downloadTo(url: String, destination: File) {
     require(partial.renameTo(destination)) { "Could not move the download into place" }
 }
 
+/**
+ * Downloads the standalone yt-dlp executable for Windows.
+ *
+ * yt-dlp is the only binary shipped inside the app. ffmpeg used to be bundled too,
+ * at 100 MB, which made the download 150 MB across roughly a thousand files - and a
+ * thousand files is exactly what a security agent fights with, which is how the
+ * install died with "Failed to launch JVM". ffmpeg is now fetched on first use
+ * instead, the same way the Android build already handles yt-dlp.
+ */
 val fetchYtDlp by tasks.registering {
     description = "Downloads the standalone yt-dlp executable for Windows."
     group = "build setup"
@@ -90,8 +90,8 @@ val fetchYtDlp by tasks.registering {
         val out = File(dir, target)
         if (out.isFile && out.length() > 1_000_000L) return@doLast
 
-        // The "latest/download" alias also redirects unreliably, so the tag is
-        // resolved through the API and the asset is fetched from a pinned URL.
+        // The "latest/download" alias redirects unreliably, so the tag is resolved
+        // through the API and the asset is fetched from a pinned URL.
         val api = URI("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")
             .toURL()
             .openConnection()
@@ -113,48 +113,67 @@ val fetchYtDlp by tasks.registering {
     }
 }
 
-val fetchFfmpeg by tasks.registering {
-    description = "Downloads a static ffmpeg build for Windows."
+/**
+ * Copies the bundled executables into the runtime resources so they land in the
+ * packaged app's `lib` folder. Must match processResources' own output dir, or the
+ * installer ships without them and YouTube silently fails.
+ */
+val stageYtBin by tasks.registering(Copy::class) {
+    description = "Stages yt-dlp into the runtime resources."
     group = "build setup"
-    val outputDir = ytBinDir
-    val target = "ffmpeg.exe"
-    val url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-    val workDir = layout.buildDirectory.dir("ffmpeg-zip")
-    outputs.file(outputDir.map { it.file(target) })
-    doLast {
-        val dir = outputDir.get().asFile
-        dir.mkdirs()
-        val out = File(dir, target)
-        if (out.isFile && out.length() > 1_000_000L) return@doLast
+    dependsOn(fetchYtDlp)
+    from(ytBinDir)
+    into(layout.buildDirectory.dir("resources/main/lib"))
+}
 
-        val zip = File(workDir.get().asFile, "ffmpeg.zip")
-        logger.lifecycle("Fetching ffmpeg from gyan.dev")
-        downloadTo(url, zip)
+/**
+ * Ships the browser extension as a runtime resource.
+ *
+ * Chrome and Edge will only load an extension from a folder the user picks, and a
+ * store listing would mean publishing it somewhere first, so the app carries its
+ * own copy and unpacks it on first run. It travels as a classpath resource for the
+ * same reason the bundled yt-dlp does: no packaging hook, and it works from the
+ * MSI, the portable zip and the IDE alike.
+ */
+val stageExtension by tasks.registering(Copy::class) {
+    description = "Ships the browser extensions as runtime resources."
+    group = "build setup"
+    from(layout.projectDirectory.dir("browser-extension"))
+    into(layout.buildDirectory.dir("resources/main/browser-extension"))
+}
 
-        var found = false
-        ZipFile(zip).use { zf ->
-            for (entry in zf.entries()) {
-                if (!entry.isDirectory && entry.name.endsWith("ffmpeg.exe")) {
-                    zf.getInputStream(entry).use { input ->
-                        out.outputStream().use { input.copyTo(it) }
-                    }
-                    found = true
-                    break
-                }
-            }
-        }
-        require(found && out.length() > 1_000_000L) { "ffmpeg.exe was not found in the archive" }
-        logger.lifecycle("ffmpeg staged: ${out.length()} bytes")
-    }
+tasks.named("processResources") { dependsOn(stageYtBin, stageExtension) }
+
+/**
+ * Zips the unpacked app so it can be run without installing anything.
+ *
+ * Windows Installer failed on a machine whose security agent locks files the
+ * installer is writing ("Could not set file security ... Error: 5"), and there is
+ * no fix for that from inside the installer. Unzipping and running the exe needs no
+ * elevation, no registry, and no Windows Installer at all, so it works where the MSI
+ * cannot.
+ */
+val packageZip by tasks.registering(Zip::class) {
+    description = "Builds a portable, install-free zip of the Windows app."
+    group = "distribution"
+    // By name, resolved when the task graph is built rather than at configuration
+    // time: a Compose distribution task does not exist yet this early, and naming it
+    // eagerly fails the whole build with "cannot reference task by name".
+    dependsOn("createDistributable")
+    from(layout.buildDirectory.dir("compose/binaries/main/app/1DownloadManager"))
+    // The folder is already named 1DownloadManager; wrapping it again produced
+    // 1DownloadManager/1DownloadManager/.
+    archiveFileName.set("1DownloadManager-$appVersion-portable.zip")
+    isPreserveFileTimestamps = false
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 compose.desktop {
     application {
         mainClass = "com.downloadhub.desktop.MainKt"
 
-
         nativeDistributions {
-            // Msi is the installer; the portable zip below is the fallback for
+            // Msi is the installer; the portable zip above is the fallback for
             // machines where an installer cannot run at all.
             targetFormats(TargetFormat.Msi, TargetFormat.Deb)
             packageName = "1DownloadManager"
@@ -171,55 +190,3 @@ compose.desktop {
         }
     }
 }
-
-/**
- * Zips the unpacked app so it can be run without installing anything.
- *
- * Windows Installer failed on a machine whose security agent locks files the
- * installer is writing ("Could not set file security ... Error: 5"), and there is
- * no fix for that from inside the installer. Unzipping and running the exe needs no
- * elevation, no registry, and no Windows Installer at all, so it works where the MSI
- * cannot.
- */
-val packageZip by tasks.registering(Zip::class) {
-    description = "Builds a portable, install-free zip of the Windows app."
-    group = "distribution"
-    from(layout.buildDirectory.dir("compose/binaries/main/app/1DownloadManager"))
-    // The folder is already named 1DownloadManager; wrapping it again produced
-    // 1DownloadManager/1DownloadManager/.
-    archiveFileName.set("1DownloadManager-$appVersion-portable.zip")
-    // The runtime is already compressed; storing it again just wastes time.
-    isPreserveFileTimestamps = false
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-/**
- * Copies the staged executables into the runtime resources so they land in the
- * packaged app's `lib` folder. Must match processResources' own output dir, or the
- * installer ships without them and YouTube silently fails.
- */
-val stageYtBin by tasks.registering(Copy::class) {
-    description = "Stages yt-dlp and ffmpeg into the runtime resources."
-    group = "build setup"
-    dependsOn(fetchYtDlp, fetchFfmpeg)
-    from(ytBinDir)
-    into(layout.buildDirectory.dir("resources/main/lib"))
-}
-
-/**
- * Ships the browser extension as a runtime resource.
- *
- * Chrome and Edge will only load an extension from a folder the user picks, and a
- * store listing would mean publishing it somewhere first, so the app carries its
- * own copy and unpacks it on first run. It travels as a classpath resource for the
- * same reason the bundled yt-dlp does: no packaging hook, and it works from the
- * MSI, the portable zip and the IDE alike.
- */
-val stageExtension by tasks.registering(Copy::class) {
-    description = "Ships the browser extension as a runtime resource."
-    group = "build setup"
-    from(layout.projectDirectory.dir("browser-extension"))
-    into(layout.buildDirectory.dir("resources/main/browser-extension"))
-}
-
-tasks.named("processResources") { dependsOn(stageYtBin, stageExtension) }

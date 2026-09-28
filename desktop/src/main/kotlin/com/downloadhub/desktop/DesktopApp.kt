@@ -20,9 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -184,7 +181,7 @@ fun SettingsDialog(
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = { onChooseFolder()?.let { folder = it.absolutePath } }) {
-                        Icon(Icons.Default.Folder, contentDescription = "Choose a folder")
+                        Icon(DlmIcons.Folder, contentDescription = "Choose a folder")
                     }
                 }
                 Spacer(Modifier.height(10.dp))

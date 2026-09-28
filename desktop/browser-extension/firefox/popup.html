@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font: 13px system-ui, sans-serif;
+        width: 280px;
+        margin: 0;
+        padding: 14px;
+        color: #e6edee;
+        background: #12171a;
+      }
+      h1 { font-size: 14px; margin: 0 0 10px; }
+      label { display: block; margin: 10px 0 4px; color: #b4c0c2; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid #46545a;
+        background: #1a2124;
+        color: #e6edee;
+      }
+      button {
+        margin-top: 12px;
+        width: 100%;
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid #34d399;
+        background: #34d399;
+        color: #06210f;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #state { margin-top: 10px; color: #b4c0c2; }
+      .ok { color: #34d399; }
+      .bad { color: #ffb4ab; }
+      p { color: #b4c0c2; margin: 10px 0 0; }
+    </style>
+  </head>
+  <body>
+    <h1>1 download manager</h1>
+    <div id="state">checking the app…</div>
+
+    <label for="port">App port</label>
+    <input id="port" type="number" />
+
+    <label for="token">Pairing code (from the app's Settings page)</label>
+    <input id="token" type="text" autocomplete="off" />
+
+    <button id="save">Save and test</button>
+
+    <p>
+      Links you click now go to the app instead of the browser's downloader.
+      When the app is closed the browser downloads them as usual.
+    </p>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -41,9 +41,14 @@ fun MenuBar(
     onOpenSettings: () -> Unit,
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit,
-    onQuit: () -> Unit
+    onQuit: () -> Unit,
+    /** Where the bundled browser extensions were unpacked, for the integration help. */
+    extensionRoot: java.io.File,
+    /** The loopback pairing code the extension has to present. */
+    pairingToken: String
 ) {
     var open by remember { mutableStateOf<String?>(null) }
+    var showIntegration by remember { mutableStateOf(false) }
 
     Box {
         Surface(color = Color(0xFF1A2124)) {
@@ -70,6 +75,23 @@ fun MenuBar(
             }
         }
 
+        // Anchored under Tools, so it reads as a submenu of the entry that opened it
+        // rather than as a stray panel in the middle of the window.
+        if (showIntegration) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clickable { showIntegration = false }
+            ) {
+                BrowserIntegrationMenu(
+                    modifier = Modifier.padding(start = 222.dp, top = 32.dp),
+                    extensionRoot = extensionRoot,
+                    token = pairingToken,
+                    onClose = { showIntegration = false },
+                    onOpenFolder = ::revealFolder
+                )
+            }
+        }
         // Only one menu is drawn at a time; the backdrop closes whichever is open.
         if (open != null) {
             Box(
@@ -103,6 +125,8 @@ fun MenuBar(
                             }
 
                             "Tools" -> {
+                                MenuItem("Download Browser Integration") { open = null; showIntegration = true }
+                                MenuDivider()
                                 MenuItem("Settings") { open = null; onOpenSettings() }
                             }
 

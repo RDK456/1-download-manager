@@ -1,6 +1,7 @@
 package com.downloadhub.desktop
 
 import java.io.File
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -66,13 +67,55 @@ class FirstRunSetupTest {
 
         val lib = File(resources, "lib")
         assertTrue("yt-dlp is not staged", File(lib, "yt-dlp.exe").isFile)
-        assertTrue("ffmpeg is not staged", File(lib, "ffmpeg.exe").isFile)
+        // ffmpeg must NOT be staged: it is 100 MB, and bundling it made the install
+        // a thousand files, which is what broke the JVM launch on a machine with an
+        // aggressive security agent. It is downloaded on demand instead.
+        assertFalse(
+            "ffmpeg must be fetched on demand, not bundled",
+            File(lib, "ffmpeg.exe").exists()
+        )
 
+        // Both browser builds have to ship, because Firefox cannot load the Chromium
+        // one at all and a Firefox user told to load it gets an extension that
+        // silently does nothing.
         val extension = File(resources, "browser-extension")
-        listOf("manifest.json", "background.js", "content.js", "popup.html", "popup.js")
-            .forEach { name ->
-                assertTrue("$name is not staged for the app to unpack", File(extension, name).isFile)
-            }
+        listOf("chromium", "firefox").forEach { build ->
+            listOf("manifest.json", "background.js", "content.js", "popup.html", "popup.js")
+                .forEach { name ->
+                    assertTrue(
+                        "$build/$name is not staged for the app to unpack",
+                        File(File(extension, build), name).isFile
+                    )
+                }
+        }
+    }
+
+    /**
+     * Guards the reason the two builds exist.
+     *
+     * This is the sort of thing that is quietly "cleaned up" later by someone who
+     * sees two copies of the same extension and assumes one is a leftover.
+     */
+    @Test
+    fun theFirefoxBuildCannotBeTheChromiumManifest() {
+        val chromium = File("browser-extension/chromium/manifest.json")
+        val firefox = File("browser-extension/firefox/manifest.json")
+        org.junit.Assume.assumeTrue("extension sources are not present", chromium.isFile && firefox.isFile)
+
+        val firefoxText = firefox.readText()
+        assertTrue(
+            "Firefox has no service worker support for MV3 yet; it needs background.scripts",
+            firefoxText.contains("\"scripts\"")
+        )
+        assertTrue(
+            "the Firefox build must declare an add-on id",
+            firefoxText.contains("browser_specific_settings")
+        )
+        assertTrue(
+            "the Firefox build must use the browser.* API, not chrome.*",
+            File("browser-extension/firefox/background.js").readText()
+                .contains("typeof browser")
+        )
     }
 
     @Test
@@ -86,9 +129,36 @@ class FirstRunSetupTest {
             "yt-dlp must be inside the jar the installer ships",
             entries.any { it == "lib/yt-dlp.exe" }
         )
+        // Both variants, each in its own folder: Firefox cannot load the Chromium
+        // build, so shipping only one of them helps half the users and nobody else.
+        listOf("chromium", "firefox").forEach { build ->
+            listOf("manifest.json", "background.js", "content.js", "popup.html", "popup.js")
+                .forEach { name ->
+                    assertTrue(
+                        "browser-extension/$build/$name must be inside the jar the installer ships",
+                        entries.any { it == "browser-extension/$build/$name" }
+                    )
+                }
+        }
+    }
+
+    /**
+     * Keeps the 100 MB from creeping back in.
+     *
+     * ffmpeg is fetched on demand now. Bundling it made the install a thousand files
+     * and it failed with "Failed to launch JVM" on a machine whose security agent
+     * locks runtime files while they are written, so a regression here is a
+     * regression users will see as a broken install rather than a slow one.
+     */
+    @Test
+    fun theAppJarStaysSmallEnoughToUnpackCleanly() {
+        val jar = desktopJar()
+        org.junit.Assume.assumeTrue("no packaged app image to inspect", jar != null)
+        val megabytes = jar!!.length() / (1024.0 * 1024.0)
         assertTrue(
-            "the browser extension must be inside the jar the installer ships",
-            entries.any { it == "browser-extension/manifest.json" }
+            "the app jar is ${"%.0f".format(megabytes)} MB; anything near the old " +
+                "36 MB material-icons jar means a large dependency crept back in",
+            megabytes < 30.0
         )
     }
 }

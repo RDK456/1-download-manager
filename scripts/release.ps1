@@ -47,6 +47,10 @@ param(
     [switch]$SkipTests,
     [switch]$DebugApk,
     [switch]$Draft,
+    # Publishes only the Windows assets and leaves the Android version alone.
+    # A desktop-only change produces a byte-identical APK, and shipping it again
+    # just makes people re-download 126 MB they already have.
+    [switch]$DesktopOnly,
     [string]$Notes
 )
 
@@ -110,9 +114,15 @@ try {
     Write-Host ("Artifact: " + $(if ($useDebug) { 'debug-signed APK' } else { 'signed release APK' })) -ForegroundColor Cyan
 
     # --- 2. write it back ---------------------------------------------------
-    $gradleText = $gradleText -replace 'versionCode\s*=\s*\d+', "versionCode = $newVersionCode"
-    $gradleText = $gradleText -replace 'versionName\s*=\s*"[^"]+"', "versionName = `"$newVersion`""
-    [System.IO.File]::WriteAllText($GradleFile, $gradleText)
+    # A desktop-only release must not move the Android version, or every existing
+    # install would be offered an APK that has not changed.
+    if (-not $DesktopOnly) {
+        $gradleText = $gradleText -replace 'versionCode\s*=\s*\d+', "versionCode = $newVersionCode"
+        $gradleText = $gradleText -replace 'versionName\s*=\s*"[^"]+"', "versionName = `"$newVersion`""
+        [System.IO.File]::WriteAllText($GradleFile, $gradleText)
+    } else {
+        Write-Host "Desktop-only release: leaving the Android version at $oldVersion." -ForegroundColor Cyan
+    }
 
     # The Windows installer reads its version from gradle.properties. Updating it
     # here is what stops the two from drifting, which previously shipped a release
@@ -134,7 +144,13 @@ try {
     # built, the release went out, and the installer was quietly missing.
     $hasDesktop = Test-Path (Join-Path $RepoRoot 'desktop\build.gradle.kts')
     if (-not $SkipTests) {
-        $targets = @(':core:test', ':desktop:test', ':app:testDebugUnitTest', ':app:lintDebug', ":app:assemble$variant")
+        $targets = @(':core:test', ':desktop:test')
+        if (-not $DesktopOnly) {
+            # Only worth building an APK that is about to be published. Assembling it
+            # for a desktop-only release costs several minutes and produces an
+            # identical, uninstalled file.
+            $targets += @(':app:testDebugUnitTest', ':app:lintDebug', ":app:assemble$variant")
+        }
         if ($hasDesktop) { $targets += ':desktop:packageMsi' }
         Write-Host ("Running " + ($targets -join ' ') + "...") -ForegroundColor Cyan
         & $gradlew @targets
@@ -148,13 +164,20 @@ try {
         & $gradlew ':desktop:packageZip'
         if ($LASTEXITCODE -ne 0) { throw 'The portable zip failed to build.' }
     }
-    $apkBuilt = if ($useDebug) { $DebugApkBuilt } else { $ReleaseApkBuilt }
-    if (-not (Test-Path $apkBuilt)) { throw "APK not found at $apkBuilt" }
-    $apkAsset = Join-Path $RepoRoot ("1-download-manager-$newVersion.apk")
-    Copy-Item $apkBuilt $apkAsset -Force
-    $apkHash = (Get-FileHash $apkAsset -Algorithm SHA256).Hash
-    $apkSize = (Get-Item $apkBuilt).Length
-    Write-Host ("APK {0} bytes, sha256 {1}" -f $apkSize, $apkHash) -ForegroundColor DarkGray
+    $apkAsset = $null
+    $apkHash = ''
+    $apkSize = 0L
+    if (-not $DesktopOnly) {
+        $apkBuilt = if ($useDebug) { $DebugApkBuilt } else { $ReleaseApkBuilt }
+        if (-not (Test-Path $apkBuilt)) { throw "APK not found at $apkBuilt" }
+        $apkAsset = Join-Path $RepoRoot ("1-download-manager-$newVersion.apk")
+        Copy-Item $apkBuilt $apkAsset -Force
+        $apkHash = (Get-FileHash $apkAsset -Algorithm SHA256).Hash
+        $apkSize = (Get-Item $apkBuilt).Length
+        Write-Host ("APK {0} bytes, sha256 {1}" -f $apkSize, $apkHash) -ForegroundColor DarkGray
+    } else {
+        Write-Host 'Desktop-only release: no Android APK will be published.' -ForegroundColor Cyan
+    }
 
     # The Windows installer, when one has been built. Absent builds are not an
     # error: the Android release must still be publishable on its own.
@@ -202,7 +225,7 @@ try {
             -ErrorAction SilentlyContinue |
             Sort-Object FullName -Descending | Select-Object -First 1
     }
-    if ($apksigner) {
+    if ($apksigner -and $apkAsset) {
         $verify = & $apksigner.FullName verify -v $apkAsset 2>&1
         $verifies = [bool]($verify | Select-String -Pattern '^Verifies')
         $v2 = [bool]($verify | Select-String -Pattern 'v2 scheme.*true')
@@ -269,9 +292,11 @@ Open this app's Settings -> Check for updates to install this release.
     [System.IO.File]::WriteAllText($notesFile, $Notes)
     $notesArgs = @('--notes-file', $notesFile)
 
-    $assets = @($apkAsset)
+    $assets = @()
+    if ($apkAsset) { $assets += $apkAsset }
     if ($msiAsset) { $assets += $msiAsset }
     if ($zipAsset) { $assets += $zipAsset }
+    if ($assets.Count -eq 0) { throw 'Nothing to publish: no assets were produced.' }
 
     $releaseArgs = @('release', 'create', $tag) + $assets +
         @('--title', "1 download manager $newVersion") + $notesArgs

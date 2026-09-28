@@ -18,15 +18,15 @@ function render(status) {
 }
 
 async function refresh() {
-  const stored = await chrome.storage.local.get(["port", "token"]);
+  const stored = await (typeof browser !== "undefined" ? browser : chrome).storage.local.get(["port", "token"]);
   portInput.value = stored.port || 38621;
   tokenInput.value = stored.token || "";
-  const status = await chrome.runtime.sendMessage({ type: "status" });
+  const status = await (typeof browser !== "undefined" ? browser : chrome).runtime.sendMessage({ type: "status" });
   render(status || {});
 }
 
 document.getElementById("save").addEventListener("click", async () => {
-  await chrome.runtime.sendMessage({
+  await (typeof browser !== "undefined" ? browser : chrome).runtime.sendMessage({
     type: "save-config",
     port: Number(portInput.value) || 38621,
     token: tokenInput.value.trim(),

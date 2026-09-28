@@ -18,17 +18,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -106,7 +101,9 @@ fun LibraryScreen(
                 onOpenSettings = onOpenSettings,
                 onPauseAll = actions.pauseAll,
                 onResumeAll = actions.resumeAll,
-                onQuit = onQuit
+                onQuit = onQuit,
+                extensionRoot = java.io.File(state.extensionPath),
+                pairingToken = state.settings.captureToken
             )
             Row(Modifier.weight(1f)) {
                 CategoryRail(
@@ -297,10 +294,10 @@ private fun LibraryToolbar(
     ) {
         ToolbarButton("New Download", Icons.Default.Add, highlighted = true, onClick = onNew)
         ToolbarButton("Resume", Icons.Default.PlayArrow, enabled = hasSelection, onClick = onResume)
-        ToolbarButton("Pause", Icons.Default.Pause, enabled = hasSelection, onClick = onPause)
+        ToolbarButton("Pause", DlmIcons.Pause, enabled = hasSelection, onClick = onPause)
         ToolbarButton("Start Queue", Icons.Default.PlayArrow, enabled = activeCount > 0, onClick = onStartQueue)
-        ToolbarButton("Stop Queue", Icons.Default.Stop, enabled = activeCount > 0, onClick = onStopQueue)
-        ToolbarButton("Stop All", Icons.Default.Stop, enabled = activeCount > 0, onClick = onStopAll)
+        ToolbarButton("Stop Queue", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopQueue)
+        ToolbarButton("Stop All", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopAll)
         ToolbarButton("Delete", Icons.Default.Delete, enabled = hasSelection, onClick = onDelete)
         Spacer(Modifier.weight(1f))
         OutlinedTextField(
@@ -405,8 +402,8 @@ private fun ColumnHeaderCell(
         )
         if (active) {
             Icon(
-                if (sort.direction == SortDirection.ASCENDING) Icons.Default.ArrowUpward
-                else Icons.Default.ArrowDownward,
+                if (sort.direction == SortDirection.ASCENDING) DlmIcons.ArrowUpward
+                else DlmIcons.ArrowDownward,
                 null,
                 Modifier.size(11.dp),
                 tint = Color(0xFF34D399)
@@ -481,11 +478,11 @@ private fun DownloadRow(
 
         when (item.status) {
             DownloadStatus.RUNNING, DownloadStatus.QUEUED, DownloadStatus.RESOLVING ->
-                IconButton(16.dp, Icons.Default.Pause, "Pause", onPause)
+                IconButton(16.dp, DlmIcons.Pause, "Pause", onPause)
 
             DownloadStatus.PAUSED -> IconButton(16.dp, Icons.Default.PlayArrow, "Resume", onResume)
             DownloadStatus.FAILED -> IconButton(16.dp, Icons.Default.Refresh, "Retry", onRetry)
-            DownloadStatus.COMPLETED -> IconButton(16.dp, Icons.Default.FolderOpen, "Open", onOpen)
+            DownloadStatus.COMPLETED -> IconButton(16.dp, DlmIcons.FolderOpen, "Open", onOpen)
         }
     }
 }
