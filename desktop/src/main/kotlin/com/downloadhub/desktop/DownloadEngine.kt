@@ -2,6 +2,7 @@ package com.downloadhub.desktop
 
 import com.downloadhub.core.DownloadCategory
 import com.downloadhub.core.DownloadItem
+import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.DownloadStatus
 import com.downloadhub.core.DownloadStore
 import com.downloadhub.core.TransferPolicy
@@ -131,7 +132,16 @@ class DownloadEngine(
                     val free = limit - running.size
                     if (free <= 0) return@withLock
                     val next = store.snapshot()
-                        .filter { it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.RESOLVING }
+                          // Only plain HTTP belongs to this engine. A YouTube link is
+                          // a web page, not a file: letting the HTTP downloader claim
+                          // one saved the returned HTML into the download folder
+                          // alongside the real video, as a stray file called "watch"
+                          // - named after the last segment of the URL - and overwrote
+                          // the row's size and type with the page's.
+                          .filter {
+                              it.source == DownloadSource.HTTP &&
+                                  (it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.RESOLVING)
+                          }
                         .take(free)
                     for (item in next) start(item.id)
                 }

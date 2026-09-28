@@ -417,6 +417,10 @@ class DesktopController(
         ) { percent, _ ->
             scope.launch {
                 store.update(id) { current ->
+                    // A progress line can still be in flight when the job finishes.
+                    // Applying it afterwards would overwrite the final size with a
+                    // partial one - a finished 32 MB video showing as 0 bytes.
+                    if (current.status != DownloadStatus.RESOLVING) return@update current
                     val total = current.totalBytes
                     current.copy(
                         bytesDownloaded = if (total > 0) (total * percent / 100) else 0L
@@ -428,14 +432,18 @@ class DesktopController(
 
         if (result.success && result.producedFiles.isNotEmpty()) {
             val first = result.producedFiles.first()
+            // Read the size before publishing. publishFile renames the file, so
+            // afterwards first.length() is 0 and the row would show a finished
+            // 32 MB video as zero bytes.
+            val size = first.length()
             val published = area.publishFile(first, first.name, null)
             result.producedFiles.filter { it != first }.forEach { it.delete() }
             store.update(id) {
                 it.copy(
                     status = DownloadStatus.COMPLETED,
                     location = published.location,
-                    bytesDownloaded = first.length(),
-                    totalBytes = first.length(),
+                    bytesDownloaded = size,
+                    totalBytes = size,
                     fileName = File(published.location).name
                 )
             }
