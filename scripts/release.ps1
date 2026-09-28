@@ -51,8 +51,20 @@ param(
     # A desktop-only change produces a byte-identical APK, and shipping it again
     # just makes people re-download 126 MB they already have.
     [switch]$DesktopOnly,
-    [string]$Notes
+    # Release notes as a string, or as a file.
+    #
+    # Prefer -NotesFile. Passing prose through -Notes on a command line means the
+    # shell gets to interpret it, and any double quote in the text - which release
+    # notes are full of, because they quote error messages - ends the argument and
+    # the script fails with a baffling "A positional parameter cannot be found".
+    [string]$Notes,
+    [string]$NotesFile
 )
+
+if ($NotesFile) {
+    if (-not (Test-Path $NotesFile)) { throw "Notes file not found: $NotesFile" }
+    $Notes = Get-Content $NotesFile -Raw
+}
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
