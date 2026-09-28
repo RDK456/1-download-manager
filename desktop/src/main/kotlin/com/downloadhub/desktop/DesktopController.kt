@@ -32,6 +32,12 @@ data class DesktopUiState(
     val torrentsTab: Boolean = false,
     val update: UpdateCheck = UpdateCheck.Idle,
     val updateProgress: Int = -1,
+    /**
+     * Bytes fetched so far and in total, so the dialog can say "12 MB of 78 MB"
+     * rather than only showing a bar nobody can read a number off.
+     */
+    val updateBytes: Long = 0L,
+    val updateTotalBytes: Long = 0L,
     val downloadedInstaller: String? = null,
     val extensionReady: Boolean = false,
     val extensionPath: String = "",
@@ -59,11 +65,20 @@ data class DesktopActions(
     val consumeMessage: () -> Unit,
     val setTorrentsTab: (Boolean) -> Unit,
     val openExtensionFolder: () -> Unit,
+    /**
+     * Opens the folder a finished download sits in, with the file selected.
+     *
+     * Takes the item's location rather than doing the work here, because the button
+     * is per row and the reporting is shared.
+     */
+    val revealDownload: (String?) -> Unit,
     /** Reveals the folder finished downloads are published into. */
     val openDownloadFolder: () -> Unit,
     val checkForUpdates: () -> Unit,
-    val downloadUpdate: () -> Unit,
+    val downloadUpdate: (Boolean) -> Unit,
     val launchInstaller: () -> Unit,
+    /** Shows where a downloaded update was saved, to run it by hand. */
+    val revealDownloadedInstaller: () -> Unit,
     val dismissUpdate: () -> Unit,
     val quit: () -> Unit
 )
@@ -147,6 +162,8 @@ class DesktopController(
     private val updateInstaller = UpdateInstaller()
     private val _update = MutableStateFlow<UpdateCheck>(UpdateCheck.Idle)
     private val _updateProgress = MutableStateFlow(-1)
+    private val _updateBytes = MutableStateFlow(0L)
+    private val _updateTotalBytes = MutableStateFlow(0L)
     private val _downloadedInstaller = MutableStateFlow<String?>(null)
     init {
         // The bundled binaries and the browser extension are copied out of the app on
@@ -226,15 +243,27 @@ class DesktopController(
         }
     }
 
-    /** Fetches the installer, then offers to run it. */
-    fun downloadUpdate() {
+    /**
+     * Fetches an update asset, then offers to run it.
+     *
+     * [portable] picks the zip instead of the .msi. Windows Installer fails on some
+     * machines in a way nothing in the app can fix, and the zip needs no installer at
+     * all, so it is a real alternative rather than a consolation prize.
+     */
+    fun downloadUpdate(portable: Boolean = false) {
         val available = _update.value as? UpdateCheck.Available ?: return
+        val asset = if (portable) available.release.portableZip() ?: available.asset else available.asset
         if (_updateProgress.value >= 0) return
         _updateProgress.value = 0
+        _updateBytes.value = 0L
+        _updateTotalBytes.value = asset.size
         scope.launch {
-            val result = updateInstaller.download(available.asset.downloadUrl) { percent, _, _ ->
+            val result = updateInstaller.download(asset.downloadUrl, { percent, done, total ->
                 _updateProgress.value = percent
-            }
+                _updateBytes.value = done
+                // The asset may not declare a size; the transfer itself knows.
+                if (total > 0) _updateTotalBytes.value = total
+            }, asset.name)
             _updateProgress.value = -1
             result
                 .onSuccess { _downloadedInstaller.value = it.absolutePath }
@@ -248,19 +277,47 @@ class DesktopController(
      *
      * The app stays open: Windows Installer runs separately and the user can carry on
      * using this window, which is better than the window vanishing mid-install.
+     *
+     * The previous version set the failure and then immediately reset the state to
+     * Idle, so a download that could not be started reported nothing at all and the
+     * dialog simply closed. The state is only cleared once the installer is really
+     * away.
      */
     fun launchInstaller() {
         val path = _downloadedInstaller.value ?: return
-        updateInstaller.launch(File(path))
-            .onFailure { _update.value = UpdateCheck.Failed(it.message ?: "Could not start the installer") }
+        val started = updateInstaller.launch(File(path))
+        if (started.isFailure) {
+            // Keep the dialog open, keep the file, and say what went wrong. A security
+            // agent blocking the installer is the common case and the message is the
+            // only clue the user gets.
+            _update.value = UpdateCheck.Failed(
+                started.exceptionOrNull()?.message
+                    ?: "Could not start the installer. If your security software is blocking it, " +
+                    "download the portable zip instead - it needs no installer."
+            )
+            refresh()
+            return
+        }
         _downloadedInstaller.value = null
         _update.value = UpdateCheck.Idle
+        refresh()
+    }
+
+    /** Shows where the download was saved, for running it by hand. */
+    fun revealDownloadedInstaller() {
+        val path = _downloadedInstaller.value
+        if (path == null) {
+            _messages.value = "Nothing has been downloaded yet."
+        } else if (!revealInFolder(path)) {
+            _messages.value = "The file is here: $path"
+        }
         refresh()
     }
 
     fun dismissUpdate() {
         _downloadedInstaller.value = null
         _updateProgress.value = -1
+        _updateBytes.value = 0L
         _update.value = UpdateCheck.Idle
         refresh()
     }
@@ -284,6 +341,30 @@ class DesktopController(
      * The folder is created if it is missing: a button that does nothing the first
      * time it is pressed, because nothing has been downloaded yet, reads as broken.
      */
+    /**
+     * Shows a finished download in Explorer.
+     *
+     * Reports what went wrong when it cannot, because a button that silently does
+     * nothing is indistinguishable from a broken app - which is exactly what the
+     * previous version of this was.
+     */
+    fun revealDownload(location: String?) {
+        if (location.isNullOrBlank()) {
+            _messages.value = "That download has no file yet."
+            refresh()
+            return
+        }
+        if (!revealInFolder(location)) {
+            val folder = File(location).parentFile
+            _messages.value = if (folder != null && folder.isDirectory) {
+                "Could not open Explorer. The file is here: ${folder.absolutePath}"
+            } else {
+                "That file is no longer where it was: $location"
+            }
+        }
+        refresh()
+    }
+
     fun openDownloadFolder() {
         val dir = settingsState.value.downloadDirFile()
         if (!dir.isDirectory && !dir.mkdirs()) {
@@ -324,6 +405,8 @@ class DesktopController(
             torrentsTab = _torrentsTab.value,
             update = _update.value,
             updateProgress = _updateProgress.value,
+              updateBytes = _updateBytes.value,
+              updateTotalBytes = _updateTotalBytes.value,
             downloadedInstaller = _downloadedInstaller.value,
             extensionReady = extension.available,
             extensionPath = extension.pathForDisplay(),
@@ -381,8 +464,10 @@ class DesktopController(
         setTorrentsTab = ::setTorrentsTab,
         openExtensionFolder = ::openExtensionFolder,
         openDownloadFolder = ::openDownloadFolder,
+        revealDownload = ::revealDownload,
         checkForUpdates = ::checkForUpdates,
-        downloadUpdate = ::downloadUpdate,
+        downloadUpdate = { portable -> downloadUpdate(portable) },
+        revealDownloadedInstaller = ::revealDownloadedInstaller,
         launchInstaller = ::launchInstaller,
         dismissUpdate = ::dismissUpdate,
         quit = {
@@ -525,9 +610,14 @@ private fun exitProcess(code: Int) {
 /**
  * The app version, read from the packaged manifest.
  *
- * Reading it at runtime rather than hardcoding means the window title and the menu
- * bar can never disagree with the build that produced them.
+ * Reading it at runtime rather than hardcoding means the window title, the menu bar
+ * and the update check can never disagree with the build that produced them.
+ *
+ * The build writes `Implementation-Version` into the jar manifest; see the `jar` task
+ * in desktop/build.gradle.kts. When it is missing - running from the IDE, or a build
+ * that skipped it - this falls back to the version recorded at startup, so the app
+ * still says something plausible instead of a bare 1.0.0.
  */
 internal val APP_VERSION: String = runCatching {
-    DesktopController::class.java.`package`?.implementationVersion ?: "1.0.0"
-}.getOrDefault("1.0.0")
+    DesktopController::class.java.`package`?.implementationVersion
+}.getOrNull()?.takeIf { it.isNotBlank() } ?: "unknown"

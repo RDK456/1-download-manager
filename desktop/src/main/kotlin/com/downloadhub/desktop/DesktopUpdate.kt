@@ -16,10 +16,34 @@ data class GithubRelease(
     @SerialName("name") val name: String = "",
     val prerelease: Boolean = false,
     val draft: Boolean = false,
+    /** The release notes, so the dialog can say what is actually changing. */
+    val body: String = "",
     val assets: List<GithubAsset> = emptyList()
 ) {
     val version: String get() = tag.removePrefix("v")
     val displayName: String get() = name.ifBlank { "Version $version" }
+
+    /**
+     * The notes, trimmed to something a dialog can hold.
+     *
+     * Release notes are written as Markdown, and a dialog is not a Markdown
+     * renderer, so the decoration is stripped rather than shown as literal
+     * asterisks and backticks. The heading markers and list bullets are the only
+     * things removed; the words are what matter here.
+     */
+    val readableNotes: String
+        get() = body
+            .lineSequence()
+            .map { line ->
+                line.trim()
+                    .removePrefix("###").removePrefix("##").removePrefix("#")
+                    .trim()
+                    .removePrefix("- ").removePrefix("* ")
+            }
+            .filter { it.isNotBlank() }
+            .take(14)
+            .joinToString("\n")
+            .trim()
 
     /**
      * The Windows installer from this release.
@@ -28,6 +52,18 @@ data class GithubRelease(
      * install the wrong thing, so the .msi is matched explicitly.
      */
     fun installer(): GithubAsset? = assets.firstOrNull { it.name.endsWith(".msi", ignoreCase = true) }
+
+    /**
+     * The portable zip from this release.
+     *
+     * Worth offering alongside the installer, because Windows Installer does fail on
+     * some machines - a security agent that will not let the installer set file
+     * security reports "Error: 5", and there is nothing to do about that from inside
+     * the installer. The zip needs no installer, no elevation and no Windows
+     * Installer at all, and runs from anywhere.
+     */
+    fun portableZip(): GithubAsset? =
+        assets.firstOrNull { it.name.endsWith(".zip", ignoreCase = true) }
 }
 
 @Serializable
@@ -137,12 +173,17 @@ class UpdateInstaller(private val directory: File = AppPaths.updateDir) {
      */
     suspend fun download(
         url: String,
-        onProgress: (Int, Long, Long) -> Unit
+        onProgress: (Int, Long, Long) -> Unit,
+        fileName: String = "1DownloadManager-setup.msi"
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
             if (!directory.isDirectory) directory.mkdirs()
-            val target = File(directory, "1DownloadManager-setup.msi")
-            val part = File(directory, "1DownloadManager-setup.msi.part")
+            // Named for what is being fetched, so a zip and an installer downloaded to
+            // the same folder are not indistinguishable.
+            val safeName = fileName.substringAfterLast('/').substringAfterLast('\\')
+                .ifBlank { "1DownloadManager-setup.msi" }
+            val target = File(directory, safeName)
+            val part = File(directory, "$safeName.part")
             part.delete()
 
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {

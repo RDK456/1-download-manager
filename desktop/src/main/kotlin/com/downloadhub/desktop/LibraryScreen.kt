@@ -162,7 +162,7 @@ fun LibraryScreen(
                                     onPause = { actions.pause(item.id) },
                                     onResume = { actions.resume(item.id) },
                                     onRetry = { actions.retry(item.id) },
-                                    onOpen = { openOutput(item.location) }
+                                    onOpen = { actions.revealDownload(item.location) }
                                 )
                                 HorizontalDivider(
                                     color = state.palette.outline.copy(alpha = 0.25f),
@@ -399,7 +399,7 @@ private fun LibraryToolbar(
       // Sits next to the search box rather than with the transfer actions: it is about
       // the destination, not about the queue. Kept short because the toolbar is
       // already at its limit and the folder icon carries most of the meaning.
-      ToolbarButton("Downloads", DlmIcons.FolderOpen, onClick = onOpenFolder)
+      ToolbarButton("Downloads", DlmIcons.Folder, onClick = onOpenFolder)
         Spacer(Modifier.weight(1f))
         OutlinedTextField(
             value = search,
@@ -583,7 +583,7 @@ private fun DownloadRow(
 
             DownloadStatus.PAUSED -> IconButton(16.dp, Icons.Default.PlayArrow, "Resume", onResume)
             DownloadStatus.FAILED -> IconButton(16.dp, Icons.Default.Refresh, "Retry", onRetry)
-            DownloadStatus.COMPLETED -> IconButton(16.dp, DlmIcons.FolderOpen, "Open", onOpen)
+            DownloadStatus.COMPLETED -> IconButton(16.dp, DlmIcons.FolderOpen, "Show in folder", onOpen)
         }
     }
 }

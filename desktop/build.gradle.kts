@@ -145,6 +145,27 @@ val stageExtension by tasks.registering(Copy::class) {
 tasks.named("processResources") { dependsOn(stageYtBin, stageExtension) }
 
 /**
+ * Puts the version in the jar manifest.
+ *
+ * The app reads its own version at runtime from `Package.getImplementationVersion()`,
+ * which comes from here. Without it the app has always reported "1.0.0" - in the
+ * window title, in the menu bar, and, worse, in the update check, which compares
+ * the newest release against this number and so has always believed there was an
+ * update available even when running the latest build.
+ *
+ * `packageVersion` on the distribution only names the .msi and the zip; it does not
+ * reach the code, so the two could - and did - disagree.
+ */
+tasks.named<Jar>("jar") {
+    manifest {
+        attributes(
+            "Implementation-Title" to "1 download manager",
+            "Implementation-Version" to appVersion
+        )
+    }
+}
+
+/**
  * Post-processes the unpacked app: drops the startup check beside the launcher and
  * removes the runtime stubs that make "Failed to launch JVM" so common.
  *

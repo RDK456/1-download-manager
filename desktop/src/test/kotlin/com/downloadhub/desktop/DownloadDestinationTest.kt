@@ -176,7 +176,10 @@ class DownloadDestinationTest {
         val screen = File("src/main/kotlin/com/downloadhub/desktop/LibraryScreen.kt").readText()
         assertTrue(
             "the toolbar has no button for the download folder",
-            screen.contains("\"Downloads\", DlmIcons.FolderOpen")
+            // The glyph is checked properly in UpdateAndRevealTest, which also pins
+            // down that it differs from the row's; here only the button matters.
+            Regex("ToolbarButton\\(\"Downloads\", DlmIcons\\.\\w+, onClick = onOpenFolder\\)")
+                .containsMatchIn(screen)
         )
         val controller = File("src/main/kotlin/com/downloadhub/desktop/DesktopController.kt").readText()
         assertTrue(

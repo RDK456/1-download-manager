@@ -57,7 +57,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DownloadStatus
-import java.awt.Desktop
 import java.io.File
 import java.util.Locale
 
@@ -319,14 +318,41 @@ private fun Long.asSpeed(): String = if (this <= 0) {
 
 
 /** Opens the finished file, or reveals it in Explorer when that fails. */
-internal fun openOutput(path: String?) {
-    val file = path?.let { File(it) } ?: return
-    if (!file.exists()) return
-    runCatching {
-        val desktop = if (Desktop.isDesktopSupported()) Desktop.getDesktop() else null
-        if (desktop != null && desktop.isSupported(Desktop.Action.OPEN)) desktop.open(file)
-        else if (desktop != null && desktop.isSupported(Desktop.Action.BROWSE)) desktop.browse(file.parentFile.toURI())
-    }
+/**
+ * Opens a finished download's folder in Explorer, with the file selected.
+ *
+ * This is what the row's folder button does, and the icon says folder, so the
+ * folder is what it opens. It used to hand the file to `java.awt.Desktop.open`,
+ * which is two problems at once: the icon promises a folder and the code launched
+ * whatever program handles the file, and the whole thing was wrapped in
+ * `runCatching`, so on a machine where Desktop is unavailable it did nothing and
+ * said nothing. Explorer is called directly and the answer is returned.
+ *
+ * Returns false rather than throwing, so the caller can tell the user instead of
+ * leaving a button that appears broken.
+ */
+internal fun revealInFolder(path: String?): Boolean {
+    val file = path?.let { File(it) } ?: return false
+    // A finished download whose file was moved or deleted still has a folder worth
+    // opening, so this does not give up when the file itself is gone.
+    val folder = file.parentFile ?: return false
+    if (!folder.isDirectory) return false
+    val explorer = File("C:/Windows/explorer.exe")
+    if (!explorer.isFile) return false
+    return runCatching {
+        val process = if (file.exists()) {
+            // /select, is Explorer's own "show me this file" switch.
+            ProcessBuilder(explorer.absolutePath, "/select,", file.absolutePath)
+                .redirectErrorStream(true).start()
+        } else {
+            ProcessBuilder(explorer.absolutePath, folder.absolutePath)
+                .redirectErrorStream(true).start()
+        }
+        // Explorer is a single instance: a second launch just hands over to the
+        // running one, so the process is left to exit on its own.
+        process
+        true
+    }.getOrDefault(false)
 }
 
 /** Read-only, selectable token so it can be copied into the extension popup. */
