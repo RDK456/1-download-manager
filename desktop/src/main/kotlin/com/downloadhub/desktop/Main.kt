@@ -1,5 +1,6 @@
 package com.downloadhub.desktop
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,6 +41,12 @@ fun main() {
 
     try {
         application {
+            // Material 3 otherwise falls back to its light scheme, so every dialog
+            // renders as a white box on top of this dark window - and near-white body
+            // text on that white surface would be unreadable. The whole UI is drawn
+            // in flat dark colours, so the scheme is declared to match rather than
+            // left to default.
+            MaterialTheme(colorScheme = AppTheme.darkScheme) {
             val state by controller.ui.collectAsState()
             val windowState = rememberWindowState(size = DpSize(1180.dp, 720.dp))
             var visible by remember { mutableStateOf(true) }
@@ -85,56 +92,70 @@ fun main() {
                         onOpenSettings = { showSettings = true },
                         onQuit = { closing = true }
                     )
+
+                    // Every dialog is composed inside this Window, and that is not a
+                    // style choice. Compose Desktop's Dialog reads LocalComposeScene,
+                    // which only a Window provides. Composed up here, at the
+                    // application level, it throws "CompositionLocal LocalComposeScene
+                    // not provided" the instant the flag flips - during
+                    // recomposition, so it takes the whole JVM down, and the packaged
+                    // launcher then reports that with its one available message,
+                    // "Failed to launch JVM". Inside the Window they are ordinary
+                    // children of its scene.
+                    //
+                    // Hiding to the tray disposes the Window and these with it, which
+                    // is the behaviour wanted anyway: a dialog cannot be used while
+                    // its window is off screen.
+                    if (showAdd) {
+                        AddDownloadDialog(
+                            onDismiss = { showAdd = false },
+                            onAdd = { link, audioOnly, format, height, playlist ->
+                                controller.actions.addDownload(link, audioOnly, format, height, playlist)
+                                showAdd = false
+                            }
+                        )
+                    }
+
+                    if (showSettings) {
+                        SettingsDialog(
+                            settings = state.settings,
+                            ytDlp = state.ytDlpStatus,
+                            captureActive = state.captureActive,
+                            capturePort = state.capturePort,
+                            onDismiss = { showSettings = false },
+                            onSave = { updated ->
+                                controller.actions.updateSettings(updated)
+                                showSettings = false
+                            },
+                            onChooseFolder = controller.actions.chooseFolder,
+                            onToggleCapture = controller.actions.setBrowserCapture,
+                            extensionReady = state.extensionReady,
+                            extensionPath = state.extensionPath,
+                            onOpenExtensionFolder = controller.actions.openExtensionFolder
+                        )
+                    }
+
+                    if (state.update !is UpdateCheck.Idle) {
+                        UpdateDialog(
+                            state = state,
+                            onCheck = controller.actions.checkForUpdates,
+                            onDownload = controller.actions.downloadUpdate,
+                            onInstall = controller.actions.launchInstaller,
+                            onDismiss = controller.actions.dismissUpdate
+                        )
+                    }
+
+                    if (closing) {
+                        CloseDialog(
+                            activeCount = state.busyCount,
+                            trayAvailable = tray.available,
+                            onMinimizeToTray = { closing = false; hideWindow() },
+                            onQuit = { closing = false; requestExit() },
+                            onCancel = { closing = false }
+                        )
+                    }
                 }
             }
-
-            if (showAdd) {
-                AddDownloadDialog(
-                    onDismiss = { showAdd = false },
-                    onAdd = { link, audioOnly, format, height, playlist ->
-                        controller.actions.addDownload(link, audioOnly, format, height, playlist)
-                        showAdd = false
-                    }
-                )
-            }
-
-            if (showSettings) {
-                SettingsDialog(
-                    settings = state.settings,
-                    ytDlp = state.ytDlpStatus,
-                    captureActive = state.captureActive,
-                    capturePort = state.capturePort,
-                    onDismiss = { showSettings = false },
-                    onSave = { updated ->
-                        controller.actions.updateSettings(updated)
-                        showSettings = false
-                    },
-                    onChooseFolder = controller.actions.chooseFolder,
-                    onToggleCapture = controller.actions.setBrowserCapture,
-                    extensionReady = state.extensionReady,
-                    extensionPath = state.extensionPath,
-                    onOpenExtensionFolder = controller.actions.openExtensionFolder
-                )
-            }
-
-            if (state.update !is UpdateCheck.Idle) {
-                UpdateDialog(
-                    state = state,
-                    onCheck = controller.actions.checkForUpdates,
-                    onDownload = controller.actions.downloadUpdate,
-                    onInstall = controller.actions.launchInstaller,
-                    onDismiss = controller.actions.dismissUpdate
-                )
-            }
-
-            if (closing) {
-                CloseDialog(
-                    activeCount = state.busyCount,
-                    trayAvailable = tray.available,
-                    onMinimizeToTray = { closing = false; hideWindow() },
-                    onQuit = { closing = false; requestExit() },
-                    onCancel = { closing = false }
-                )
             }
         }
     } finally {

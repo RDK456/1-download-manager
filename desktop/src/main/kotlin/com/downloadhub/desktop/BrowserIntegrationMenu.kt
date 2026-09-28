@@ -200,9 +200,6 @@ private fun BrowserHelpDialog(
     // so the dialog has to be too.
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF161D20),
-        titleContentColor = Color(0xFFE8F1F2),
-        textContentColor = Color(0xFFB4C0C2),
         title = { Text(browser.label, fontWeight = FontWeight.SemiBold) },
         text = {
             Column {
