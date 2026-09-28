@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -45,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DisplayFormat
 import com.downloadhub.core.DownloadColumn
@@ -67,6 +70,9 @@ import kotlin.math.abs
  * the left, a toolbar of icon-and-label actions, a sortable column table in the
  * middle and a live status bar along the bottom. All of the filtering, sorting and
  * counting comes from :core, so the phone and the desktop cannot disagree.
+ *
+ * The layout reads the window size so it can give things up in a defined order as the
+ * window narrows, rather than clipping the right-hand end off.
  */
 @Composable
 fun LibraryScreen(
@@ -108,70 +114,90 @@ fun LibraryScreen(
                 extensionRoot = java.io.File(state.extensionPath),
                 pairingToken = state.settings.captureToken
             )
-            Row(Modifier.weight(1f)) {
-                CategoryRail(
-                    items = all,
-                    category = category,
-                    group = group,
-                    torrentsOnly = state.torrentsTab,
-                    onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL },
-                    onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL },
-                    onToggleTorrents = { actions.setTorrentsTab(!state.torrentsTab) }
-                )
-                VerticalRule()
-                Column(Modifier.weight(1f).fillMaxHeight()) {
-                    LibraryToolbar(
-                        hasSelection = selected.isNotEmpty(),
-                        activeCount = DownloadLibrary.activeCount(all),
-                        onNew = onOpenAdd,
-                        onResume = { selected.forEach { actions.resume(it) } },
-                        onPause = { selected.forEach { actions.pause(it) } },
-                        onStartQueue = actions.resumeAll,
-                        onStopQueue = actions.pauseAll,
-                        onStopAll = actions.pauseAll,
-                        onDelete = { deleting = selected; selected = emptySet() },
-                        onOpenFolder = actions.openDownloadFolder,
-                        onSettings = onOpenSettings,
-                        search = search,
-                        onSearch = { search = it; selected = emptySet() }
+            // Sized from the window rather than from fixed widths. The table used to
+            // need 1071 dp before it stopped fitting - 230 of sidebar plus 841 of
+            // columns - and the toolbar 982, so a window narrower than the one the app
+            // opens at lost its right-hand columns and its last three buttons.
+            //
+            // The sidebar and the table and the toolbar each decide separately, because
+            // they give things up in different orders: the sidebar narrows first, the
+            // table drops columns from the right, and the toolbar drops its search box
+            // before its captions - and never the buttons themselves.
+            BoxWithConstraints(Modifier.weight(1f)) {
+                val sidebar = sidebarWidthFor(maxWidth.value)
+                // What is left for everything beside the sidebar and its rule.
+                val contentDp = maxWidth.value - sidebar.value - 1f
+                val table = tableLayoutFor(contentDp)
+                val toolbar = toolbarLayoutFor(contentDp)
+                Row(Modifier.fillMaxSize()) {
+                    CategoryRail(
+                        items = all,
+                        category = category,
+                        group = group,
+                        torrentsOnly = state.torrentsTab,
+                        width = sidebar,
+                        compact = table.narrowSidebar,
+                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL },
+                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL },
+                        onToggleTorrents = { actions.setTorrentsTab(!state.torrentsTab) }
                     )
-                    ColumnHeader(sort, onSort = { sort = it })
-                    HorizontalDivider(color = state.palette.outline.copy(alpha = 0.5f))
-                    if (visible.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                "Nothing here. Use New Download to add one.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = state.palette.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-                            items(visible, key = { it.id }) { item ->
-                                DownloadRow(
-                                    item = item,
-                                    palette = state.palette,
-                                    checked = item.id in selected,
-                                    onToggle = {
-                                        selected = if (item.id in selected) {
-                                            selected - item.id
-                                        } else {
-                                            selected + item.id
-                                        }
-                                    },
-                                    onPause = { actions.pause(item.id) },
-                                    onResume = { actions.resume(item.id) },
-                                    onRetry = { actions.retry(item.id) },
-                                    onOpen = { actions.revealDownload(item.location) }
-                                )
-                                HorizontalDivider(
-                                    color = state.palette.outline.copy(alpha = 0.25f),
-                                    thickness = 1.dp
+                    VerticalRule()
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                        LibraryToolbar(
+                            hasSelection = selected.isNotEmpty(),
+                            activeCount = DownloadLibrary.activeCount(all),
+                            onNew = onOpenAdd,
+                            onResume = { selected.forEach { actions.resume(it) } },
+                            onPause = { selected.forEach { actions.pause(it) } },
+                            onStartQueue = actions.resumeAll,
+                            onStopQueue = actions.pauseAll,
+                            onStopAll = actions.pauseAll,
+                            onDelete = { deleting = selected; selected = emptySet() },
+                            onOpenFolder = actions.openDownloadFolder,
+                            onSettings = onOpenSettings,
+                            layout = toolbar,
+                            search = search,
+                            onSearch = { search = it; selected = emptySet() }
+                        )
+                        ColumnHeader(sort, onSort = { sort = it }, layout = table)
+                        HorizontalDivider(color = state.palette.outline.copy(alpha = 0.5f))
+                        if (visible.isEmpty()) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    "Nothing here. Use New Download to add one.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = state.palette.onSurfaceVariant
                                 )
                             }
+                        } else {
+                            LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                                items(visible, key = { it.id }) { item ->
+                                    DownloadRow(
+                                        item = item,
+                                        palette = state.palette,
+                                        layout = table,
+                                        checked = item.id in selected,
+                                        onToggle = {
+                                            selected = if (item.id in selected) {
+                                                selected - item.id
+                                            } else {
+                                                selected + item.id
+                                            }
+                                        },
+                                        onPause = { actions.pause(item.id) },
+                                        onResume = { actions.resume(item.id) },
+                                        onRetry = { actions.retry(item.id) },
+                                        onOpen = { actions.revealDownload(item.location) }
+                                    )
+                                    HorizontalDivider(
+                                        color = state.palette.outline.copy(alpha = 0.25f),
+                                        thickness = 1.dp
+                                    )
+                                }
                         }
                     }
                     StatusBar(state, all)
+                }
                 }
             }
         }
@@ -261,18 +287,26 @@ private fun CategoryRail(
     category: LibraryCategory,
     group: LibraryGroup,
     torrentsOnly: Boolean,
+    /**
+     * Sized from the window by the caller. A fixed 230 dp is a third of a 700 dp
+     * window, which leaves nothing for the thing the window is for, so it narrows
+     * before the table gives up any columns.
+     */
+    width: androidx.compose.ui.unit.Dp,
+    /** Narrow: the labels no longer sit comfortably beside the counts. */
+    compact: Boolean,
     onCategory: (LibraryCategory) -> Unit,
     onGroup: (LibraryGroup) -> Unit,
     onToggleTorrents: () -> Unit
 ) {
     Column(
         modifier = Modifier
-            .width(230.dp)
+            .width(width)
             .fillMaxHeight()
             .background(Color(0xFF161C1F))
             .padding(vertical = 6.dp)
     ) {
-        RailRow("All", if (torrentsOnly) 0 else items.size, category == LibraryCategory.ALL && group == LibraryGroup.ALL && !torrentsOnly) {
+        RailRow("All", if (torrentsOnly) 0 else items.size, category == LibraryCategory.ALL && group == LibraryGroup.ALL && !torrentsOnly, compact = compact) {
             onCategory(LibraryCategory.ALL)
         }
         LibraryCategory.entries.filter { it != LibraryCategory.ALL }.forEach { entry ->
@@ -280,7 +314,8 @@ private fun CategoryRail(
                 entry.label,
                 DownloadLibrary.countFor(items, entry),
                 category == entry,
-                icon = LibraryCategoryIcons.of(entry)
+                icon = LibraryCategoryIcons.of(entry),
+                compact = compact
             ) {
                 onCategory(entry)
             }
@@ -290,20 +325,22 @@ private fun CategoryRail(
         RailRow(
             LibraryGroup.FINISHED.label,
             DownloadLibrary.countFor(items, LibraryGroup.FINISHED),
-            group == LibraryGroup.FINISHED
+            group == LibraryGroup.FINISHED,
+            compact = compact
         ) { onGroup(LibraryGroup.FINISHED) }
         GroupHeader("Unfinished")
         RailRow(
             LibraryGroup.UNFINISHED.label,
             DownloadLibrary.countFor(items, LibraryGroup.UNFINISHED),
-            group == LibraryGroup.UNFINISHED
+            group == LibraryGroup.UNFINISHED,
+            compact = compact
         ) { onGroup(LibraryGroup.UNFINISHED) }
         Spacer(Modifier.height(10.dp))
         GroupHeader("Queues")
-        RailRow("Main", if (torrentsOnly) 0 else items.size, !torrentsOnly && group == LibraryGroup.QUEUES) {
+        RailRow("Main", if (torrentsOnly) 0 else items.size, !torrentsOnly && group == LibraryGroup.QUEUES, compact = compact) {
             onGroup(LibraryGroup.QUEUES)
         }
-        RailRow("Torrents", if (torrentsOnly) items.size else 0, torrentsOnly) {
+        RailRow("Torrents", if (torrentsOnly) items.size else 0, torrentsOnly, compact = compact) {
             onToggleTorrents()
         }
     }
@@ -326,6 +363,8 @@ private fun RailRow(
     count: Int,
     selected: Boolean,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    /** Narrow rail: tighten the indent so the label and count still both fit. */
+    compact: Boolean = false,
     onClick: () -> Unit
 ) {
     Row(
@@ -333,7 +372,12 @@ private fun RailRow(
             .fillMaxWidth()
             .background(if (selected) Color(0xFF22302E) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(start = 14.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            .padding(
+                start = if (compact) 7.dp else 14.dp,
+                end = if (compact) 7.dp else 12.dp,
+                top = 6.dp,
+                bottom = 6.dp
+            ),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
@@ -378,6 +422,13 @@ private fun LibraryToolbar(
     onDelete: () -> Unit,
     onOpenFolder: () -> Unit,
     onSettings: () -> Unit,
+    /**
+     * How much of the toolbar fits, and how wide each button ended up. The captions go
+     * before the search box, because the buttons are what the toolbar is for; the search
+     * box then takes whatever is left rather than a fixed width, so it is never what
+     * overflows.
+     */
+    layout: ToolbarLayout,
     search: String,
     onSearch: (String) -> Unit
 ) {
@@ -389,28 +440,36 @@ private fun LibraryToolbar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        ToolbarButton("New Download", Icons.Default.Add, highlighted = true, onClick = onNew)
-        ToolbarButton("Resume", Icons.Default.PlayArrow, enabled = hasSelection, onClick = onResume)
-        ToolbarButton("Pause", DlmIcons.Pause, enabled = hasSelection, onClick = onPause)
-        ToolbarButton("Start Queue", Icons.Default.PlayArrow, enabled = activeCount > 0, onClick = onStartQueue)
-        ToolbarButton("Stop Queue", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopQueue)
-        ToolbarButton("Stop All", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopAll)
-        ToolbarButton("Delete", Icons.Default.Delete, enabled = hasSelection, onClick = onDelete)
-      // Sits next to the search box rather than with the transfer actions: it is about
-      // the destination, not about the queue. Kept short because the toolbar is
-      // already at its limit and the folder icon carries most of the meaning.
-      ToolbarButton("Downloads", DlmIcons.Folder, onClick = onOpenFolder)
-        Spacer(Modifier.weight(1f))
-        OutlinedTextField(
-            value = search,
-            onValueChange = onSearch,
-            singleLine = true,
-            placeholder = { Text("Search in the list", fontSize = 12.sp) },
-            leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(15.dp)) },
-            textStyle = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.width(260.dp)
-        )
-        ToolbarButton("Settings", Icons.Default.Settings, onClick = onSettings)
+        val compact = layout.style == ToolbarStyle.COMPACT
+        ToolbarButton("New Download", Icons.Default.Add, highlighted = true, onClick = onNew, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Resume", Icons.Default.PlayArrow, enabled = hasSelection, onClick = onResume, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Pause", DlmIcons.Pause, enabled = hasSelection, onClick = onPause, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Start Queue", Icons.Default.PlayArrow, enabled = activeCount > 0, onClick = onStartQueue, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Stop Queue", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopQueue, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Stop All", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopAll, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Delete", Icons.Default.Delete, enabled = hasSelection, onClick = onDelete, compact = compact, buttonWidth = layout.buttonDp)
+        // Next to the search box rather than with the transfer actions: it is about the
+        // destination, not about the queue.
+        ToolbarButton("Downloads", DlmIcons.Folder, onClick = onOpenFolder, compact = compact, buttonWidth = layout.buttonDp)
+        if (layout.showsSearch) {
+            // A weight with a ceiling, not a fixed width. The fixed 260 dp was the one
+            // thing in this row that could not give way, so it was what pushed Settings
+            // off the end of a window at the size the app opens at.
+            OutlinedTextField(
+                value = search,
+                onValueChange = onSearch,
+                singleLine = true,
+                placeholder = { Text("Search in the list", fontSize = 12.sp) },
+                leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(15.dp)) },
+                textStyle = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .weight(1f)
+                    .widthIn(min = SEARCH_MIN_DP.dp, max = SEARCH_MAX_DP.dp)
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        ToolbarButton("Settings", Icons.Default.Settings, onClick = onSettings, compact = compact, buttonWidth = layout.buttonDp)
     }
 }
 
@@ -420,7 +479,16 @@ private fun ToolbarButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     enabled: Boolean = true,
     highlighted: Boolean = false,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    /**
+     * Icon-only. Nine captioned buttons are 666 dp before the search box, which is why
+     * the right-hand end of the toolbar used to be cut off rather than wrapped - at the
+     * app's own opening width, not only on a deliberately small one. An icon-only
+     * button only needs room for a 30 dp target; the tooltip still names it.
+     */
+    compact: Boolean = false,
+    /** The captioned width the caller worked out for this window. */
+    buttonWidth: Float = CAPTION_BUTTON_DP
 ) {
     val tint = when {
         !enabled -> Color(0xFF4A5759)
@@ -430,7 +498,7 @@ private fun ToolbarButton(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(74.dp)
+            .width(if (compact) COMPACT_BUTTON_DP.dp else buttonWidth.dp)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 4.dp)
     ) {
@@ -445,19 +513,21 @@ private fun ToolbarButton(
         ) {
             Icon(icon, null, Modifier.size(17.dp), tint = tint)
         }
-        Text(
-            label,
-            fontSize = 10.sp,
-            color = tint,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center
-        )
+        if (!compact) {
+            Text(
+                label,
+                fontSize = 10.sp,
+                color = tint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
 @Composable
-private fun ColumnHeader(sort: LibrarySort, onSort: (LibrarySort) -> Unit) {
+private fun ColumnHeader(sort: LibrarySort, onSort: (LibrarySort) -> Unit, layout: TableLayout) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -466,12 +536,26 @@ private fun ColumnHeader(sort: LibrarySort, onSort: (LibrarySort) -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.width(26.dp))
-        ColumnHeaderCell("Name", 320.dp, sort, DownloadColumn.NAME, onSort)
-        ColumnHeaderCell("Size", 90.dp, sort, DownloadColumn.SIZE, onSort)
-        ColumnHeaderCell("Status", 110.dp, sort, DownloadColumn.STATUS, onSort)
-        ColumnHeaderCell("Speed", 95.dp, sort, DownloadColumn.SPEED, onSort)
-        ColumnHeaderCell("Time Left", 90.dp, sort, DownloadColumn.TIME_LEFT, onSort)
-        ColumnHeaderCell("Date Added", 110.dp, sort, DownloadColumn.DATE_ADDED, onSort)
+        // The name is the one column that takes the space the others leave, so it is a
+        // weight rather than a width. Everything else has a fixed width and is dropped
+        // from the right, in the order of how much a person needs it: a countdown
+        // nobody can read is worth less than a status, and both less than the size.
+        ColumnHeaderCell("Name", Dp.Unspecified, Modifier.weight(1f), sort, DownloadColumn.NAME, onSort)
+        if (layout.size > 0.dp) {
+            ColumnHeaderCell("Size", layout.size, Modifier, sort, DownloadColumn.SIZE, onSort)
+        }
+        if (layout.showStatus) {
+            ColumnHeaderCell("Status", layout.status, Modifier, sort, DownloadColumn.STATUS, onSort)
+        }
+        if (layout.showSpeed) {
+            ColumnHeaderCell("Speed", layout.speed, Modifier, sort, DownloadColumn.SPEED, onSort)
+        }
+        if (layout.showTimeLeft) {
+            ColumnHeaderCell("Time Left", layout.timeLeft, Modifier, sort, DownloadColumn.TIME_LEFT, onSort)
+        }
+        if (layout.showDateAdded) {
+            ColumnHeaderCell("Date Added", layout.dateAdded, Modifier, sort, DownloadColumn.DATE_ADDED, onSort)
+        }
     }
 }
 
@@ -479,13 +563,14 @@ private fun ColumnHeader(sort: LibrarySort, onSort: (LibrarySort) -> Unit) {
 private fun ColumnHeaderCell(
     label: String,
     width: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
     sort: LibrarySort,
     column: DownloadColumn,
     onSort: (LibrarySort) -> Unit
 ) {
     val active = sort.column == column
     Row(
-        modifier = Modifier
+        modifier = modifier
             .width(width)
             .clickable {
                 onSort(
@@ -517,6 +602,7 @@ private fun ColumnHeaderCell(
 private fun DownloadRow(
     item: DownloadItem,
     palette: androidx.compose.material3.ColorScheme,
+    layout: TableLayout,
     checked: Boolean,
     onToggle: () -> Unit,
     onPause: () -> Unit,
@@ -546,7 +632,9 @@ private fun DownloadRow(
             if (checked) Icon(Icons.Default.Check, null, Modifier.size(11.dp), tint = Color(0xFF0B1A14))
         }
 
-        Column(Modifier.width(320.dp).padding(end = 6.dp)) {
+        // A weight, not a width: the name is the column that has to absorb whatever the
+        // window has left over. It matches the header, which is weighted the same way.
+        Column(Modifier.weight(1f).padding(end = 6.dp)) {
             Text(
                 item.fileName,
                 fontSize = 12.sp,
@@ -571,19 +659,37 @@ private fun DownloadRow(
             }
         }
 
-        Cell(DisplayFormat.bytes(item.totalBytes), 90.dp, palette)
-        Cell(DisplayFormat.status(item), 110.dp, palette, colour = statusColour(item.status, palette))
-        Cell(DisplayFormat.speed(item.speedBytesPerSecond), 95.dp, palette)
-        Cell(DisplayFormat.timeLeft(DownloadLibrary.estimateSecondsLeft(item)), 90.dp, palette)
-        Cell(DisplayFormat.timeAgo(item.createdAt), 110.dp, palette)
+        if (layout.size > 0.dp) {
+            Cell(DisplayFormat.bytes(item.totalBytes), layout.size, palette)
+        }
+        if (layout.showStatus) {
+            Cell(DisplayFormat.status(item), layout.status, palette, colour = statusColour(item.status, palette))
+        }
+        if (layout.showSpeed) {
+            Cell(DisplayFormat.speed(item.speedBytesPerSecond), layout.speed, palette)
+        }
+        if (layout.showTimeLeft) {
+            Cell(
+                DisplayFormat.timeLeft(DownloadLibrary.estimateSecondsLeft(item)),
+                layout.timeLeft,
+                palette
+            )
+        }
+        if (layout.showDateAdded) {
+            Cell(DisplayFormat.timeAgo(item.createdAt), layout.dateAdded, palette)
+        }
 
-        when (item.status) {
-            DownloadStatus.RUNNING, DownloadStatus.QUEUED, DownloadStatus.RESOLVING ->
-                IconButton(16.dp, DlmIcons.Pause, "Pause", onPause)
+        if (layout.showRowActions) {
+            Box(Modifier.width(30.dp), contentAlignment = Alignment.CenterEnd) {
+                when (item.status) {
+                    DownloadStatus.RUNNING, DownloadStatus.QUEUED, DownloadStatus.RESOLVING ->
+                        IconButton(16.dp, DlmIcons.Pause, "Pause", onPause)
 
-            DownloadStatus.PAUSED -> IconButton(16.dp, Icons.Default.PlayArrow, "Resume", onResume)
-            DownloadStatus.FAILED -> IconButton(16.dp, Icons.Default.Refresh, "Retry", onRetry)
-            DownloadStatus.COMPLETED -> IconButton(16.dp, DlmIcons.FolderOpen, "Show in folder", onOpen)
+                    DownloadStatus.PAUSED -> IconButton(16.dp, Icons.Default.PlayArrow, "Resume", onResume)
+                    DownloadStatus.FAILED -> IconButton(16.dp, Icons.Default.Refresh, "Retry", onRetry)
+                    DownloadStatus.COMPLETED -> IconButton(16.dp, DlmIcons.FolderOpen, "Show in folder", onOpen)
+                }
+            }
         }
     }
 }

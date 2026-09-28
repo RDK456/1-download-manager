@@ -15,6 +15,21 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 
 /**
+ * The smallest the window is allowed to get.
+ *
+ * The layout gives up columns, then the search box, then the toolbar captions as the
+ * window narrows, and each of those has a defined order (see LibraryLayout). This is
+ * where that runs out. At 520 dp the sidebar is 120 and the table still shows a name, a
+ * size and a status; at 480 the size drops too and the row is a filename next to a word
+ * like "Completed", which is a worse answer than not letting the window get there.
+ *
+ * The height is set by the sidebar rather than the table: the rail is the tallest thing
+ * in the window, and it is a list rather than something that scrolls, so below about
+ * 360 dp its lower entries are simply cut off.
+ */
+val MINIMUM_WINDOW_SIZE = java.awt.Dimension(520, 360)
+
+/**
  * Windows entry point.
  *
  * The window can be dismissed without stopping the app: the minimise button and the
@@ -85,6 +100,20 @@ fun main() {
                     state = windowState,
                     title = "1 download manager"
                 ) {
+                    // Set the title-bar icon here rather than letting it come from the
+                    // exe's resources. The exe does carry the right icon, but only
+                    // because the build passes iconFile to jpackage: run from Gradle, or
+                    // from a copied app directory, and the resources are jpackage's
+                    // defaults instead. Saying it explicitly means every way of starting
+                    // the app looks the same.
+                    //
+                    // The minimum size goes with it, because the layout's give-up order
+                    // eventually runs out.
+                    LaunchedEffect(window) {
+                        window.iconImages = AppArtwork.windowIcons()
+                        window.minimumSize = MINIMUM_WINDOW_SIZE
+                    }
+
                     LibraryScreen(
                         state = state,
                         actions = controller.actions,

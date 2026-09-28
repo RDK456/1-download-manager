@@ -141,11 +141,41 @@ class AppIconTest {
             "the tray icon has gone back to the old green arrow",
             !tray.contains("0x34, 0xD3, 0x99")
         )
+        // It must ask the shared drawing rather than keeping a copy of it. A second
+        // copy is how the tray and the .ico quietly stop matching.
+        assertTrue(
+            "the tray draws its own icon instead of using AppArtwork, so there are now " +
+                "two icons to keep in step",
+            tray.contains("AppArtwork.icon(32)")
+        )
+        val artwork = File("src/main/kotlin/com/downloadhub/desktop/AppArtwork.kt").readText()
         listOf("34f, 38f", "49f, 39f", "54f, 58f").forEach { point ->
             assertTrue(
-                "the tray icon does not draw the shared point $point",
-                tray.contains(point)
+                "the shared drawing does not draw the launcher point $point",
+                artwork.contains(point)
             )
         }
+    }
+
+    /**
+     * The title-bar icon has to be set by the app, not inherited from the exe.
+     *
+     * The exe does get the right icon through jpackage's iconFile, which is what made
+     * this look unnecessary - but a report of "the icon did not change" cannot be
+     * diagnosed when one of the two sources is outside the code. Setting it at runtime
+     * means the answer does not depend on how the app was started.
+     */
+    @Test
+    fun theWindowIconIsSetByTheAppItself() {
+        val main = File("src/main/kotlin/com/downloadhub/desktop/Main.kt").readText()
+        assertTrue(
+            "the window icon is left to the exe's resources, which is jpackage's " +
+                "default Java cup whenever the app is not started from its own exe",
+            main.contains("AppArtwork.windowIcons()")
+        )
+        assertTrue(
+            "and it is not actually applied to the AWT window",
+            main.contains("window.iconImages =")
+        )
     }
 }

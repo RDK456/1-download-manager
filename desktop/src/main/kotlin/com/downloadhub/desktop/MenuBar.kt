@@ -3,6 +3,7 @@ package com.downloadhub.desktop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,14 +17,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -32,6 +35,15 @@ import androidx.compose.ui.unit.sp
  *
  * Every entry does something. A menu that opens and swallows clicks is worse than
  * no menu, because it teaches the user that the window is broken.
+ *
+ * Two things were wrong with this bar and they had the same cause.
+ *
+ * Each label was given a fixed width, and those same four numbers were also used as
+ * where each menu panel opens. So a panel opened wherever the number said rather than
+ * underneath its own menu, and every number was short by the width of the wordmark and
+ * its gap - the panel appeared well to the left of the entry that opened it. Measuring
+ * where each label actually lands keeps the two together, and lets the bar be as narrow
+ * as it needs to be without another table of magic numbers.
  */
 @Composable
 fun MenuBar(
@@ -49,29 +61,47 @@ fun MenuBar(
 ) {
     var open by remember { mutableStateOf<String?>(null) }
     var showIntegration by remember { mutableStateOf(false) }
+    // Where each label ended up, so its panel opens underneath it.
+    val offsets = remember { mutableStateMapOf<String, Int>() }
 
     Box {
         Surface(color = Color(0xFF1A2124)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(34.dp)
-                    .padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "1 download manager",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF34D399)
-                )
-                Spacer(Modifier.width(20.dp))
-                MenuLabel("File", 100.dp, open == "File") { open = toggle(open, "File") }
-                MenuLabel("Tasks", 158.dp, open == "Tasks") { open = toggle(open, "Tasks") }
-                MenuLabel("Tools", 222.dp, open == "Tools") { open = toggle(open, "Tools") }
-                MenuLabel("Help", 280.dp, open == "Help") { open = toggle(open, "Help") }
-                Spacer(Modifier.weight(1f))
-                Text("v$version", fontSize = 11.sp, color = Color(0xFF6E7B7D))
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // Below this the wordmark is the first thing to go. It says the same
+                // thing the window title already says, so it is the only part of the
+                // bar that is decoration rather than a control.
+                val roomForWordmark = maxWidth >= 700.dp
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(34.dp)
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (roomForWordmark) {
+                        Text(
+                            "1 download manager",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF34D399)
+                        )
+                        Spacer(Modifier.width(20.dp))
+                    }
+                    MenuLabel("File", open == "File", { offsets["File"] = it }) {
+                        open = toggle(open, "File")
+                    }
+                    MenuLabel("Tasks", open == "Tasks", { offsets["Tasks"] = it }) {
+                        open = toggle(open, "Tasks")
+                    }
+                    MenuLabel("Tools", open == "Tools", { offsets["Tools"] = it }) {
+                        open = toggle(open, "Tools")
+                    }
+                    MenuLabel("Help", open == "Help", { offsets["Help"] = it }) {
+                        open = toggle(open, "Help")
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text("v$version", fontSize = 11.sp, color = Color(0xFF6E7B7D))
+                }
             }
         }
 
@@ -84,7 +114,10 @@ fun MenuBar(
                     .clickable { showIntegration = false }
             ) {
                 BrowserIntegrationMenu(
-                    modifier = Modifier.padding(start = 222.dp, top = 32.dp),
+                    modifier = Modifier.padding(
+                        start = (offsets["Tools"] ?: 0).dp,
+                        top = 32.dp
+                    ),
                     extensionRoot = extensionRoot,
                     token = pairingToken,
                     onClose = { showIntegration = false },
@@ -101,7 +134,7 @@ fun MenuBar(
             ) {
                 Surface(
                     modifier = Modifier
-                        .padding(start = offsetFor(open), top = 32.dp)
+                        .padding(start = (offsets[open] ?: 0).dp, top = 32.dp)
                         .width(200.dp),
                     color = Color(0xFF1E2629),
                     shape = RoundedCornerShape(6.dp)
@@ -125,7 +158,9 @@ fun MenuBar(
                             }
 
                             "Tools" -> {
-                                MenuItem("Download Browser Integration") { open = null; showIntegration = true }
+                                MenuItem("Download Browser Integration") {
+                                    open = null; showIntegration = true
+                                }
                                 MenuDivider()
                                 MenuItem("Settings") { open = null; onOpenSettings() }
                             }
@@ -143,24 +178,28 @@ fun MenuBar(
 
 private fun toggle(current: String?, name: String): String? = if (current == name) null else name
 
-private fun offsetFor(open: String?): Dp = when (open) {
-    "File" -> 100.dp
-    "Tasks" -> 158.dp
-    "Tools" -> 222.dp
-    else -> 280.dp
-}
-
+/**
+ * One menu entry, as wide as its own name.
+ *
+ * [onPlaced] reports the x position the entry was drawn at, which is what the panel
+ * that opens from it is positioned by.
+ */
 @Composable
-private fun MenuLabel(label: String, width: Dp, active: Boolean, onClick: () -> Unit) {
+private fun MenuLabel(
+    label: String,
+    active: Boolean,
+    onPlaced: (Int) -> Unit,
+    onClick: () -> Unit
+) {
     Text(
         label,
         fontSize = 12.sp,
         color = if (active) Color(0xFF0B1A14) else Color(0xFFB4C0C2),
         modifier = Modifier
-            .width(width)
+            .onGloballyPositioned { onPlaced(it.positionInRoot().x.toInt()) }
             .background(if (active) Color(0xFF34D399) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(vertical = 5.dp)
+            .padding(horizontal = 12.dp, vertical = 5.dp)
     )
 }
 

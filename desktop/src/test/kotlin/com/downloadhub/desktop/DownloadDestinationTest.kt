@@ -178,7 +178,8 @@ class DownloadDestinationTest {
             "the toolbar has no button for the download folder",
             // The glyph is checked properly in UpdateAndRevealTest, which also pins
             // down that it differs from the row's; here only the button matters.
-            Regex("ToolbarButton\\(\"Downloads\", DlmIcons\\.\\w+, onClick = onOpenFolder\\)")
+            // Trailing arguments are allowed because the button takes a compact flag.
+            Regex("ToolbarButton\\(\"Downloads\", DlmIcons\\.\\w+, onClick = onOpenFolder[^)]*\\)")
                 .containsMatchIn(screen)
         )
         val controller = File("src/main/kotlin/com/downloadhub/desktop/DesktopController.kt").readText()
