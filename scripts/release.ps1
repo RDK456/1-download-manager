@@ -175,7 +175,16 @@ try {
             # identical, uninstalled file.
             $targets += @(':app:testDebugUnitTest', ':app:lintDebug', ":app:assemble$variant")
         }
-        if ($hasDesktop) { $targets += ':desktop:packageMsi' }
+        if ($hasDesktop) {
+            # prepareDistributable has to run between createDistributable and both
+            # packaging tasks: it strips the api-ms-win-*.dll stubs that cause
+            # "Failed to launch JVM" on a machine with a security agent, and adds the
+            # startup check. The MSI is built from the same unpacked app as the zip, so
+            # it needs the same preparation - and unlike the zip it cannot declare the
+            # dependency itself, because the Compose distribution tasks cannot be
+            # referenced by name from the build script.
+            $targets += @(':desktop:createDistributable', ':desktop:prepareDistributable', ':desktop:packageMsi')
+        }
         Write-Host ("Running " + ($targets -join ' ') + "...") -ForegroundColor Cyan
         & $gradlew @targets
         if ($LASTEXITCODE -ne 0) { throw 'Build failed; the version bump was left in place for inspection.' }
@@ -185,7 +194,9 @@ try {
     # command line: the Compose distribution tasks cannot be referenced by name
     # from the build script, so ordering them here is the only reliable way.
     if ($hasDesktop) {
-        & $gradlew ':desktop:packageZip'
+        # packageZip depends on prepareDistributable by name, but the explicit call
+        # keeps the order visible where it matters.
+        & $gradlew ':desktop:prepareDistributable' ':desktop:packageZip'
         if ($LASTEXITCODE -ne 0) { throw 'The portable zip failed to build.' }
     }
     $apkAsset = $null

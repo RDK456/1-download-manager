@@ -145,6 +145,103 @@ val stageExtension by tasks.registering(Copy::class) {
 tasks.named("processResources") { dependsOn(stageYtBin, stageExtension) }
 
 /**
+ * Post-processes the unpacked app: drops the startup check beside the launcher and
+ * removes the runtime stubs that make "Failed to launch JVM" so common.
+ *
+ * These are two small things but they share one reason to be a single task: both
+ * modify the directory that `createDistributable` produces and rewrites on every run,
+ * so both must happen after it and before anything is packaged. Keeping them together
+ * means there is one task to order, rather than two that can drift apart.
+ */
+// Resolved to plain Files here because `layout` is not in scope on a bare Task
+// receiver, and reaching for it inside doLast does not compile. The paths are known
+// at configuration time; only their contents change between runs.
+val packagedAppImage = file("build/compose/binaries/main/app/1DownloadManager")
+val packagedRuntimeBin = File(packagedAppImage, "runtime/bin")
+val troubleshootSource = file("dist-tools")
+
+val prepareDistributable by tasks.registering {
+    description = "Prepares the unpacked app for packaging: startup check, no API set stubs."
+    group = "distribution"
+    // By name, resolved when the task graph is built rather than at configuration
+    // time: a Compose distribution task does not exist yet this early.
+    dependsOn("createDistributable")
+    // createDistributable rewrites the directory every time, so this can never be
+    // considered done.
+    outputs.upToDateWhen { false }
+    doLast {
+        val appImage: File = packagedAppImage
+        if (!appImage.isDirectory) {
+            error("No packaged app at $appImage; run createDistributable first.")
+        }
+
+        // --- the startup check ------------------------------------------------
+        // "Failed to launch JVM" is all the jpackage launcher can say, whether the
+        // cause is a half-extracted zip, a quarantined runtime DLL, or a network
+        // drive. The app cannot report this itself - the failure happens before any
+        // of its code runs - so the answer has to travel with the package.
+        val shipped: List<File> = troubleshootSource
+            .listFiles { f: File -> f.isFile }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+        if (shipped.isEmpty()) error("No files in dist-tools; the package would ship without a startup check.")
+        shipped.forEach { it.copyTo(File(appImage, it.name), overwrite = true) }
+        logger.lifecycle("Shipped ${shipped.size} startup-check file(s) beside the launcher.")
+
+        // --- the API set stubs ------------------------------------------------
+        // These 45 files are the reason "Failed to launch JVM" was so hard to shake.
+        // The packaged app has no java.exe at all: the launcher loads
+        // runtime/bin/server/jvm.dll directly, and jvm.dll resolves its API set
+        // imports through these local stub DLLs. Block or quarantine any one and the
+        // JVM cannot initialise - the exact error, with no other symptom and nothing
+        // in the app's own code to point at.
+        //
+        // They are also the most attractive thing in the package for a security
+        // agent: 45 unsigned, near-empty DLLs named like operating-system
+        // components. Cutting the download from 150 MB to 78 MB did not fix it,
+        // because these files were never about size.
+        //
+        // On Windows 10 and later they are not needed - the loader resolves API sets
+        // from the OS schema rather than by opening these files. Verified by running
+        // the packaged app with all 45 removed: it starts normally.
+        val runtimeBin: File = packagedRuntimeBin
+        if (!runtimeBin.isDirectory) error("No packaged runtime at $runtimeBin.")
+
+        val stubs: List<File> = runtimeBin.listFiles { f: File -> f.isFile && f.name.startsWith("api-ms-") }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+        if (stubs.isNotEmpty()) {
+            // Anything this large is a real component, not a forwarder. If a future
+            // JDK ships one that happens to be named api-ms-something, this stops the
+            // build instead of shipping a JVM that cannot start.
+            val suspicious = stubs.filter { it.length() > 512L * 1024L }
+            if (suspicious.isNotEmpty()) {
+                error(
+                    "Refusing to strip, these are too large to be forwarder stubs: " +
+                        suspicious.joinToString { "${it.name} (${it.length()} bytes)" }
+                )
+            }
+            val bytes = stubs.sumOf { it.length() }
+            val notRemoved = stubs.filterNot { it.delete() }
+            if (notRemoved.isNotEmpty()) {
+                error("Could not remove ${notRemoved.joinToString { it.name }}; the package is probably locked.")
+            }
+            logger.lifecycle("Stripped ${stubs.size} redundant API set stubs (${bytes / 1024} KB).")
+        } else {
+            logger.lifecycle("No API set stubs in the packaged runtime.")
+        }
+
+        // Removing a stub is safe; accidentally removing the JVM is not.
+        val required = listOf("server/jvm.dll", "java.dll", "ucrtbase.dll", "vcruntime140.dll")
+        val missing = required.filterNot { File(runtimeBin, it).isFile }
+        if (missing.isNotEmpty()) {
+            error("The runtime is missing ${missing.joinToString()}; the JVM cannot start without it.")
+        }
+    }
+}
+
+
+/**
  * Zips the unpacked app so it can be run without installing anything.
  *
  * Windows Installer failed on a machine whose security agent locks files the
@@ -159,7 +256,7 @@ val packageZip by tasks.registering(Zip::class) {
     // By name, resolved when the task graph is built rather than at configuration
     // time: a Compose distribution task does not exist yet this early, and naming it
     // eagerly fails the whole build with "cannot reference task by name".
-    dependsOn("createDistributable")
+    dependsOn("createDistributable", "prepareDistributable")
     from(layout.buildDirectory.dir("compose/binaries/main/app/1DownloadManager"))
     // The folder is already named 1DownloadManager; wrapping it again produced
     // 1DownloadManager/1DownloadManager/.
