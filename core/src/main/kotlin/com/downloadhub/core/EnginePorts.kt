@@ -47,8 +47,16 @@ interface WorkArea {
     /**
      * Moves [source] to its final resting place. [destinationTreeUri] is the
      * Storage Access Framework tree on Android, or null when a plain path is used.
+     *
+     * [category] is the finished file's kind, so a platform that files by folder can
+     * put it in one without having to re-guess from the extension.
      */
-    fun publishFile(source: File, preferredName: String, destinationTreeUri: String?): PublishedTarget
+    fun publishFile(
+        source: File,
+        preferredName: String,
+        destinationTreeUri: String?,
+        category: DownloadCategory
+    ): PublishedTarget
 
     /** Tells the platform a new file exists. A no-op off Android. */
     fun scan(file: File)

@@ -173,7 +173,11 @@ class YoutubeDownloader(
         val published = storage.publishFile(
             source = completedFile,
             preferredName = completedFile.name,
-            destinationTreeUri = settings.currentDestinationTreeUri()
+            destinationTreeUri = settings.currentDestinationTreeUri(),
+            // The item already knows whether this was asked for as audio or video,
+            // which is what decides the folder; the file's extension is the weaker
+            // signal because yt-dlp can deliver m4a from a video URL.
+            category = item.category.toCoreCategory()
         )
         workDirectory.deleteRecursively()
         val mime = mimeFor(completedFile)

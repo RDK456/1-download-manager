@@ -45,6 +45,12 @@ data class DesktopActions(
     val resume: (String) -> Unit,
     val retry: (String) -> Unit,
     val remove: (String) -> Unit,
+    /**
+     * [deleteFile] decides whether the bytes on disk go too. Removing a finished
+     * download has two reasonable answers and guessing wrong is destructive, so the
+     * caller is made to pick rather than assumed.
+     */
+    val removeSelectingFiles: (String, Boolean) -> Unit,
     val pauseAll: () -> Unit,
     val resumeAll: () -> Unit,
     val updateSettings: (DesktopSettings) -> Unit,
@@ -53,6 +59,8 @@ data class DesktopActions(
     val consumeMessage: () -> Unit,
     val setTorrentsTab: (Boolean) -> Unit,
     val openExtensionFolder: () -> Unit,
+    /** Reveals the folder finished downloads are published into. */
+    val openDownloadFolder: () -> Unit,
     val checkForUpdates: () -> Unit,
     val downloadUpdate: () -> Unit,
     val launchInstaller: () -> Unit,
@@ -269,6 +277,25 @@ class DesktopController(
         }
         refresh()
     }
+
+    /**
+     * Opens the download folder in Explorer.
+     *
+     * The folder is created if it is missing: a button that does nothing the first
+     * time it is pressed, because nothing has been downloaded yet, reads as broken.
+     */
+    fun openDownloadFolder() {
+        val dir = settingsState.value.downloadDirFile()
+        if (!dir.isDirectory && !dir.mkdirs()) {
+            _messages.value = "Could not create the download folder: ${dir.absolutePath}"
+            refresh()
+            return
+        }
+        if (!revealFolder(dir)) {
+            _messages.value = "Open this folder yourself: ${dir.absolutePath}"
+        }
+        refresh()
+    }
     fun setTorrentsTab(enabled: Boolean) {
         _torrentsTab.value = enabled
     }
@@ -328,6 +355,19 @@ class DesktopController(
             }
             store.persist()
         },
+        removeSelectingFiles = { id, deleteFile ->
+            val item = store.get(id)
+            if (item?.source == DownloadSource.TORRENT) {
+                // A torrent's payload is a whole directory, so "just the list" has to
+                // stop it first either way; only the files are conditional.
+                torrents.remove(id, deleteFiles = deleteFile)
+            }
+            // Dropping the row is the store's business, and it is the only place that
+            // touches the file, so the choice is honoured in one spot.
+            store.remove(id, deleteFiles = deleteFile)
+            store.persist()
+            refresh()
+        },
         pauseAll = { engine.pauseAll() },
         resumeAll = { engine.resumeAll() },
         updateSettings = { updated ->
@@ -340,6 +380,7 @@ class DesktopController(
         consumeMessage = ::consumeMessage,
         setTorrentsTab = ::setTorrentsTab,
         openExtensionFolder = ::openExtensionFolder,
+        openDownloadFolder = ::openDownloadFolder,
         checkForUpdates = ::checkForUpdates,
         downloadUpdate = ::downloadUpdate,
         launchInstaller = ::launchInstaller,
@@ -436,7 +477,7 @@ class DesktopController(
             // afterwards first.length() is 0 and the row would show a finished
             // 32 MB video as zero bytes.
             val size = first.length()
-            val published = area.publishFile(first, first.name, null)
+            val published = area.publishFile(first, first.name, null, item.category)
             result.producedFiles.filter { it != first }.forEach { it.delete() }
             store.update(id) {
                 it.copy(

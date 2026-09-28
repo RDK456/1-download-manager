@@ -172,13 +172,26 @@ class DesktopStore(initial: List<QueuedDownload> = emptyList()) {
             .forEach { items.remove(it.id) }
     }
 
-    /** Deletes the saved file and the scratch copy. */
+    /**
+     * Removes a download from the queue, optionally taking the file with it.
+     *
+     * [deleteFiles] is a question the user is asked rather than a default, because the
+     * two answers are both reasonable and the wrong one is not undoable. The scratch
+     * copy always goes either way: it is the app's own working file, and leaving it
+     * behind would strand a partial download nobody asked for.
+     */
     @Synchronized
-    fun delete(id: String) {
+    fun remove(id: String, deleteFiles: Boolean) {
         val item = items.remove(id) ?: return
-        item.location?.let { runCatching { File(it).delete() } }
+        if (deleteFiles) {
+            item.location?.let { path -> runCatching { File(path).deleteRecursively() } }
+        }
         runCatching { AppPaths.workDir.resolve(id).deleteRecursively() }
     }
+
+    /** Deletes the saved file and the scratch copy. */
+    @Synchronized
+    fun delete(id: String) = remove(id, deleteFiles = true)
 
     fun persist() {
         runCatching {

@@ -125,4 +125,154 @@ object DlmIcons {
             close()
         }
     }
+
+    // --- category icons ------------------------------------------------------
+    // One per sidebar category, so the rail can be read without reading it. Same
+    // reasoning as the six above: each is a plain Material path, drawn here because
+    // the extended jar they all live in is 36 MB.
+
+    /** An archive box: a band across a crate. */
+    val Compressed: ImageVector by lazy {
+        icon("Compressed") {
+            moveTo(20f, 4f)
+            horizontalLineTo(4f)
+            verticalLineTo(4f)
+            close()
+            moveTo(21f, 6f)
+            verticalLineTo(20f)
+            horizontalLineTo(3f)
+            verticalLineTo(6f)
+            close()
+            moveTo(5f, 8f)
+            horizontalLineTo(19f)
+            verticalLineToRelative(-2f)
+            horizontalLineTo(5f)
+            close()
+        }
+    }
+
+    /** A window with a title bar: an application. */
+    val Programs: ImageVector by lazy {
+        icon("Programs") {
+            moveTo(19f, 4f)
+            horizontalLineTo(5f)
+            curveTo(4.45f, 4f, 4.01f, 4.45f, 4.01f, 5f)
+            lineTo(4f, 19f)
+            curveTo(4f, 19.55f, 4.45f, 20f, 5f, 20f)
+            horizontalLineTo(19f)
+            curveTo(19.55f, 20f, 20f, 19.55f, 20f, 19f)
+            verticalLineTo(5f)
+            curveTo(20f, 4.45f, 19.55f, 4f, 19f, 4f)
+            close()
+            moveTo(18f, 13f)
+            horizontalLineTo(6f)
+            verticalLineToRelative(-2f)
+            horizontalLineTo(18f)
+            close()
+        }
+    }
+
+    /** A strip of film. */
+    val Videos: ImageVector by lazy {
+        icon("Videos") {
+            moveTo(18f, 4f)
+            lineTo(6f, 4f)
+            curveTo(4.9f, 4f, 4f, 4.9f, 4f, 6f)
+            verticalLineTo(18f)
+            curveTo(4f, 19.1f, 4.9f, 20f, 6f, 20f)
+            horizontalLineTo(18f)
+            curveTo(19.1f, 20f, 20f, 19.1f, 20f, 18f)
+            verticalLineTo(6f)
+            curveTo(20f, 4.9f, 19.1f, 4f, 18f, 4f)
+            close()
+            moveTo(10f, 16.5f)
+            verticalLineToRelative(-9f)
+            lineTo(16f, 12f)
+            close()
+            moveTo(7.5f, 4f)
+            horizontalLineTo(9f)
+            verticalLineToRelative(16f)
+            horizontalLineTo(7.5f)
+            close()
+        }
+    }
+
+    /** A quaver. */
+    val Music: ImageVector by lazy {
+        icon("Music") {
+            moveTo(20f, 3f)
+            verticalLineTo(13.55f)
+            curveTo(20f, 14.37f, 20f, 16.28f, 20f, 17.5f)
+            curveTo(20f, 19.43f, 18.43f, 21f, 16.5f, 21f)
+            curveTo(14.57f, 21f, 13f, 19.43f, 13f, 17.5f)
+            curveTo(13f, 15.57f, 14.57f, 14f, 16.5f, 14f)
+            curveTo(17.03f, 14f, 17.5f, 14.2f, 18f, 14.63f)
+            verticalLineTo(5f)
+            horizontalLineTo(4f)
+            verticalLineTo(3f)
+            close()
+        }
+    }
+
+    /** A framed picture with a sun. */
+    val Pictures: ImageVector by lazy {
+        icon("Pictures") {
+            moveTo(21f, 19f)
+            verticalLineTo(5f)
+            curveTo(21f, 4.45f, 20.55f, 4f, 20f, 4f)
+            horizontalLineTo(3f)
+            curveTo(2.45f, 4f, 2f, 4.45f, 2f, 5f)
+            verticalLineTo(19f)
+            curveTo(2f, 19.55f, 2.45f, 20f, 3f, 20f)
+            horizontalLineTo(5f)
+            verticalLineTo(18f)
+            horizontalLineTo(20f)
+            verticalLineTo(11f)
+            lineToRelative(-2.5f, -2.5f)
+            lineToRelative(-6.5f, 6.5f)
+            lineToRelative(-2f, -2f)
+            verticalLineTo(18f)
+            close()
+            moveTo(8.5f, 11.5f)
+            curveTo(8.5f, 10.67f, 8.83f, 9.92f, 9.41f, 9.41f)
+            curveTo(9.99f, 8.9f, 10.74f, 8.5f, 11.5f, 8.5f)
+            curveTo(12.33f, 8.5f, 13.08f, 8.9f, 13.6f, 9.41f)
+            curveTo(14.18f, 9.92f, 14.5f, 10.67f, 14.5f, 11.5f)
+            curveTo(14.5f, 12.33f, 14.18f, 13.08f, 13.6f, 13.6f)
+            curveTo(13.08f, 14.18f, 12.33f, 14.5f, 11.5f, 14.5f)
+            curveTo(10.74f, 14.5f, 9.99f, 14.18f, 9.41f, 13.6f)
+            curveTo(8.83f, 13.08f, 8.5f, 12.33f, 8.5f, 11.5f)
+            close()
+        }
+    }
+
+    /** A sheet of paper with lines. */
+    val Documents: ImageVector by lazy {
+        icon("Documents") {
+            moveTo(14f, 2f)
+            verticalLineTo(6f)
+            curveTo(5.45f, 6f, 5.01f, 6.45f, 5.01f, 7f)
+            verticalLineTo(19f)
+            curveTo(5.01f, 19.55f, 5.45f, 20f, 6f, 20f)
+            horizontalLineTo(18f)
+            curveTo(18.55f, 20f, 19f, 19.55f, 19f, 19f)
+            verticalLineTo(8f)
+            close()
+            moveTo(16f, 18f)
+            horizontalLineTo(8f)
+            verticalLineToRelative(-2f)
+            horizontalLineTo(16f)
+            close()
+            moveTo(16f, 14f)
+            horizontalLineTo(8f)
+            verticalLineToRelative(-2f)
+            horizontalLineTo(16f)
+            close()
+            moveTo(13f, 9f)
+            verticalLineTo(2f)
+            horizontalLineTo(8f)
+            verticalLineToRelative(7f)
+            close()
+        }
+    }
 }

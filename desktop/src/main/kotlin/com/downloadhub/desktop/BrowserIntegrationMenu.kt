@@ -240,14 +240,20 @@ private fun BrowserHelpDialog(
     )
 }
 
-/** Opens a folder in Explorer. */
-internal fun revealFolder(folder: File) {
-    runCatching {
-        val explorer = File("C:/Windows/explorer.exe")
-        if (explorer.isFile) {
-            ProcessBuilder(explorer.absolutePath, folder.absolutePath)
-                .redirectErrorStream(true)
-                .start()
-        }
+/**
+ * Opens a folder in Explorer, reporting whether it worked.
+ *
+ * Explorer is the only way to do this, and it can be missing or refuse, so the answer
+ * is returned rather than assumed - a button that silently does nothing looks broken.
+ */
+internal fun revealFolder(folder: File): Boolean = runCatching {
+    val explorer = File("C:/Windows/explorer.exe")
+    if (explorer.isFile) {
+        ProcessBuilder(explorer.absolutePath, folder.absolutePath)
+            .redirectErrorStream(true)
+            .start()
+        true
+    } else {
+        false
     }
-}
+}.getOrDefault(false)

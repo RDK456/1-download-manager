@@ -180,7 +180,10 @@ class HttpDownloader(
         val published = storage.publishFile(
             source = work,
             preferredName = item.fileName,
-            destinationTreeUri = settings.currentDestinationTreeUri()
+            destinationTreeUri = settings.currentDestinationTreeUri(),
+            // Classified from the response headers, so the folder matches what the
+            // sidebar already calls this file.
+            category = item.category.toCoreCategory()
         )
         dao.updateOutputPath(item.id, published.location, now)
         dao.updateProgress(item.id, downloaded, total, percent, 0, -1, now)

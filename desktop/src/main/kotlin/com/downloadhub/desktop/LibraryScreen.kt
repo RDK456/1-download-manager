@@ -81,6 +81,9 @@ fun LibraryScreen(
     var search by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf(LibrarySort.RECENT) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
+    // Set when Delete is pressed, so the dialog can ask what should happen to the
+    // files rather than the app assuming.
+    var deleting by remember { mutableStateOf(emptySet<String>()) }
 
     val all = state.items.map { it.toCoreItem() }
     val query = LibraryQuery(
@@ -126,7 +129,8 @@ fun LibraryScreen(
                         onStartQueue = actions.resumeAll,
                         onStopQueue = actions.pauseAll,
                         onStopAll = actions.pauseAll,
-                        onDelete = { selected.forEach { actions.remove(it) }; selected = emptySet() },
+                        onDelete = { deleting = selected; selected = emptySet() },
+                        onOpenFolder = actions.openDownloadFolder,
                         onSettings = onOpenSettings,
                         search = search,
                         onSearch = { search = it; selected = emptySet() }
@@ -171,7 +175,74 @@ fun LibraryScreen(
                 }
             }
         }
+
+        // Asking is the point. "Remove from the list" and "delete the file" are both
+        // things people mean, and the second is not undoable, so the app does not
+        // choose on the user's behalf.
+        if (deleting.isNotEmpty()) {
+            DeleteChoiceDialog(
+                count = deleting.size,
+                // A running download has no file on disk yet, so the question would
+                // be meaningless for it.
+                canDeleteFiles = state.items.any {
+                    it.id in deleting && it.status == DownloadStatus.COMPLETED
+                },
+                onKeepFiles = {
+                    deleting.forEach { actions.removeSelectingFiles(it, false) }
+                    deleting = emptySet()
+                },
+                onDeleteFiles = {
+                    deleting.forEach { actions.removeSelectingFiles(it, true) }
+                    deleting = emptySet()
+                },
+                onDismiss = { deleting = emptySet() }
+            )
+        }
     }
+}
+
+/**
+ * Asks what "delete" should mean.
+ *
+ * Two answers people actually want - tidy the list but keep the file, or take the file
+ * too - plus the implicit third, cancelling, which leaving the dialog open provides.
+ */
+@Composable
+private fun DeleteChoiceDialog(
+    count: Int,
+    canDeleteFiles: Boolean,
+    onKeepFiles: () -> Unit,
+    onDeleteFiles: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val subject = if (count == 1) "this download" else "these $count downloads"
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove $subject?") },
+        text = {
+            Text(
+                if (canDeleteFiles) {
+                    "Remove $subject from the list, or remove " +
+                        (if (count == 1) "it" else "them") + " and delete the " +
+                        (if (count == 1) "file" else "files") + " from disk?"
+                } else {
+                    "Remove $subject from the list? Nothing has been written to disk yet."
+                }
+            )
+        },
+        confirmButton = {
+            if (canDeleteFiles) {
+                androidx.compose.material3.TextButton(onClick = onDeleteFiles) {
+                    Text("Delete " + if (count == 1) "file" else "files")
+                }
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onKeepFiles) {
+                Text("Just remove from list")
+            }
+        }
+    )
 }
 
 @Composable
@@ -205,7 +276,12 @@ private fun CategoryRail(
             onCategory(LibraryCategory.ALL)
         }
         LibraryCategory.entries.filter { it != LibraryCategory.ALL }.forEach { entry ->
-            RailRow(entry.label, DownloadLibrary.countFor(items, entry), category == entry) {
+            RailRow(
+                entry.label,
+                DownloadLibrary.countFor(items, entry),
+                category == entry,
+                icon = LibraryCategoryIcons.of(entry)
+            ) {
                 onCategory(entry)
             }
         }
@@ -245,15 +321,35 @@ private fun GroupHeader(label: String) {
 }
 
 @Composable
-private fun RailRow(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
+private fun RailRow(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    onClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (selected) Color(0xFF22302E) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = 14.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (icon != null) {
+            // Every category gets one, so the rail can be picked out at a glance
+            // instead of read. All and the groups below have none, so they keep the
+            // original indent and the two kinds of row stay distinguishable.
+            androidx.compose.material3.Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) Color(0xFF34D399) else Color(0xFF7E8C8E),
+                modifier = Modifier
+                    .size(15.dp)
+                    .padding(end = 0.dp)
+            )
+            Spacer(Modifier.width(9.dp))
+        }
         Text(
             label,
             fontSize = 12.sp,
@@ -280,6 +376,7 @@ private fun LibraryToolbar(
     onStopQueue: () -> Unit,
     onStopAll: () -> Unit,
     onDelete: () -> Unit,
+    onOpenFolder: () -> Unit,
     onSettings: () -> Unit,
     search: String,
     onSearch: (String) -> Unit
@@ -299,6 +396,10 @@ private fun LibraryToolbar(
         ToolbarButton("Stop Queue", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopQueue)
         ToolbarButton("Stop All", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopAll)
         ToolbarButton("Delete", Icons.Default.Delete, enabled = hasSelection, onClick = onDelete)
+      // Sits next to the search box rather than with the transfer actions: it is about
+      // the destination, not about the queue. Kept short because the toolbar is
+      // already at its limit and the folder icon carries most of the meaning.
+      ToolbarButton("Downloads", DlmIcons.FolderOpen, onClick = onOpenFolder)
         Spacer(Modifier.weight(1f))
         OutlinedTextField(
             value = search,

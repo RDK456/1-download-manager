@@ -178,7 +178,10 @@ class HttpDownloader(
         val published = area.publishFile(
             source = work,
             preferredName = item.fileName,
-            destinationTreeUri = destinationTreeUri()
+            destinationTreeUri = destinationTreeUri(),
+            // The engine already worked out what kind of file this is from the
+            // response, so the platform files it without re-reading the extension.
+            category = item.category
         )
         store.updateOutputPath(item.id, published.location, now)
         store.updateProgress(item.id, downloaded, total, percent, 0, -1, now)

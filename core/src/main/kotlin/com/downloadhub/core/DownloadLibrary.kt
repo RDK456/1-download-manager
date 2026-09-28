@@ -22,6 +22,28 @@ enum class LibraryCategory(val label: String, val categories: Set<DownloadCatego
     fun matches(item: DownloadItem): Boolean = item.category in categories
 }
 
+/**
+ * The subfolder a finished file of this category is filed under.
+ *
+ * The library is grouped by category, so the folder the bytes land in should agree
+ * with it - otherwise the sidebar says "Videos" and the folder says "Other", and the
+ * person has to learn two different arrangements of the same idea.
+ *
+ * The names come from [LibraryCategory] rather than the enum, because those are the
+ * words already on screen. A category with no sidebar entry of its own - a plain
+ * file, an archive libtorrent reported separately - goes to "Other" rather than
+ * inventing a folder nobody can find.
+ */
+fun DownloadCategory.destinationFolder(): String = when (this) {
+    DownloadCategory.COMPRESSED, DownloadCategory.ARCHIVE -> LibraryCategory.COMPRESSED.label
+    DownloadCategory.PROGRAM -> LibraryCategory.PROGRAMS.label
+    DownloadCategory.VIDEO -> LibraryCategory.VIDEOS.label
+    DownloadCategory.AUDIO -> LibraryCategory.MUSIC.label
+    DownloadCategory.IMAGE -> LibraryCategory.PICTURES.label
+    DownloadCategory.DOCUMENT -> LibraryCategory.DOCUMENTS.label
+    else -> "Other"
+}
+
 /** The collapsible groups under the categories, plus the queue entry. */
 enum class LibraryGroup(val label: String) {
     ALL("All"),

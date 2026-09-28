@@ -158,7 +158,7 @@ class DesktopTorrentEngine(
             onChange()
             return
         }
-        val published = area.publishFile(source, source.name, null)
+        val published = area.publishFile(source, source.name, null, item.category)
         val media = largestMediaIn(File(published.location))
         store.update(id) {
             it.copy(

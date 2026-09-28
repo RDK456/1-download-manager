@@ -8,6 +8,8 @@ import android.os.Environment
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
+import com.downloadhub.core.DownloadCategory
+import com.downloadhub.core.destinationFolder
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -55,19 +57,45 @@ class DownloadStorage(private val context: Context) {
         runCatching { torrentRoot.mkdirs() }
     }
 
-    fun targetFile(preferredName: String): File {
+    /**
+     * The finished file's final path, in the subfolder for its category.
+     *
+     * Filed by category so the folder tree agrees with the sidebar, which already
+     * groups downloads that way. Falling back to the root when the subfolder cannot
+     * be created keeps a completed download from being lost to a full or read-only
+     * volume.
+     */
+    fun targetFile(preferredName: String, category: DownloadCategory = DownloadCategory.OTHER): File {
         root.mkdirs()
+        val dir = File(root, category.destinationFolder())
+        if (!dir.isDirectory && !dir.mkdirs()) return uniqueIn(root, preferredName)
+        return uniqueIn(dir, preferredName)
+    }
+
+    private fun uniqueIn(dir: File, preferredName: String): File {
         val safe = LinkParser.sanitizeFileName(preferredName)
-        var candidate = File(root, safe)
+        var candidate = File(dir, safe)
         var suffix = 1
         while (candidate.exists()) {
             val stem = safe.substringBeforeLast('.', safe)
             val extension = safe.substringAfterLast('.', "")
             val name = if (extension.isBlank()) "$stem ($suffix)" else "$stem ($suffix).$extension"
-            candidate = File(root, name)
+            candidate = File(dir, name)
             suffix++
         }
         return candidate
+    }
+
+    /**
+     * The category subfolder inside a Storage Access Framework tree, created on
+     * first use. Returns the tree itself when the folder cannot be made, so a file
+     * still lands somewhere rather than the download failing.
+     */
+    private fun categoryFolder(tree: DocumentFile, category: DownloadCategory): DocumentFile {
+        val name = category.destinationFolder()
+        val existing = tree.findFile(name)
+        if (existing != null) return if (existing.isDirectory) existing else tree
+        return runCatching { tree.createDirectory(name) }.getOrNull()?.takeIf { it.isDirectory } ?: tree
     }
 
     fun workFile(id: String): File {
@@ -107,16 +135,17 @@ class DownloadStorage(private val context: Context) {
     fun publishFile(
         source: File,
         preferredName: String,
-        destinationTreeUri: String?
+        destinationTreeUri: String?,
+        category: DownloadCategory
     ): PublishedTarget {
         if (!source.exists()) throw IOException("Download staging file is missing")
         if (destinationTreeUri.isNullOrBlank()) {
-            val target = targetFile(preferredName)
+            val target = targetFile(preferredName, category)
             moveOrCopyFile(source, target)
             return PublishedTarget(target.absolutePath)
         }
 
-        val tree = treeFor(destinationTreeUri)
+        val tree = categoryFolder(treeFor(destinationTreeUri), category)
         val safeName = LinkParser.sanitizeFileName(preferredName)
         val name = uniqueDocumentName(tree, safeName)
         val mime = mimeFor(name)
@@ -138,10 +167,11 @@ class DownloadStorage(private val context: Context) {
     fun publishDirectory(
         source: File,
         preferredName: String,
-        destinationTreeUri: String?
+        destinationTreeUri: String?,
+        category: DownloadCategory = DownloadCategory.OTHER
     ): PublishedTarget {
         if (!source.exists()) throw IOException("Download staging directory is missing")
-        if (source.isFile) return publishFile(source, preferredName, destinationTreeUri)
+        if (source.isFile) return publishFile(source, preferredName, destinationTreeUri, category)
         if (destinationTreeUri.isNullOrBlank()) {
             val target = uniqueDirectory(root, preferredName)
             moveOrCopyDirectory(source, target)

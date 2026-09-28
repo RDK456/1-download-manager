@@ -60,3 +60,22 @@ internal fun DownloadEntity.toCoreItem(): DownloadItem = DownloadItem(
     torrentInfoHash = torrentInfoHash,
     outputPath = outputPath
 )
+
+/**
+ * The Room-backed category as the shared one the engines work in.
+ *
+ * The app keeps its own enum so the database schema does not move with a refactor in
+ * :core. The two have to stay in step: the folder a finished file is filed under comes
+ * from the core one, so a mismatch would put a video in "Other".
+ */
+internal fun AppCategory.toCoreCategory(): DownloadCategory = when (this) {
+    AppCategory.PROGRAM -> DownloadCategory.PROGRAM
+    AppCategory.COMPRESSED -> DownloadCategory.COMPRESSED
+    AppCategory.FILE -> DownloadCategory.FILE
+    AppCategory.VIDEO -> DownloadCategory.VIDEO
+    AppCategory.AUDIO -> DownloadCategory.AUDIO
+    AppCategory.DOCUMENT -> DownloadCategory.DOCUMENT
+    AppCategory.IMAGE -> DownloadCategory.IMAGE
+    AppCategory.ARCHIVE -> DownloadCategory.ARCHIVE
+    AppCategory.OTHER -> DownloadCategory.OTHER
+}
