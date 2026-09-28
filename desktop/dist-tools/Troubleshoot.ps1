@@ -90,18 +90,65 @@ if (Test-Path $bin) {
 # --- can the JVM start at all? ----------------------------------------------
 Say ''
 Say 'Starting the app'
-# There is no java.exe to call, so this has to go through the real launcher. If it
-# gets far enough to open a window, the runtime is fine.
+# Try the packaged launcher first, the way the user would. If it fails there is
+# nothing more it can say, so fall back to java.exe: the same JVM, started by hand,
+# which prints the real error - a missing DLL, a denied path, a blocked file.
+$javaExe = Join-Path $bin 'java.exe'
+$fallback = Join-Path $app 'Start 1DownloadManager.bat'
+
+$launcherOk = $false
 $proc = Start-Process -FilePath $exe -PassThru -ErrorAction SilentlyContinue
 if (-not $proc) {
     Bad 'the launcher could not be started at all'
 } else {
     Start-Sleep -Seconds 12
-    $alive = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
-    if ($alive) {
+    if (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue) {
+        $launcherOk = $true
         Good 'the launcher started; if no window appeared, the problem is in the app, not the runtime'
     } else {
-        Bad 'the launcher exited immediately, so the JVM never started'
+        Bad '1DownloadManager.exe exited immediately - the JVM never started'
+    }
+}
+
+if (-not $launcherOk) {
+    Say ''
+    Say 'Asking the JVM directly what is wrong'
+    if (-not (Test-Path $javaExe)) {
+        Bad 'runtime\bin\java.exe is missing, so the real error cannot be read. Re-download this version.'
+    } else {
+        # Deliberately not Start 1DownloadManager.bat: it pauses on exit, which would
+        # hang a double-clicked window with no way past it. The same command is run
+        # here and its output captured instead.
+        $appDir = Join-Path $app 'app'
+        $arguments = @(
+            '-cp', "$appDir\*",
+            "-Dcompose.application.resources.dir=$appDir\resources",
+            '-Dcompose.application.configure.swing.globals=true',
+            "-Dskiko.library.path=$appDir",
+            '-version'
+        )
+        # 2>&1 turns the JVM's stderr into PowerShell error records, which arrive
+        # wrapped in CategoryInfo/position text. Unwrap them, because the JVM's own
+        # message is the entire point of running it this way.
+        $version = (& $javaExe @arguments 2>&1 | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message }
+            else { $_.ToString() }
+        }) -join "`n"
+        if ($LASTEXITCODE -eq 0 -and $version -match 'version') {
+            Good ('the JVM itself starts: ' + ($version -split "`n" | Select-Object -First 1).Trim())
+            Say ''
+            Say 'The runtime is fine, so the launcher stub is the problem. Start the app with:'
+            Say '    Start 1DownloadManager.bat'
+            Say 'in this folder. It bypasses the stub and prints the real error if there is one.'
+        } else {
+            Bad 'the JVM will not start even when run directly. This is the actual error:'
+            ($version -split "`n" | Select-Object -First 12) | ForEach-Object {
+                if ($_.Trim()) { Say "    $($_.Trim())" }
+            }
+            Say ''
+            Say 'That message is what your security software is blocking. Exclude this'
+            Say 'folder, or allow 1DownloadManager.exe and everything under runtime\bin.'
+        }
     }
 }
 

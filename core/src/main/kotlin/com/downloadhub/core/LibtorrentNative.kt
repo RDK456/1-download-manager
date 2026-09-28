@@ -28,6 +28,24 @@ internal object LibtorrentNative {
     @Volatile
     private var prepared = false
 
+    /**
+     * Where the native library is unpacked to.
+     *
+     * This used to be `java.io.tmpdir`, which is a trap: on a machine whose TEMP
+     * points at a network share, a locked-down volume, or a drive with a security
+     * filter driver on it, the extraction fails and torrents stop working for a
+     * reason that appears nowhere in the message. The apps pass their own writable
+     * directory under the user's profile instead; this default only applies when
+     * nothing was set.
+     */
+    @Volatile
+    private var extractionDir: File? = null
+
+    /** Points the extraction at a directory the caller knows is writable. */
+    fun useDirectory(directory: File) {
+        extractionDir = directory
+    }
+
     /** True when the native library was found and pointed at. */
     val available: Boolean
         get() = runCatching { ensureReady() }.isSuccess
@@ -56,7 +74,8 @@ internal object LibtorrentNative {
         val stream = LibtorrentNative::class.java.classLoader?.getResourceAsStream(resource)
             ?: LibtorrentNative::class.java.getResourceAsStream("/$resource")
             ?: return null
-        val directory = File(System.getProperty("java.io.tmpdir"), "libtorrent4j-native")
+        val directory = (extractionDir ?: File(System.getProperty("java.io.tmpdir"), ""))
+            .let { if (it.name.isEmpty()) File(it, "libtorrent4j-native") else it }
         if (!directory.isDirectory && !directory.mkdirs()) return null
         val target = File(directory, "libtorrent4j.$libraryExtension")
         // Reuse a previous extraction; rewriting it on every launch is pointless

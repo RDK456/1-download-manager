@@ -32,7 +32,14 @@ class DesktopTorrentEngine(
     private val onChange: () -> Unit,
     private val scope: CoroutineScope
 ) {
-    private val engine = TorrentEngine { AppPaths.torrentRoot }
+    private val engine = TorrentEngine(
+        torrentRoot = { AppPaths.torrentRoot },
+        // Unpack the native library into the app's own profile, not %TEMP%. On a
+        // machine whose TEMP is a network share or a locked volume, the extraction
+        // fails and libtorrent4j then reports a missing library, which points at the
+        // wrong thing entirely.
+        nativeLibDir = { AppPaths.nativeLibDir }
+    )
     private val running = ConcurrentHashMap<String, Boolean>()
     private var loopStarted = false
 

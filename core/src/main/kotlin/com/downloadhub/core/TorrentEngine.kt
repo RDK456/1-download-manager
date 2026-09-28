@@ -42,8 +42,16 @@ data class TorrentSnapshot(
  * libtorrent4j's JVM artifact is platform neutral, so the only thing that differed
  * per platform was where files live. [torrentRoot] supplies that, which is why this
  * class carries no Android reference and compiles into both builds.
+ *
+ * [nativeLibDir] is where the native library is unpacked to before it is loaded. It
+ * is a parameter rather than a hard-coded `%TEMP%` for the same reason: TEMP is
+ * routinely a network share or a locked-down volume, and extracting there fails in a
+ * way that looks like a missing library rather than an unwritable folder.
  */
-class TorrentEngine(private val torrentRoot: () -> File) {
+class TorrentEngine(
+    private val torrentRoot: () -> File,
+    private val nativeLibDir: (() -> File)? = null
+) {
 
     private val sessionManager: SessionManager
     private val handles = ConcurrentHashMap<String, TorrentHandle>()
@@ -52,6 +60,7 @@ class TorrentEngine(private val torrentRoot: () -> File) {
     init {
         // Must happen before SessionManager is constructed, because that class's
         // initialiser performs the native load that fails on desktop without this.
+        nativeLibDir?.let { LibtorrentNative.useDirectory(it()) }
         LibtorrentNative.ensureReady()
         sessionManager = SessionManager()
     }

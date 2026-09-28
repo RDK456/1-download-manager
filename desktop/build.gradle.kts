@@ -188,6 +188,34 @@ val prepareDistributable by tasks.registering {
         shipped.forEach { it.copyTo(File(appImage, it.name), overwrite = true) }
         logger.lifecycle("Shipped ${shipped.size} startup-check file(s) beside the launcher.")
 
+        // --- a real java.exe ---------------------------------------------------
+        // jlink strips the launchers, so the packaged app has no java.exe and the
+        // jpackage stub is the only way into the JVM. When the stub cannot create
+        // the JVM it can say nothing except "Failed to launch JVM", which is why the
+        // error is so useless: it does not say which file was blocked or which path
+        // was denied.
+        //
+        // java.exe is 50 KB and the rest of what it needs - jli.dll, the module
+        // image, the other runtime libraries - is already in the image. Adding it
+        // back gives the package a second way in that reports the actual error, and
+        // that is what Start 1DownloadManager.bat uses. Verified by launching the
+        // packaged app through it: same window, same behaviour.
+        val runtimeBinDir = packagedRuntimeBin
+        val javaExe = File(runtimeBinDir, "java.exe")
+        if (!javaExe.isFile) {
+            val candidates = listOf(
+                File(System.getProperty("java.home") ?: "", "bin/java.exe"),
+                File(System.getProperty("jdk.home") ?: "", "bin/java.exe")
+            )
+            val source = candidates.firstOrNull { it.isFile }
+                ?: error(
+                    "No java.exe to add to the package; looked in ${candidates.joinToString()}. " +
+                        "Without it the package cannot report a real startup error."
+                )
+            source.copyTo(javaExe, overwrite = true)
+            logger.lifecycle("Added java.exe (${javaExe.length()} bytes) so the package can report real startup errors.")
+        }
+
         // --- the API set stubs ------------------------------------------------
         // These 45 files are the reason "Failed to launch JVM" was so hard to shake.
         // The packaged app has no java.exe at all: the launcher loads

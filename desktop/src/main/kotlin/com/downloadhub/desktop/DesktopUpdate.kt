@@ -117,7 +117,16 @@ fun compareVersions(left: String, right: String): Int {
  * product code and upgrade code from the MSI itself, so it replaces the installed
  * copy in place and keeps the settings, which live in the user profile.
  */
-class UpdateInstaller(private val directory: File = File(System.getProperty("java.io.tmpdir"), "dlm-update")) {
+/**
+ * Downloads an update installer and hands it to Windows Installer.
+ *
+ * The staging directory is the app's own cache folder, not `java.io.tmpdir`. TEMP is
+ * not reliably a local writable folder - it is often a network share or a second
+ * volume - and an update that cannot be written fails with a message about a path the
+ * user has never seen. The same folder keeps the installer out of the way of a
+ * security product scanning the system temp directory.
+ */
+class UpdateInstaller(private val directory: File = AppPaths.updateDir) {
 
     /**
      * Streams the installer to disk, reporting percent.

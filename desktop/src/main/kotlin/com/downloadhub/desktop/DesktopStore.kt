@@ -38,6 +38,24 @@ object AppPaths {
 
     /** Staging area for torrents; libtorrent writes here before publication. */
     val torrentRoot: File by lazy { File(home, "torrents").apply { mkdirs() } }
+
+    /**
+     * Scratch space for things that have to be unpacked or staged.
+     *
+     * Deliberately under the app's own profile rather than `java.io.tmpdir`. TEMP is
+     * not reliably a local writable folder: it is routinely pointed at a network
+     * share or a second volume, and on a machine whose security software locks files
+     * down, writing there fails with an error that names nothing the user recognises.
+     * The profile folder is where the app already keeps everything else, so it is
+     * known to work.
+     */
+    val cacheDir: File by lazy { File(home, "cache").apply { mkdirs() } }
+
+    /** Where the libtorrent native library is unpacked to. */
+    val nativeLibDir: File by lazy { File(cacheDir, "libtorrent4j-native").apply { mkdirs() } }
+
+    /** Staging area for a downloaded update installer. */
+    val updateDir: File by lazy { File(cacheDir, "update").apply { mkdirs() } }
 }
 
 object DesktopJson {

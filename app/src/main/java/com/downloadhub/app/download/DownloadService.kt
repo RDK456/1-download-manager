@@ -73,7 +73,9 @@ class DownloadService : Service() {
         val settings = app.container.settings
         httpDownloader = HttpDownloader(dao, app.container.storage, settings, app.container.speedLimiter)
         youtubeDownloader = app.container.youtubeDownloader
-        torrentEngine = TorrentEngine { DownloadStorage(applicationContext).torrentRoot() }
+        // Named, because TorrentEngine also takes an optional native-library
+        // directory and a trailing lambda would bind to the wrong one.
+        torrentEngine = TorrentEngine(torrentRoot = { DownloadStorage(applicationContext).torrentRoot() })
         networkMonitor = app.container.networkMonitor
 
         // Post the ongoing notification immediately: without this Android can

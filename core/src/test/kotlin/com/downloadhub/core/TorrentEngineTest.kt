@@ -91,7 +91,7 @@ class TorrentEngineTest {
     @Test
     fun theStagingDirectoryComesFromTheCaller() {
         val tempRoot = File(System.getProperty("java.io.tmpdir"), "torrent-root-${System.nanoTime()}")
-        val engine = TorrentEngine { tempRoot }
+        val engine = TorrentEngine(torrentRoot = { tempRoot })
         // Constructing the engine must not create anything on its own: the session
         // only starts when a transfer actually begins.
         assertTrue("the engine must not create directories eagerly", !tempRoot.exists())
@@ -102,14 +102,14 @@ class TorrentEngineTest {
     @Test
     fun shutdownIsSafeBeforeAnythingStarted() {
         // The desktop controller closes on quit even if no torrent ever ran.
-        val engine = TorrentEngine { File(System.getProperty("java.io.tmpdir")) }
+        val engine = TorrentEngine(torrentRoot = { File(System.getProperty("java.io.tmpdir")) })
         engine.shutdown()
         engine.shutdown()
     }
 
     @Test
     fun anUnknownItemProducesNoSnapshot() {
-        val engine = TorrentEngine { File(System.getProperty("java.io.tmpdir")) }
+        val engine = TorrentEngine(torrentRoot = { File(System.getProperty("java.io.tmpdir")) })
         val item = DownloadItem("nope", "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567", "x")
         val snapshot = runCatching { engine.start(item) }.getOrNull()
         // Either null or a snapshot is acceptable; a thrown exception is not.

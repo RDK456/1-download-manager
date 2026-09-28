@@ -60,18 +60,25 @@ class PackagedRuntimeStubsTest {
     }
 
     /**
-     * There is no java.exe to fall back on, so the launcher has exactly one route to
-     * the JVM. Worth asserting, because it is why the stubs could not simply be
-     * worked around at runtime.
+     * jlink strips the launchers, so the packaged app used to have no `java.exe` and
+     * the jpackage stub was the only route into the JVM - which is why a failure could
+     * only ever be reported as "Failed to launch JVM". The build now adds java.exe back
+     * (49 KB) so the package has a second way in that prints the actual error.
      */
     @Test
-    fun thereIsNoJavaExecutableToBypassTheLauncherWith() {
+    fun thereIsAJavaExecutableSoRealErrorsCanBeSeen() {
         val bin = runtimeBin() ?: return
-        val exes = bin.listFiles { f: File -> f.isFile && f.name.endsWith(".exe") }
+        val java = File(bin, "java.exe")
         assertTrue(
-            "a java.exe appeared, which would change the whole fallback story; " +
-                "the launcher is the only way in",
-            exes.isNullOrEmpty()
+            "runtime/bin/java.exe is missing, so the package can only report " +
+                "'Failed to launch JVM' and never the cause",
+            java.isFile
+        )
+        assertTrue("java.exe is empty", java.length() > 0L)
+        // It must be the real launcher, not a renamed stub.
+        assertTrue(
+            "java.exe should be tens of kilobytes, not a stub",
+            java.length() in 10_000L..500_000L
         )
     }
 
@@ -104,11 +111,12 @@ class PackagedRuntimeStubsTest {
     fun theStartupCheckShipsBesideTheLauncher() {
         val app = File("build/compose/binaries/main/app/1DownloadManager")
         if (!app.isDirectory) return
-        listOf("Troubleshoot.bat", "Troubleshoot.ps1").forEach { name ->
-            val f = File(app, name)
-            assertTrue("$name is not shipped next to the launcher", f.isFile)
-            assertTrue("$name is empty", f.length() > 0L)
-        }
+        listOf("Troubleshoot.bat", "Troubleshoot.ps1", "Start 1DownloadManager.bat")
+            .forEach { name ->
+                val f = File(app, name)
+                assertTrue("$name is not shipped next to the launcher", f.isFile)
+                assertTrue("$name is empty", f.length() > 0L)
+            }
         val source = File("dist-tools/Troubleshoot.ps1").readText()
         listOf(
             "runtime\\release",
