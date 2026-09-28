@@ -33,6 +33,8 @@ data class DesktopUiState(
     val update: UpdateCheck = UpdateCheck.Idle,
     val updateProgress: Int = -1,
     val downloadedInstaller: String? = null,
+    val extensionReady: Boolean = false,
+    val extensionPath: String = "",
     val palette: ColorScheme = DarkPalette
 )
 
@@ -50,6 +52,7 @@ data class DesktopActions(
     val setBrowserCapture: (Boolean) -> Unit,
     val consumeMessage: () -> Unit,
     val setTorrentsTab: (Boolean) -> Unit,
+    val openExtensionFolder: () -> Unit,
     val checkForUpdates: () -> Unit,
     val downloadUpdate: () -> Unit,
     val launchInstaller: () -> Unit,
@@ -114,6 +117,8 @@ class DesktopController(
      * in Chrome, Edge or Firefox lands in the queue instead of the browser's own
      * downloader.
      */
+    private val extension = ExtensionInstaller()
+
     private val capture = CaptureServer(
         token = settingsState.value.captureToken.ifBlank { CaptureServer.newToken() },
         onQueue = ::acceptCapturedLink,
@@ -136,7 +141,13 @@ class DesktopController(
     private val _updateProgress = MutableStateFlow(-1)
     private val _downloadedInstaller = MutableStateFlow<String?>(null)
     init {
-        // Make the bundled binaries available in a writable location on first run.
+        // The bundled binaries and the browser extension are copied out of the app on
+        // first run. An installed program directory can be read-only, and yt-dlp has to
+        // be a real file on disk for the app to execute it, so this is not optional.
+        scope.launch {
+            tools.install()
+            if (extension.install()) refresh()
+        }
         // The pairing token is generated on first run and has to reach disk, or it
         // would change on every launch and silently unpair the extension.
         if (settingsState.value.captureToken.isBlank()) {
@@ -246,6 +257,18 @@ class DesktopController(
         refresh()
     }
 
+    /**
+     * Reveals the unpacked browser extension in Explorer.
+     *
+     * Chrome and Edge will not install an extension without the user picking the
+     * folder, so this opens it rather than pretending it can be done for them.
+     */
+    fun openExtensionFolder() {
+        if (!extension.reveal()) {
+            _messages.value = "Open this folder in Explorer and load it as an unpacked extension: ${extension.pathForDisplay()}"
+        }
+        refresh()
+    }
     fun setTorrentsTab(enabled: Boolean) {
         _torrentsTab.value = enabled
     }
@@ -275,6 +298,8 @@ class DesktopController(
             update = _update.value,
             updateProgress = _updateProgress.value,
             downloadedInstaller = _downloadedInstaller.value,
+            extensionReady = extension.available,
+            extensionPath = extension.pathForDisplay(),
             palette = DarkPalette
         )
     }
@@ -314,6 +339,7 @@ class DesktopController(
         setBrowserCapture = ::setBrowserCapture,
         consumeMessage = ::consumeMessage,
         setTorrentsTab = ::setTorrentsTab,
+        openExtensionFolder = ::openExtensionFolder,
         checkForUpdates = ::checkForUpdates,
         downloadUpdate = ::downloadUpdate,
         launchInstaller = ::launchInstaller,

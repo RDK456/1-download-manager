@@ -110,7 +110,10 @@ fun main() {
                         showSettings = false
                     },
                     onChooseFolder = controller.actions.chooseFolder,
-                    onToggleCapture = controller.actions.setBrowserCapture
+                    onToggleCapture = controller.actions.setBrowserCapture,
+                    extensionReady = state.extensionReady,
+                    extensionPath = state.extensionPath,
+                    onOpenExtensionFolder = controller.actions.openExtensionFolder
                 )
             }
 

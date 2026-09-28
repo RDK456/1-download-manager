@@ -154,7 +154,8 @@ compose.desktop {
 
 
         nativeDistributions {
-            // The user asked for a standard installer, so Msi is the primary target.
+            // Msi is the installer; the portable zip below is the fallback for
+            // machines where an installer cannot run at all.
             targetFormats(TargetFormat.Msi, TargetFormat.Deb)
             packageName = "1DownloadManager"
             packageVersion = appVersion
@@ -163,12 +164,33 @@ compose.desktop {
             windows {
                 menu = true
                 perUserInstall = true
-                // A stable upgrade path: replacing an install keeps settings because
-                // they live in the user profile, not the install directory.
+                // A stable upgrade code, so replacing an install keeps the entry in
+                // Apps and features rather than leaving a second, stale copy.
                 upgradeUuid = "6f2c9a54-2f1b-4a7d-9b3e-1c8d5e7a4f20"
             }
         }
     }
+}
+
+/**
+ * Zips the unpacked app so it can be run without installing anything.
+ *
+ * Windows Installer failed on a machine whose security agent locks files the
+ * installer is writing ("Could not set file security ... Error: 5"), and there is
+ * no fix for that from inside the installer. Unzipping and running the exe needs no
+ * elevation, no registry, and no Windows Installer at all, so it works where the MSI
+ * cannot.
+ */
+val packageZip by tasks.registering(Zip::class) {
+    description = "Builds a portable, install-free zip of the Windows app."
+    group = "distribution"
+    from(layout.buildDirectory.dir("compose/binaries/main/app/1DownloadManager"))
+    // The folder is already named 1DownloadManager; wrapping it again produced
+    // 1DownloadManager/1DownloadManager/.
+    archiveFileName.set("1DownloadManager-$appVersion-portable.zip")
+    // The runtime is already compressed; storing it again just wastes time.
+    isPreserveFileTimestamps = false
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 /**
@@ -184,4 +206,20 @@ val stageYtBin by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("resources/main/lib"))
 }
 
-tasks.named("processResources") { dependsOn(stageYtBin) }
+/**
+ * Ships the browser extension as a runtime resource.
+ *
+ * Chrome and Edge will only load an extension from a folder the user picks, and a
+ * store listing would mean publishing it somewhere first, so the app carries its
+ * own copy and unpacks it on first run. It travels as a classpath resource for the
+ * same reason the bundled yt-dlp does: no packaging hook, and it works from the
+ * MSI, the portable zip and the IDE alike.
+ */
+val stageExtension by tasks.registering(Copy::class) {
+    description = "Ships the browser extension as a runtime resource."
+    group = "build setup"
+    from(layout.projectDirectory.dir("browser-extension"))
+    into(layout.buildDirectory.dir("resources/main/browser-extension"))
+}
+
+tasks.named("processResources") { dependsOn(stageYtBin, stageExtension) }

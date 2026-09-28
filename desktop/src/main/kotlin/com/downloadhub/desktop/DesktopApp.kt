@@ -159,7 +159,10 @@ fun SettingsDialog(
     onDismiss: () -> Unit,
     onSave: (DesktopSettings) -> Unit,
     onChooseFolder: () -> File?,
-    onToggleCapture: (Boolean) -> Unit
+    onToggleCapture: (Boolean) -> Unit,
+    extensionReady: Boolean,
+    extensionPath: String,
+    onOpenExtensionFolder: () -> Unit
 ) {
     var folder by remember { mutableStateOf(settings.downloadDir) }
     var concurrent by remember { mutableStateOf(settings.maxConcurrent.toString()) }
@@ -254,6 +257,35 @@ fun SettingsDialog(
                     )
                     SelectionContainerCompat(settings.captureToken)
                 }
+
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "1. Install the extension",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "Open the folder, then in Chrome or Edge choose Extensions, turn on " +
+                        "Developer mode, and pick that folder.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                SelectionContainerCompat(extensionPath)
+                OutlinedButton(
+                    onClick = onOpenExtensionFolder,
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                ) {
+                    Text(if (extensionReady) "Open extension folder" else "Extract and open folder")
+                }
+
+                Text(
+                    "2. Paste the pairing code above into the extension",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
             }
         },
         confirmButton = {

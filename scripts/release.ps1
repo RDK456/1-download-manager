@@ -141,6 +141,13 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Build failed; the version bump was left in place for inspection.' }
     }
 
+    # The portable zip is a second Gradle run rather than another task on the same
+    # command line: the Compose distribution tasks cannot be referenced by name
+    # from the build script, so ordering them here is the only reliable way.
+    if ($hasDesktop) {
+        & $gradlew ':desktop:packageZip'
+        if ($LASTEXITCODE -ne 0) { throw 'The portable zip failed to build.' }
+    }
     $apkBuilt = if ($useDebug) { $DebugApkBuilt } else { $ReleaseApkBuilt }
     if (-not (Test-Path $apkBuilt)) { throw "APK not found at $apkBuilt" }
     $apkAsset = Join-Path $RepoRoot ("1-download-manager-$newVersion.apk")
@@ -168,6 +175,22 @@ try {
             throw "No Windows installer for $newVersion was produced by :desktop:packageMsi."
         }
         Write-Host 'No desktop module; publishing the APK only.' -ForegroundColor Yellow
+    }
+
+    # A portable zip, so the app is usable on a machine where an installer cannot
+    # run at all. Built for every release rather than on request, so it is never
+    # missing at the moment someone needs it.
+    $zipBuilt = $null
+    $zipAsset = $null
+    if ($hasDesktop) {
+        $zipBuilt = Get-ChildItem (Join-Path $RepoRoot 'desktop\build\distributions') `
+            -Filter '*.zip' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "*$newVersion*" } |
+            Select-Object -First 1
+        if (-not $zipBuilt) { throw "No portable zip for $newVersion was produced by :desktop:packageZip." }
+        $zipAsset = Join-Path $RepoRoot ("1-download-manager-$newVersion-portable.zip")
+        Copy-Item $zipBuilt.FullName $zipAsset -Force
+        Write-Host ("ZIP {0} bytes" -f (Get-Item $zipBuilt.FullName).Length) -ForegroundColor DarkGray
     }
 
     # --- 4. verify the published signature ----------------------------------
@@ -248,6 +271,7 @@ Open this app's Settings -> Check for updates to install this release.
 
     $assets = @($apkAsset)
     if ($msiAsset) { $assets += $msiAsset }
+    if ($zipAsset) { $assets += $zipAsset }
 
     $releaseArgs = @('release', 'create', $tag) + $assets +
         @('--title', "1 download manager $newVersion") + $notesArgs
