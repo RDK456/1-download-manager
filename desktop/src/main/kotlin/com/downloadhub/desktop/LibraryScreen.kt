@@ -244,6 +244,7 @@ private fun DeleteChoiceDialog(
     val subject = if (count == 1) "this download" else "these $count downloads"
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
+            properties = APP_DIALOG_PROPERTIES,
         title = { Text("Remove $subject?") },
         text = {
             Text(

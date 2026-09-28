@@ -66,7 +66,12 @@ param(
 
 if ($NotesFile) {
     if (-not (Test-Path $NotesFile)) { throw "Notes file not found: $NotesFile" }
-    $Notes = Get-Content $NotesFile -Raw
+    # -Encoding UTF8, always. Windows PowerShell's default for Get-Content is the
+    # ANSI code page, so a UTF-8 file with no BOM - which is what an editor or an
+    # agent writes - comes back as mojibake: a bullet becomes "â€¢" and an arrow
+    # becomes "â†’". That text is then published to the release verbatim, and the
+    # in-app updater shows it to users exactly as corrupted.
+    $Notes = Get-Content $NotesFile -Raw -Encoding UTF8
 }
 
 $ErrorActionPreference = 'Stop'

@@ -27,9 +27,10 @@ data class GithubRelease(
      * The notes, trimmed to something a dialog can hold.
      *
      * Release notes are written as Markdown, and a dialog is not a Markdown
-     * renderer, so the decoration is stripped rather than shown as literal
-     * asterisks and backticks. The heading markers and list bullets are the only
-     * things removed; the words are what matter here.
+     * renderer. Only the markers are removed - headings, bullets, bold and code -
+     * because showing them literally is worse than showing the words alone: the
+     * first version of this left `**Resizing.**` and a row of backticks sitting in
+     * the middle of the dialog.
      */
     val readableNotes: String
         get() = body
@@ -39,6 +40,9 @@ data class GithubRelease(
                     .removePrefix("###").removePrefix("##").removePrefix("#")
                     .trim()
                     .removePrefix("- ").removePrefix("* ")
+                    .replace("**", "")
+                    .replace("__", "")
+                    .replace("`", "")
             }
             .filter { it.isNotBlank() }
             .take(14)
@@ -73,6 +77,27 @@ data class GithubAsset(
     val size: Long = 0L
 )
 
+/**
+ * What kind of update was fetched, which decides what can be done with it.
+ *
+ * This distinction is the whole reason the updater worked at all on a machine where
+ * Windows Installer is blocked. The portable zip is not an installer and cannot be
+ * run as one: handing it to ShellExecute opens a "how do you want to open this?"
+ * prompt, or nothing at all, which is a dead end at the very last step.
+ */
+enum class UpdateKind {
+    /** An .msi, which Windows Installer takes from here. */
+    INSTALLER,
+
+    /** A portable zip, which has to be unpacked and started. */
+    PORTABLE
+}
+
+/** A fetched update, and what it is. */
+data class DownloadedUpdate(val kind: UpdateKind, val file: File) {
+    val isInstaller: Boolean get() = kind == UpdateKind.INSTALLER
+}
+
 /** What the update check found. */
 sealed interface UpdateCheck {
     data object Idle : UpdateCheck
@@ -89,32 +114,61 @@ sealed interface UpdateCheck {
  * script publishes to, so a check and the thing it offers can never disagree.
  */
 class DesktopUpdateChecker(
-    private val endpoint: String = "https://api.github.com/repos/$REPOSITORY/releases/latest",
+    private val endpoint: String = "https://api.github.com/repos/$REPOSITORY/releases",
     private val userAgent: String = "1-download-manager/$APP_VERSION (Windows)"
 ) {
-    suspend fun latest(): GithubRelease? = withContext(Dispatchers.IO) {
-        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = CONNECT_TIMEOUT_MILLIS
-            readTimeout = READ_TIMEOUT_MILLIS
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", userAgent)
-        }
+    /**
+     * The newest published release, newest first.
+     *
+     * The list endpoint rather than `/releases/latest`, because `/latest` means "the
+     * newest release of any kind" - and this project ships Android and Windows from
+     * one repository. A phone-only 1.5.0 published after a Windows 1.4.12 made
+     * `/latest` return something with no .msi in it, and the updater's answer was
+     * "no Windows installer yet", forever, with no way forward until the next Windows
+     * release. Looking at the list lets it step back to the newest one Windows can
+     * actually install.
+     */
+    suspend fun releases(): List<GithubRelease> = withContext(Dispatchers.IO) {
+        val connection = (URL("$endpoint?per_page=$PAGE_SIZE").openConnection() as HttpURLConnection)
+            .apply {
+                requestMethod = "GET"
+                connectTimeout = CONNECT_TIMEOUT_MILLIS
+                readTimeout = READ_TIMEOUT_MILLIS
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("User-Agent", userAgent)
+            }
         try {
-            if (connection.responseCode !in 200..299) return@withContext null
+            if (connection.responseCode !in 200..299) return@withContext emptyList()
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             Json { ignoreUnknownKeys = true }
-                .decodeFromString<GithubRelease>(body)
-                .takeIf { it.version.isNotBlank() }
+                .decodeFromString<List<GithubRelease>>(body)
+                .filter { it.version.isNotBlank() }
         } catch (_: Exception) {
-            null
+            emptyList()
         } finally {
             connection.disconnect()
         }
     }
 
+    /** The newest release Windows can actually install. */
+    suspend fun latestForWindows(): GithubRelease? = pickInstallable(releases())
+
+    /**
+     * The newest release carrying a Windows installer.
+     *
+     * Separated from [releases] so the choice is testable: this is a decision about
+     * which build to offer, and it used to be made implicitly by the API endpoint.
+     * Drafts and prereleases are skipped, because neither is something to install.
+     */
+    fun pickInstallable(candidates: List<GithubRelease>): GithubRelease? =
+        candidates
+            .filter { !it.draft && !it.prerelease }
+            .filter { it.installer() != null }
+            .maxWithOrNull { a, b -> compareVersions(a.version, b.version) }
+
     companion object {
         const val REPOSITORY = "RDK456/1-download-manager"
+        private const val PAGE_SIZE = 30
         private const val CONNECT_TIMEOUT_MILLIS = 10_000
         private const val READ_TIMEOUT_MILLIS = 10_000
     }
@@ -251,4 +305,72 @@ class UpdateInstaller(private val directory: File = AppPaths.updateDir) {
     private companion object {
         const val PROGRESS_INTERVAL_MILLIS = 300L
     }
+}
+
+/**
+ * Unpacks a portable build and finds the launcher inside it.
+ *
+ * Its own thing rather than part of [UpdateInstaller], because it has nothing to do
+ * with downloading: the downloader writes to a staging folder, this reads an archive
+ * and writes somewhere else entirely.
+ *
+ * It exists because the portable path had no last step. The zip downloaded fine and
+ * then the only thing on offer was "Install now", which handed a .zip to the shell -
+ * so on a machine where Windows Installer is blocked, which is the only reason the
+ * zip is offered at all, the update could not be completed.
+ */
+object PortableBuild {
+
+    const val LAUNCHER_NAME = "1DownloadManager.exe"
+
+    /**
+     * Unpacks [zip] into [into] and returns its launcher.
+     *
+     * Beside the old copy rather than over it: Windows will not let a running .exe be
+     * replaced, and the launcher executing right now is the one that would have to be
+     * overwritten. A separate folder also leaves the previous version intact, so a new
+     * build that will not start is one click from being undone.
+     */
+    fun extract(zip: File, into: File): Result<File> = runCatching {
+        if (!zip.isFile) error("The downloaded archive is missing")
+        val root = into.absoluteFile
+        if (root.exists()) root.deleteRecursively()
+        if (!root.mkdirs()) error("Could not create ${root.absolutePath}")
+
+        val rootPath = root.canonicalPath
+        var files = 0
+        java.util.zip.ZipInputStream(zip.inputStream().buffered()).use { input ->
+            while (true) {
+                val entry = input.nextEntry ?: break
+                // An entry's name is data from the internet, not a path the app may
+                // write to. Anything resolving outside the destination is refused.
+                val target = File(root, entry.name)
+                val resolved = target.canonicalPath
+                if (resolved != rootPath && !resolved.startsWith(rootPath + File.separator)) {
+                    error("The archive contains a path outside the destination: ${entry.name}")
+                }
+                if (entry.isDirectory) {
+                    target.mkdirs()
+                } else {
+                    target.parentFile?.mkdirs()
+                    target.outputStream().use { output -> input.copyTo(output) }
+                    files++
+                }
+                input.closeEntry()
+            }
+        }
+        if (files == 0) error("The archive was empty")
+
+        findLauncher(root) ?: error("The archive did not contain $LAUNCHER_NAME")
+    }
+
+    /**
+     * The app's launcher inside an unpacked portable build.
+     *
+     * The zip may or may not have a top-level folder in it, so this looks rather than
+     * assuming a layout.
+     */
+    fun findLauncher(root: File): File? =
+        root.walkTopDown()
+            .firstOrNull { it.isFile && it.name.equals(LAUNCHER_NAME, ignoreCase = true) }
 }

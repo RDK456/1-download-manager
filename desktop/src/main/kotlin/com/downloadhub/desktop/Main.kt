@@ -170,6 +170,7 @@ fun main() {
                             onCheck = controller.actions.checkForUpdates,
                             onDownload = controller.actions.downloadUpdate,
                             onInstall = controller.actions.launchInstaller,
+                            onSwitchToNewVersion = controller.actions.switchToDownloadedVersion,
                             onReveal = controller.actions.revealDownloadedInstaller,
                             onDismiss = controller.actions.dismissUpdate
                         )

@@ -38,7 +38,15 @@ data class DesktopUiState(
      */
     val updateBytes: Long = 0L,
     val updateTotalBytes: Long = 0L,
-    val downloadedInstaller: String? = null,
+    /**
+     * The release the dialog is about, kept even after a failure.
+     *
+     * So the portable zip stays on offer when the installer download is what failed -
+     * which is the situation the zip exists for.
+     */
+    val updateReleaseName: String? = null,
+    /** What was fetched, and what it is. Null until something has downloaded. */
+    val downloadedUpdate: DownloadedUpdate? = null,
     val extensionReady: Boolean = false,
     val extensionPath: String = "",
     val palette: ColorScheme = DarkPalette
@@ -79,6 +87,14 @@ data class DesktopActions(
     val launchInstaller: () -> Unit,
     /** Shows where a downloaded update was saved, to run it by hand. */
     val revealDownloadedInstaller: () -> Unit,
+    /**
+     * Unpacks the portable build and starts it, then closes this copy.
+     *
+     * Separate from the installer because they are not interchangeable: a zip cannot
+     * be run as one, and offering it as if it could was the dead end at the end of the
+     * portable path.
+     */
+    val switchToDownloadedVersion: () -> Unit,
     val dismissUpdate: () -> Unit,
     val quit: () -> Unit
 )
@@ -164,7 +180,16 @@ class DesktopController(
     private val _updateProgress = MutableStateFlow(-1)
     private val _updateBytes = MutableStateFlow(0L)
     private val _updateTotalBytes = MutableStateFlow(0L)
-    private val _downloadedInstaller = MutableStateFlow<String?>(null)
+    private val _downloadedUpdate = MutableStateFlow<DownloadedUpdate?>(null)
+
+    /**
+     * The release the current dialog is about, kept across failures.
+     *
+     * The dialog used to ask [UpdateCheck.Available] whether a portable zip existed, so
+     * the moment a download failed the fallback button disappeared - which is precisely
+     * when it is wanted.
+     */
+    private val _availableRelease = MutableStateFlow<GithubRelease?>(null)
     init {
         // The bundled binaries and the browser extension are copied out of the app on
         // first run. An installed program directory can be read-only, and yt-dlp has to
@@ -227,14 +252,18 @@ class DesktopController(
         if (_update.value is UpdateCheck.Checking) return
         _update.value = UpdateCheck.Checking
         _updateProgress.value = -1
+        refresh()
         scope.launch {
-            val release = updateChecker.latest()
+            val all = updateChecker.releases()
+            val release = updateChecker.pickInstallable(all)
             _update.value = when {
-                release == null -> UpdateCheck.Failed("Could not reach GitHub")
-                // A release with no installer is a release only the Android side can
-                // use; say so instead of offering something that cannot be run.
-                release.installer() == null ->
-                    UpdateCheck.Failed("${release.displayName} has no Windows installer yet")
+                all.isEmpty() -> UpdateCheck.Failed("Could not reach GitHub")
+                // Releases exist but none of them carry a Windows build. Worth saying
+                // precisely, because "no installer" and "cannot reach GitHub" send the
+                // user looking in completely different places.
+                release == null -> UpdateCheck.Failed(
+                    "None of the published releases has a Windows installer yet"
+                )
 
                 !isNewerVersion(release.version, APP_VERSION) -> UpdateCheck.UpToDate(APP_VERSION)
                 else -> UpdateCheck.Available(release, release.installer()!!)
@@ -254,20 +283,39 @@ class DesktopController(
         val available = _update.value as? UpdateCheck.Available ?: return
         val asset = if (portable) available.release.portableZip() ?: available.asset else available.asset
         if (_updateProgress.value >= 0) return
+        // Remembered before the transfer starts, so a failure part-way through still
+        // leaves the portable zip on offer. Reading it back off the dialog's own state
+        // meant a failed download quietly removed the fallback the user needed.
+        _availableRelease.value = available.release
+        val kind = if (asset.name.endsWith(".zip", ignoreCase = true)) {
+            UpdateKind.PORTABLE
+        } else {
+            UpdateKind.INSTALLER
+        }
         _updateProgress.value = 0
         _updateBytes.value = 0L
         _updateTotalBytes.value = asset.size
+        refresh()
         scope.launch {
             val result = updateInstaller.download(asset.downloadUrl, { percent, done, total ->
                 _updateProgress.value = percent
                 _updateBytes.value = done
                 // The asset may not declare a size; the transfer itself knows.
                 if (total > 0) _updateTotalBytes.value = total
+                // The progress bar and the byte count are only on screen if the UI is
+                // told they moved. This runs on the download thread, so without it the
+                // dialog sat on "Update available" for the whole transfer with nothing
+                // moving at all, which is what made the updater look broken.
+                refresh()
             }, asset.name)
             _updateProgress.value = -1
             result
-                .onSuccess { _downloadedInstaller.value = it.absolutePath }
-                .onFailure { _update.value = UpdateCheck.Failed(it.message ?: "The update download failed") }
+                .onSuccess { _downloadedUpdate.value = DownloadedUpdate(kind, it) }
+                .onFailure {
+                    _update.value = UpdateCheck.Failed(
+                        it.message ?: "The update download failed"
+                    )
+                }
             refresh()
         }
     }
@@ -284,8 +332,18 @@ class DesktopController(
      * away.
      */
     fun launchInstaller() {
-        val path = _downloadedInstaller.value ?: return
-        val started = updateInstaller.launch(File(path))
+        val downloaded = _downloadedUpdate.value ?: return
+        if (!downloaded.isInstaller) {
+            // Refusing here rather than trying: a zip is not an installer, and this is
+            // the path that used to hand one to the shell and appear to do nothing.
+            _update.value = UpdateCheck.Failed(
+                "That is the portable zip, not an installer. Use \"Switch to this version\" " +
+                    "to unpack it and start the new version."
+            )
+            refresh()
+            return
+        }
+        val started = updateInstaller.launch(downloaded.file)
         if (started.isFailure) {
             // Keep the dialog open, keep the file, and say what went wrong. A security
             // agent blocking the installer is the common case and the message is the
@@ -298,26 +356,84 @@ class DesktopController(
             refresh()
             return
         }
-        _downloadedInstaller.value = null
+        _downloadedUpdate.value = null
         _update.value = UpdateCheck.Idle
         refresh()
     }
 
+    /**
+     * Unpacks the portable zip and starts that version.
+     *
+     * This is the whole portable path, and it used to not exist: the zip downloaded
+     * fine and then the only thing offered was "Install now", which handed a .zip to
+     * the shell. On a machine where Windows Installer is blocked - which is the only
+     * reason the zip is offered in the first place - that was a dead end at the last
+     * step.
+     *
+     * The new version is unpacked into its own folder and started, and this copy then
+     * closes. The old install is left alone, so if the new one will not start the
+     * previous version is still there to go back to.
+     */
+    fun switchToDownloadedVersion() {
+        val downloaded = _downloadedUpdate.value ?: return
+        if (downloaded.isInstaller) {
+            launchInstaller()
+            return
+        }
+        if (_updateProgress.value >= 0) return
+        // Back to the release's own state, which the dialog needs in order to show its
+        // notes and the "switching" wording. Reaching here after a failed installer
+        // download, the state would still be Failed.
+        val release = _availableRelease.value ?: return
+        val zip = release.portableZip() ?: return
+        _update.value = UpdateCheck.Available(release, zip)
+        _updateProgress.value = 0
+        _updateBytes.value = 0L
+        _updateTotalBytes.value = downloaded.file.length()
+        refresh()
+        scope.launch {
+            val result = runCatching {
+                val launcher = PortableBuild.extract(downloaded.file, AppPaths.updateNextDir).getOrThrow()
+                ProcessBuilder(launcher.absolutePath).start()
+                launcher
+            }
+            _updateProgress.value = -1
+            result
+                .onSuccess {
+                    _messages.value = "Starting ${it.name}. This window will close."
+                    refresh()
+                    // Only leave once the new copy is genuinely running.
+                    onQuitRequested()
+                }
+                .onFailure {
+                    _update.value = UpdateCheck.Failed(
+                        "Could not start the new version: ${it.message}. " +
+                            "The previous version is untouched."
+                    )
+                    refresh()
+                }
+        }
+    }
+
     /** Shows where the download was saved, for running it by hand. */
     fun revealDownloadedInstaller() {
-        val path = _downloadedInstaller.value
-        if (path == null) {
+        val downloaded = _downloadedUpdate.value
+        if (downloaded == null) {
             _messages.value = "Nothing has been downloaded yet."
-        } else if (!revealInFolder(path)) {
-            _messages.value = "The file is here: $path"
+        } else if (!revealInFolder(downloaded.file.absolutePath)) {
+            _messages.value = "The file is here: ${downloaded.file.absolutePath}"
         }
         refresh()
     }
 
     fun dismissUpdate() {
-        _downloadedInstaller.value = null
+        // The staged file is kept on purpose: closing the dialog should not throw away
+        // a 78 MB download the user may want to come back to. It is replaced by the
+        // next download of the same name.
+        _downloadedUpdate.value = null
         _updateProgress.value = -1
         _updateBytes.value = 0L
+        _availableRelease.value = null
         _update.value = UpdateCheck.Idle
         refresh()
     }
@@ -405,9 +521,10 @@ class DesktopController(
             torrentsTab = _torrentsTab.value,
             update = _update.value,
             updateProgress = _updateProgress.value,
-              updateBytes = _updateBytes.value,
-              updateTotalBytes = _updateTotalBytes.value,
-            downloadedInstaller = _downloadedInstaller.value,
+            updateBytes = _updateBytes.value,
+            updateTotalBytes = _updateTotalBytes.value,
+            downloadedUpdate = _downloadedUpdate.value,
+            updateReleaseName = _availableRelease.value?.displayName,
             extensionReady = extension.available,
             extensionPath = extension.pathForDisplay(),
             palette = DarkPalette
@@ -468,6 +585,7 @@ class DesktopController(
         checkForUpdates = ::checkForUpdates,
         downloadUpdate = { portable -> downloadUpdate(portable) },
         revealDownloadedInstaller = ::revealDownloadedInstaller,
+        switchToDownloadedVersion = ::switchToDownloadedVersion,
         launchInstaller = ::launchInstaller,
         dismissUpdate = ::dismissUpdate,
         quit = {

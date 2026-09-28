@@ -81,6 +81,7 @@ fun AddDownloadDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+            properties = APP_DIALOG_PROPERTIES,
         title = { Text("Add a download") },
         text = {
             Column {
@@ -168,6 +169,7 @@ fun SettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+            properties = APP_DIALOG_PROPERTIES,
         title = { Text("Settings") },
         text = {
             Column {

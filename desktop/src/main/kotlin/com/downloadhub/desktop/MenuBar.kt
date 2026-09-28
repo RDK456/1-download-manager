@@ -1,5 +1,6 @@
 package com.downloadhub.desktop
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -36,14 +37,22 @@ import androidx.compose.ui.unit.sp
  * Every entry does something. A menu that opens and swallows clicks is worse than
  * no menu, because it teaches the user that the window is broken.
  *
- * Two things were wrong with this bar and they had the same cause.
+ * Three things were wrong with this bar.
  *
  * Each label was given a fixed width, and those same four numbers were also used as
- * where each menu panel opens. So a panel opened wherever the number said rather than
- * underneath its own menu, and every number was short by the width of the wordmark and
- * its gap - the panel appeared well to the left of the entry that opened it. Measuring
- * where each label actually lands keeps the two together, and lets the bar be as narrow
- * as it needs to be without another table of magic numbers.
+ * where each menu panel opens, so a panel opened well to the left of the entry that
+ * opened it. Measuring where each label lands fixes that and lets the bar be as
+ * narrow as it needs to be.
+ *
+ * It was 930 dp wide, and the window can be 520, so Help was cut off the right. It is
+ * four short labels now, and the wordmark goes first because it repeats the window
+ * title.
+ *
+ * And the panel was a flat rectangle laid straight onto the content: no shadow, no
+ * edge, nothing behind it. It read as a hole cut in the window rather than something
+ * floating above it. A dimmed backdrop, a shadow and a hairline are what make it read
+ * as a layer - and they are also the usual reason a dropdown in a screenshot looks
+ * like part of the UI rather than pasted on top of it.
  */
 @Composable
 fun MenuBar(
@@ -67,14 +76,11 @@ fun MenuBar(
     Box {
         Surface(color = Color(0xFF1A2124)) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                // Below this the wordmark is the first thing to go. It says the same
-                // thing the window title already says, so it is the only part of the
-                // bar that is decoration rather than a control.
-                val roomForWordmark = maxWidth >= 700.dp
+                val roomForWordmark = maxWidth >= MENU_BAR_WORDMARK_MINIMUM
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(34.dp)
+                        .height(MENU_BAR_HEIGHT)
                         .padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -108,15 +114,12 @@ fun MenuBar(
         // Anchored under Tools, so it reads as a submenu of the entry that opened it
         // rather than as a stray panel in the middle of the window.
         if (showIntegration) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .clickable { showIntegration = false }
-            ) {
+            Box(Modifier.fillMaxSize()) {
+                Scrim { showIntegration = false }
                 BrowserIntegrationMenu(
                     modifier = Modifier.padding(
                         start = (offsets["Tools"] ?: 0).dp,
-                        top = 32.dp
+                        top = MENU_BAR_HEIGHT
                     ),
                     extensionRoot = extensionRoot,
                     token = pairingToken,
@@ -127,17 +130,18 @@ fun MenuBar(
         }
         // Only one menu is drawn at a time; the backdrop closes whichever is open.
         if (open != null) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .clickable { open = null }
-            ) {
+            Box(Modifier.fillMaxSize()) {
+                Scrim { open = null }
                 Surface(
                     modifier = Modifier
-                        .padding(start = (offsets[open] ?: 0).dp, top = 32.dp)
-                        .width(200.dp),
-                    color = Color(0xFF1E2629),
-                    shape = RoundedCornerShape(6.dp)
+                        .padding(start = (offsets[open] ?: 0).dp, top = MENU_BAR_HEIGHT)
+                        .width(MENU_PANEL_WIDTH),
+                    color = MENU_PANEL_COLOUR,
+                    shape = RoundedCornerShape(8.dp),
+                    // A shadow and a hairline, so the panel sits above the window
+                    // instead of being cut out of it.
+                    shadowElevation = 14.dp,
+                    border = BorderStroke(1.dp, MENU_PANEL_EDGE)
                 ) {
                     Column(Modifier.padding(vertical = 4.dp)) {
                         when (open) {
@@ -176,6 +180,36 @@ fun MenuBar(
     }
 }
 
+/**
+ * What sits behind an open menu: a dim, and the click target that closes it.
+ *
+ * Without the dim the panel had nothing to float above, so the content it covered
+ * stayed at full brightness and the panel looked painted onto it.
+ */
+@Composable
+private fun Scrim(onClick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MENU_SCRIM)
+            .clickable(onClick = onClick)
+    )
+}
+
+/** The height of the strip itself; a panel opens directly below it. */
+private val MENU_BAR_HEIGHT = 34.dp
+
+/** Below this the wordmark is dropped and only the menus are shown. */
+private val MENU_BAR_WORDMARK_MINIMUM = 700.dp
+
+private val MENU_PANEL_WIDTH = 210.dp
+private val MENU_PANEL_COLOUR = Color(0xFF1E2629)
+private val MENU_PANEL_EDGE = Color(0x33FFFFFF)
+private val MENU_SCRIM = Color(0x8C000000)
+
+/** Shared by a label and the items in the panel it opens, so their text lines up. */
+private val MENU_ITEM_INSET = 12.dp
+
 private fun toggle(current: String?, name: String): String? = if (current == name) null else name
 
 /**
@@ -199,7 +233,10 @@ private fun MenuLabel(
             .onGloballyPositioned { onPlaced(it.positionInRoot().x.toInt()) }
             .background(if (active) Color(0xFF34D399) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 5.dp)
+            // The same inset the items in the panel use, so an item's text lines up
+            // with the entry it belongs to. These were 12 and 14, which is a two-pixel
+            // disagreement you can see once you have looked for it.
+            .padding(horizontal = MENU_ITEM_INSET, vertical = 5.dp)
     )
 }
 
@@ -212,7 +249,7 @@ private fun MenuItem(label: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 7.dp)
+            .padding(horizontal = MENU_ITEM_INSET, vertical = 7.dp)
     )
 }
 

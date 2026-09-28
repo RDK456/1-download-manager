@@ -54,8 +54,18 @@ object AppPaths {
     /** Where the libtorrent native library is unpacked to. */
     val nativeLibDir: File by lazy { File(cacheDir, "libtorrent4j-native").apply { mkdirs() } }
 
-    /** Staging area for a downloaded update installer. */
+    /** Staging area for a downloaded update installer or portable zip. */
     val updateDir: File by lazy { File(cacheDir, "update").apply { mkdirs() } }
+
+    /**
+     * Where an unpacked portable build goes before it is started.
+     *
+     * Its own folder rather than over the running install: Windows will not let a
+     * running .exe be replaced, and the launcher executing right now is the one that
+     * would have to be overwritten. Beside it, the previous version is still there if
+     * the new one will not start.
+     */
+    val updateNextDir: File by lazy { File(cacheDir, "update-next").apply { mkdirs() } }
 }
 
 object DesktopJson {

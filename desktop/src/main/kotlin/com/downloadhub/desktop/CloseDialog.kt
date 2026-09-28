@@ -26,6 +26,7 @@ fun CloseDialog(
     val canTray = trayAvailable
     AlertDialog(
         onDismissRequest = onCancel,
+            properties = APP_DIALOG_PROPERTIES,
         title = { Text("Close 1 download manager?", fontWeight = FontWeight.SemiBold) },
         text = {
             Text(

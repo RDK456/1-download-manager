@@ -15,6 +15,23 @@ import androidx.compose.ui.graphics.Color
  * Declared once here rather than per dialog, because the alternative is what it was:
  * each dialog setting its own container colour, and being forgotten.
  */
+/**
+ * How every dialog in this app is presented.
+ *
+ * Compose on the desktop draws no backdrop behind a dialog of its own accord, so each
+ * one sat as a flat rounded rectangle on an undimmed window. On a dark theme that
+ * reads as a panel painted onto the window rather than something in front of it. A
+ * scrim is what makes the layering visible.
+ *
+ * Declared once here because it belongs to every dialog and forgetting it in one of
+ * them is exactly the sort of difference nobody notices until two are open side by
+ * side.
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+val APP_DIALOG_PROPERTIES = androidx.compose.ui.window.DialogProperties(
+    scrimColor = Color(0xCC000000)
+)
+
 object AppTheme {
 
     private val surface = Color(0xFF161D20)

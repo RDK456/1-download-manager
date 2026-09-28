@@ -1,5 +1,6 @@
 package com.downloadhub.desktop
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,6 +56,65 @@ class MenuBarTest {
         assertFalse(
             "a label is still given a fixed width that doubles as a panel offset",
             Regex("""MenuLabel\("(\w+)", \d+\.dp,""").containsMatchIn(text)
+        )
+    }
+
+    /**
+     * The panel has to read as something floating above the window.
+     *
+     * It was a flat rectangle laid straight onto the content: no shadow, no edge and
+     * nothing dimmed behind it, so it looked like a hole cut in the window rather than
+     * a layer in front of it.
+     */
+    @Test
+    fun thePanelLooksLikeALayerRatherThanAHole() {
+        val text = menuBar()
+        assertTrue(
+            "there is nothing behind the panel, so it has nothing to float above",
+            text.contains("MENU_SCRIM") && text.contains("private fun Scrim")
+        )
+        assertTrue("the panel has no shadow", text.contains("shadowElevation"))
+        assertTrue("and no edge", text.contains("border = BorderStroke"))
+    }
+
+    /**
+     * A panel must open below the strip, not over it.
+     *
+     * It was positioned with a hard-coded 32 dp while the strip is 34 dp tall, so the
+     * top of every panel sat 2 dp inside the highlighted entry that opened it.
+     */
+    @Test
+    fun aPanelOpensBelowTheStripRatherThanOverIt() {
+        val text = menuBar()
+        assertTrue(
+            "a panel is still placed at a hard-coded offset rather than at the bottom " +
+                "of the menu strip",
+            !Regex("""top = 32\.dp""").containsMatchIn(text)
+        )
+        assertEquals(
+            "every panel must anchor to the bottom of the strip",
+            2,
+            Regex("""top = MENU_BAR_HEIGHT""").findAll(text).count()
+        )
+    }
+
+    /**
+     * An item's text lines up with the entry it belongs to.
+     *
+     * A label had a 12 dp inset and its items had 14, so every item sat two pixels
+     * right of the menu it came from.
+     */
+    @Test
+    fun itemsLineUpWithTheMenuTheyBelongTo() {
+        val text = menuBar()
+        assertTrue(
+            "the label and its items do not share one inset, so the text does not line up",
+            text.contains("MENU_ITEM_INSET")
+        )
+        assertEquals(
+            "both the label and the item must use it",
+            2,
+            Regex("""padding\(horizontal = MENU_ITEM_INSET""").findAll(text).count()
         )
     }
 
