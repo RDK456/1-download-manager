@@ -41,6 +41,9 @@
     .\scripts\release.ps1 -DebugApk
 #>
 [CmdletBinding()]
+# Returns whichever of two dotted versions is higher, comparing numerically per part
+# rather than as text. "1.4.10" is above "1.4.9"; a string compare says otherwise, and
+# the result would be a release numbered below one already published.
 param(
     [ValidateSet('Patch', 'Minor', 'Major')]
     [string]$Bump = 'Patch',
@@ -67,6 +70,17 @@ if ($NotesFile) {
 }
 
 $ErrorActionPreference = 'Stop'
+
+function Compare-VersionNumbers([string]$a, [string]$b) {
+    $ap = @($a -split '\.' | ForEach-Object { [int]$_ })
+    $bp = @($b -split '\.' | ForEach-Object { [int]$_ })
+    for ($i = 0; $i -lt [Math]::Max($ap.Count, $bp.Count); $i++) {
+        $av = if ($i -lt $ap.Count) { $ap[$i] } else { 0 }
+        $bv = if ($i -lt $bp.Count) { $bp[$i] } else { 0 }
+        if ($av -ne $bv) { return $(if ($av -gt $bv) { $a } else { $b }) }
+    }
+    return $a
+}
 Set-StrictMode -Version Latest
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -110,28 +124,34 @@ try {
     if ($gradleText -notmatch 'versionName\s*=\s*"([^"]+)"') { throw 'versionName not found in app/build.gradle.kts' }
     $oldVersion = $Matches[1]
 
-    $parts = $oldVersion -split '\.'
-    while ($parts.Count -lt 3) { $parts += '0' }
-    $major = [int]$parts[0]; $minor = [int]$parts[1]; $patch = [int]$parts[2]
+    $propsPath = Join-Path $RepoRoot 'gradle.properties'
+    $windowsVersion = $null
+    if ((Test-Path $propsPath) -and ([System.IO.File]::ReadAllText($propsPath) -match '(?m)^appVersion=(.+?)\s*$')) {
+        $windowsVersion = $Matches[1].Trim()
+    }
 
-    # A desktop-only release leaves the Android version where it is, so the Android
-    # versionName is not the number that moves. Reading it anyway made every
-    # desktop-only run recompute the same version - v1.4.4 over and over - because the
-    # only thing that would have changed was the Android version, which by
-    # definition does not change. The Windows version lives in gradle.properties, so
-    # that is what has to be read here.
+    # The two platforms carry their own version numbers, and they drift: a
+    # desktop-only release moves the Windows one and leaves Android alone, so after a
+    # few of those the Windows version is ahead.
+    #
+    # A desktop-only release must start from the Windows version, or it recomputes a
+    # number it has already published. A full release must start from whichever is
+    # higher, or it produces a number that is behind the Windows one and collides
+    # with a tag that already exists - which is what happened when Android sat at
+    # 1.4.3 while Windows was at 1.4.8.
     $baseVersion = $oldVersion
     if ($DesktopOnly) {
-        $propsPath = Join-Path $RepoRoot 'gradle.properties'
-        if ((Test-Path $propsPath) -and ([System.IO.File]::ReadAllText($propsPath) -match '(?m)^appVersion=(.+?)\s*$')) {
-            $baseVersion = $Matches[1].Trim()
-        } else {
+        if (-not $windowsVersion) {
             throw 'appVersion not found in gradle.properties; a desktop-only release needs it to compute the next version'
         }
-        $bp = $baseVersion -split '\.'
-        while ($bp.Count -lt 3) { $bp += '0' }
-        $major = [int]$bp[0]; $minor = [int]$bp[1]; $patch = [int]$bp[2]
+        $baseVersion = $windowsVersion
+    } elseif ($windowsVersion) {
+        $baseVersion = Compare-VersionNumbers $windowsVersion $oldVersion
     }
+
+    $bp = $baseVersion -split '\.'
+    while ($bp.Count -lt 3) { $bp += '0' }
+    $major = [int]$bp[0]; $minor = [int]$bp[1]; $patch = [int]$bp[2]
 
     switch ($Bump) {
         'Major' { $major++; $minor = 0; $patch = 0 }
