@@ -1,6 +1,7 @@
 package com.downloadhub.desktop
 
 import java.awt.Color
+import java.awt.Polygon
 import java.awt.Image
 import java.awt.Menu
 import java.awt.MenuItem
@@ -95,6 +96,18 @@ class SystemTrayIcon(
     }.getOrDefault(image)
 
     /** A rounded green tile with a download arrow, drawn at [size] pixels. */
+    /**
+     * The same artwork as the app icon: a folder with a download arrow on it.
+     *
+     * Drawn from the same 108-unit coordinates as
+     * app/src/main/res/drawable/ic_launcher_foreground.xml, so the tray, the taskbar,
+     * the Start Menu and the phone are recognisably one app. The 1DM wordmark is
+     * dropped because at 16 px it is a grey smear, and a smear is worse than nothing.
+     *
+     * A hairline outline is drawn around the black square, which the app icon cannot
+     * afford: a launcher puts the icon on a wallpaper of unknown brightness, but a
+     * taskbar can be light or dark and a plain black square vanishes on the dark one.
+     */
     private fun iconImage(size: Int): Image {
         val image = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
         val g = image.createGraphics()
@@ -103,29 +116,42 @@ class SystemTrayIcon(
                 java.awt.RenderingHints.KEY_ANTIALIASING,
                 java.awt.RenderingHints.VALUE_ANTIALIAS_ON
             )
-            val pad = (size * 0.12f).toInt()
-            g.color = Color(0x1A, 0x21, 0x24)
-            g.fillRoundRect(0, 0, size, size, size / 3, size / 3)
 
-            g.color = Color(0x34, 0xD3, 0x99)
-            val stroke = (size * 0.11f).toInt().coerceAtLeast(2)
-            g.stroke = java.awt.BasicStroke(stroke.toFloat())
+            val corner = size / 4
+            g.color = Color(0x66, 0x72, 0x76)
+            g.fillRoundRect(0, 0, size - 1, size - 1, corner, corner)
+            g.color = Color.BLACK
+            g.fillRoundRect(1, 1, size - 3, size - 3, corner - 1, corner - 1)
 
-            // Down arrow: a vertical shaft and a chevron.
-            val cx = size / 2f
-            g.drawLine(cx.toInt(), (size * 0.24f).toInt(), cx.toInt(), (size * 0.58f).toInt())
-            g.drawLine(
-                (size * 0.34f).toInt(), (size * 0.48f).toInt(),
-                cx.toInt(), (size * 0.62f).toInt()
+            // The folder and its arrow, taken from the launcher vector and scaled into
+            // the square with a margin. Only the folder is drawn, so the artwork is
+            // re-centred rather than cropped.
+            val scale = size / 62f
+            fun polygon(vararg coords: Float): Polygon {
+                val shape = Polygon()
+                var index = 0
+                while (index + 1 < coords.size) {
+                    shape.addPoint(
+                        ((coords[index] - 20f) * scale).toInt().coerceIn(0, size),
+                        ((coords[index + 1] - 24f) * scale).toInt().coerceIn(0, size)
+                    )
+                    index += 2
+                }
+                return shape
+            }
+
+            g.color = Color.WHITE
+            g.fillPolygon(
+                polygon(
+                    34f, 38f, 36f, 36f, 43f, 36f, 43f, 31f, 45f, 29f, 57f, 29f, 59f, 31f,
+                    59f, 36f, 72f, 36f, 74f, 38f, 74f, 58f, 72f, 60f, 36f, 60f, 34f, 58f
+                )
             )
-            g.drawLine(
-                cx.toInt(), (size * 0.62f).toInt(),
-                (size * 0.66f).toInt(), (size * 0.48f).toInt()
-            )
-            // The tray line the file is landing on.
-            g.drawLine(
-                (size * 0.28f).toInt(), (size * 0.76f).toInt(),
-                (size * 0.72f).toInt(), (size * 0.76f).toInt()
+            g.color = Color.BLACK
+            g.fillPolygon(
+                polygon(
+                    49f, 39f, 59f, 39f, 59f, 48f, 66f, 48f, 54f, 58f, 42f, 48f, 49f, 48f
+                )
             )
         } finally {
             g.dispose()

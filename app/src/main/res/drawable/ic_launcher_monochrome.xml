@@ -1,15 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The themed-icon variant, for launchers that tint the icon to match the wallpaper.
+
+  Same shapes as ic_launcher_foreground.xml, but a single flat colour: the launcher
+  supplies the tint, and anything drawn in a fixed colour here would either be
+  ignored or fight with it. The arrow is a hole rather than a black shape, because
+  on a themed icon there is no background to be the same colour as.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M28,24L42,15L49,21L49,61L40,61L40,29L32,34L27,27Z" />
+        android:fillType="evenOdd"
+        android:pathData="M34,38L36,36L43,36L43,31L45,29L57,29L59,31L59,36L72,36L74,38L74,58L72,60L36,60L34,58ZM49,39L59,39L59,48L66,48L54,58L42,48L49,48Z" />
+
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M66,22L76,22L76,43L86,43L71,60L56,43L66,43Z" />
+        android:pathData="M42,66L46,66L46,78L42,78L42,71L38,75L36,71Z" />
+
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M27,73L81,73L81,80L27,80Z" />
+        android:fillType="evenOdd"
+        android:pathData="M50,66L56,66L59,68L60,72L59,76L56,78L50,78ZM54,69L54,75L56,75L56,69Z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M63,78L63,66L66,66L68,72L70,66L73,66L73,78L70,78L70,70L69,75L67,75L66,70L66,78Z" />
 </vector>

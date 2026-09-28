@@ -329,6 +329,10 @@ compose.desktop {
             windows {
                 menu = true
                 perUserInstall = true
+                // Without this the exe, the Start Menu entry and the taskbar all get
+                // jpackage's default Java cup. The artwork is the same as the Android
+                // launcher icon; see desktop/dist-tools/Generate-AppIcon.ps1.
+                iconFile.set(file("dist-tools/app-icon.ico"))
                 // A stable upgrade code, so replacing an install keeps the entry in
                 // Apps and features rather than leaving a second, stale copy.
                 upgradeUuid = "6f2c9a54-2f1b-4a7d-9b3e-1c8d5e7a4f20"

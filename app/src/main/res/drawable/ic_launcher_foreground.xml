@@ -1,15 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The mark: a folder with a download arrow in it, over the letters 1DM.
+
+  Every shape is drawn as a polygon rather than with arcs, deliberately. A vector
+  cannot contain text, so the letters have to be paths, and once the letters are
+  paths it is simpler for the corners to be as well. The Windows icon is rasterised
+  from these same coordinates, so the two platforms are the same drawing rather than
+  two drawings that look alike.
+
+  The bounds are chosen to stay inside the launcher's mask: the platform crops an
+  adaptive icon to a shape inscribed in the central 72x72, so content that reaches
+  the corners of the 108 viewport is clipped on a circular mask and not on a
+  squircle. Everything here sits within a circle of radius 34 around (54,54).
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- The folder, with a tab on the left. -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M28,24L42,15L49,21L49,61L40,61L40,29L32,34L27,27Z" />
+        android:pathData="M34,38L36,36L43,36L43,31L45,29L57,29L59,31L59,36L72,36L74,38L74,58L72,60L36,60L34,58Z" />
+
+    <!-- The download arrow, cut out of the folder by being drawn in the background colour. -->
     <path
-        android:fillColor="#66D9FF"
-        android:pathData="M66,22L76,22L76,43L86,43L71,60L56,43L66,43Z" />
+        android:fillColor="#000000"
+        android:pathData="M49,39L59,39L59,48L66,48L54,58L42,48L49,48Z" />
+
+    <!-- 1 -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M27,73L81,73L81,80L27,80Z" />
+        android:pathData="M42,66L46,66L46,78L42,78L42,71L38,75L36,71Z" />
+
+    <!-- D, with the counter punched out by evenOdd. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M50,66L56,66L59,68L60,72L59,76L56,78L50,78ZM54,69L54,75L56,75L56,69Z" />
+
+    <!-- M -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M63,78L63,66L66,66L68,72L70,66L73,66L73,78L70,78L70,70L69,75L67,75L66,70L66,78Z" />
 </vector>
