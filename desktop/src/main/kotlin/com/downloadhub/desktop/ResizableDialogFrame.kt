@@ -54,7 +54,7 @@ class DialogSize(
          * Below this the size columns do not fit beside the name and start wrapping: a
          * heading rendered one letter per line, which is how this first showed up.
          */
-        const val DEFAULT_WIDTH_DP = 880f
+        const val DEFAULT_WIDTH_DP = 940f
         const val DEFAULT_HEIGHT_DP = 480f
 
         /** The narrowest that still shows a filename beside a size. */
@@ -66,7 +66,7 @@ class DialogSize(
         /**
          * The options column's width, leaving the rest of the dialog for the file list.
          */
-        const val OPTIONS_COLUMN_DP = 300f
+        const val OPTIONS_COLUMN_DP = 340f
     }
 }
 
@@ -151,14 +151,8 @@ private fun EdgeHandle(
                 }
             }
     ) {
-        // A hairline in the surface colour, so the edge is findable without being a
-        // visible frame around the dialog.
-        Box(
-            Modifier
-                .align(Alignment.TopEnd)
-                .width(1.dp)
-                .fillMaxHeight()
-                .background(Color(0x14FFFFFF))
-        )
+        // No visible line. One was drawn and read as a stray vertical rule through the
+        // dialog's right-hand side; the handle is six dp of invisible target either way,
+        // and the resize is discoverable by dragging towards the edge.
     }
 }

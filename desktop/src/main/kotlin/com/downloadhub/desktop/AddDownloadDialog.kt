@@ -365,13 +365,23 @@ fun AddDownloadDialog(
                 ) {
                     Text("Save at", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                     Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = directory,
-                        onValueChange = { directory = it },
-                        label = { Text("Folder", fontSize = 12.sp) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    // The Browse button, in a row with the field rather than under it.
+                    // The rewrite dropped it, and a folder you can only type into is a
+                    // folder nobody chooses.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = directory,
+                            onValueChange = { directory = it },
+                            label = { Text("Folder", fontSize = 12.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        OutlinedButton(
+                            onClick = { onPickDirectory()?.let { directory = it.absolutePath } },
+                            modifier = Modifier.height(36.dp)
+                        ) { Text("Browse", fontSize = 12.sp) }
+                    }
                     if (metainfo.files.isNotEmpty()) {
                         Spacer(Modifier.height(6.dp))
                         OutlinedTextField(
@@ -431,7 +441,6 @@ fun AddDownloadDialog(
                     }
 
                     if (pending.isTorrent) {
-                        SectionLabel("Torrent information")
                         TorrentInformationBlock(metainfo)
                     }
                 }
@@ -549,7 +558,7 @@ fun contentRowsFor(meta: TorrentMetainfo, filter: String): List<ContentRow> {
 @Composable
 fun TorrentInformationBlock(metainfo: TorrentMetainfo) {
     Column(Modifier.fillMaxWidth()) {
-        Text("Torrent information", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        Text("Torrent information", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = androidx.compose.ui.graphics.Color(0xFFD6DEDF))
         Spacer(Modifier.height(4.dp))
         InfoRow("Name", metainfo.name)
         InfoRow(
@@ -609,3 +618,4 @@ internal fun stopConditionFrom(which: Int, value: String): TorrentStopCondition 
         ?.let { TorrentStopCondition.AfterSeedingFor(it) } ?: TorrentStopCondition.Never
     else -> TorrentStopCondition.Never
 }
+

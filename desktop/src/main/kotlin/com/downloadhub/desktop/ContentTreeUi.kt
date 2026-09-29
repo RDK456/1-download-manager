@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DisplayFormat
@@ -64,7 +65,14 @@ fun ContentTreeList(
     // Which folders are open. Nothing starts open, because a release with four hundred
     // files is not readable all at once - but the folders are one click away and each
     // says how much is in it.
-    var expanded by remember { mutableStateOf(emptySet<String>()) }
+    //
+    // The top level starts open.
+    //
+    // Collapsed by default it showed a single row - the release folder - which is a list
+    // you cannot choose anything from, which is the whole reason the list exists.
+    var expanded by remember(rows) {
+        mutableStateOf(rows.mapNotNull { it.path.substringBefore('/', "").ifEmpty { null } }.toSet())
+    }
 
     // The filter is applied before the tree is built, so a filter matching one file
     // inside a folder still shows the folder - with only that file in it - rather than
@@ -100,7 +108,7 @@ fun ContentTreeList(
                 Text(
                     "as chosen when it was added",
                     fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = TREE_SECONDARY
                 )
             }
         }
@@ -129,7 +137,7 @@ fun ContentTreeList(
                 Text(
                     if (rows.isEmpty()) "This torrent lists no files." else "No files match that filter.",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = TREE_SECONDARY,
                     modifier = Modifier.padding(10.dp)
                 )
             } else {
@@ -233,32 +241,46 @@ private fun TreeFolderRow(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                if (open) "▾" else "▸",
+                if (open) "v" else ">",
                 fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = TREE_SECONDARY
             )
         }
-        Text(
-            node.label,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            modifier = Modifier.weight(1f).padding(end = 4.dp)
-        )
-        Text(
-            "${node.fileIndices.size}",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(78.dp)
-        )
-        Text("", fontSize = 11.sp, modifier = Modifier.width(50.dp))
-        Text("", fontSize = 11.sp, modifier = Modifier.width(48.dp))
+        // The count rides with the name. It was in the Size column, and the total in
+        // Remaining, so a folder read "12  3.68 GB" against a file's "3.68 GB  3.68 GB
+        // 100%" - a row whose numbers meant something different from every other row's.
+        Row(
+            Modifier.weight(1f).padding(end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                node.label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            Text(
+                "  ${node.fileIndices.size} items",
+                fontSize = 10.sp,
+                color = TREE_SECONDARY,
+                maxLines = 1
+            )
+        }
+        // A folder's size is its own, so it belongs in Total Size like a file's.
         Text(
             DisplayFormat.bytes(node.totalSize),
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(84.dp)
+            color = TREE_SECONDARY,
+            maxLines = 1,
+            modifier = Modifier.width(78.dp)
         )
+        // Nothing has been fetched, and a folder has no priority of its own: a dash
+        // rather than a number that would be a lie about a folder of twelve files.
+        Text("-", fontSize = 11.sp, color = TREE_SECONDARY, modifier = Modifier.width(50.dp))
+        Text("-", fontSize = 11.sp, color = TREE_SECONDARY, modifier = Modifier.width(48.dp))
+        Text("-", fontSize = 11.sp, color = TREE_SECONDARY, modifier = Modifier.width(84.dp))
     }
 }
 
@@ -287,31 +309,32 @@ private fun TreeFileRow(
         Text(
             node.label,
             fontSize = 11.sp,
+            color = TREE_PRIMARY,
             maxLines = 1,
             modifier = Modifier.weight(1f).padding(end = 4.dp)
         )
         Text(
             if (node.size > 0) DisplayFormat.bytes(node.size) else "-",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = TREE_SECONDARY,
             modifier = Modifier.width(78.dp)
         )
         Text(
             "0%",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = TREE_SECONDARY,
             modifier = Modifier.width(50.dp)
         )
         Text(
             "Normal",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = TREE_SECONDARY,
             modifier = Modifier.width(48.dp)
         )
         Text(
-            if (node.size > 0) "${DisplayFormat.bytes(node.size)}  100%" else "-",
+            if (node.size > 0) DisplayFormat.bytes(node.size) else "-",
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = TREE_SECONDARY,
             modifier = Modifier.width(84.dp)
         )
     }
@@ -323,7 +346,7 @@ private fun TreeHeader(label: String, modifier: Modifier = Modifier) {
         label,
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = TREE_HEADER,
         modifier = modifier
     )
 }
@@ -369,3 +392,14 @@ fun ContentFileList(
         readOnly = readOnly
     )
 }
+
+/**
+ * The file list's own two greys.
+ *
+ * Taken from the theme's `onSurfaceVariant`, which on this dark scheme is too dim to read
+ * a filename against - the list looked disabled. These are the same values the main
+ * window's rows use, so a file list and a download list are legibly the same surface.
+ */
+private val TREE_PRIMARY = androidx.compose.ui.graphics.Color(0xFFD6DEDF)
+private val TREE_SECONDARY = androidx.compose.ui.graphics.Color(0xFF8A9799)
+private val TREE_HEADER = androidx.compose.ui.graphics.Color(0xFFB4C0C2)
