@@ -292,7 +292,19 @@ class DesktopTorrentEngine(
     }
 
     fun pause(id: String) {
-        store.get(id)?.let { engine.pause(it.toCoreItem()) }
+        val item = store.get(id) ?: return
+        engine.pause(item.toCoreItem())
+        // The store, not just libtorrent.
+        //
+        // Pause told the handle to stop and wrote nothing, while resume wrote the status
+        // and needed to tell libtorrent nothing - the poll loop sees QUEUED and carries on.
+        // So a paused torrent still said "Downloading" in the list, and the only sign that
+        // it had stopped was the speed column going quiet.
+        store.update(id) {
+            it.copy(status = DownloadStatus.PAUSED, speedBytesPerSecond = 0L)
+        }
+        store.persist()
+        onChange()
     }
 
     fun resume(id: String) {

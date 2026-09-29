@@ -30,6 +30,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DisplayFormat
 import com.downloadhub.core.DownloadItem
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.text.style.TextOverflow
 import com.downloadhub.core.DownloadStatus
 
 /**
@@ -156,61 +164,90 @@ fun magnetLinkFor(item: DownloadItem): String = when {
 }
 
 /**
- * The menu itself.
+ * The menu itself: a dropdown at the pointer, not a dialog in the middle of the window.
  *
- * A dialog rather than a popup anchored to the pointer: an anchored menu needs a position
- * in screen coordinates that Compose Desktop does not hand out here, and getting it wrong
- * puts the menu off screen with no way to dismiss it.
+ * It was an `AlertDialog`, which is why it looked like a pop-up. A dialog is a modal
+ * panel in the centre of its window with a scrim across everything, a heading, a title and
+ * a Close button - none of which is what a right-click menu is, and all of which make the
+ * thing feel like an error message about the row rather than a list of things you can do
+ * to it.
+ *
+ * It is drawn as an overlay in the *same coordinate space as the list*, offset from the
+ * pointer's own position, which is why it needs nothing from the window manager. The
+ * earlier version's note claimed an anchored menu needed screen coordinates that Compose
+ * Desktop does not hand out. It does - the right-click handler already reads them off a
+ * raw `java.awt.event.MouseEvent` - but they are the wrong thing anyway: screen
+ * coordinates have to be converted back through the window's position and then clipped to
+ * it, and every one of those steps is a way to put the menu somewhere the user cannot
+ * click. Positioned inside the list's own box, it cannot leave the window at all.
  */
 @Composable
 fun DownloadContextMenu(
     item: DownloadItem,
     hasContentFiles: Boolean,
+    atX: Int,
+    atY: Int,
     onAction: (ContextAction) -> Unit,
     onDismiss: () -> Unit
 ) {
     val actions = remember(item.id, item.status, hasContentFiles) {
         contextActions(item, hasContentFiles)
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        properties = APP_DIALOG_PROPERTIES,
-        title = {
-            Column {
-                Text(
-                    item.fileName,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1
-                )
-                Text(
-                    "${DisplayFormat.bytes(item.bytesDownloaded)} of " +
-                        DisplayFormat.bytes(item.totalBytes) + "  ·  " +
-                        item.status.name.lowercase().replaceFirstChar { it.uppercase() },
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        text = {
-            Column(Modifier.width(240.dp).verticalScroll(rememberScrollState())) {
-                actions.forEach { action ->
-                    ContextRow(
-                        label = contextActionLabel(action),
-                        // Only removal is destructive, and only removal is coloured. A menu
-                        // where everything is red says nothing about what is dangerous.
-                        destructive = action == ContextAction.Remove,
-                        muted = action == ContextAction.AutomaticManagement,
-                        onClick = { onAction(action) }
-                    )
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+    val width = 230.dp
+    val density = LocalDensity.current.density
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Flipped rather than clipped when it would run past the window's edge. A menu
+        // that opens downwards off the bottom of the window cannot be dismissed by
+        // clicking anything in it, which is the state the old clamping tried to avoid by
+        // always showing it centred.
+        val menuHeight = (actions.size * 30 + 12).dp
+        val flipUp = maxHeight.value - atY < menuHeight.value * density + 8f
+        val x = atX.coerceIn(4, (maxWidth.value - width.value).toInt().coerceAtLeast(4))
+        val y = if (flipUp) {
+            (atY - menuHeight.value * density).toInt().coerceAtLeast(4)
+        } else {
+            atY
         }
-    )
+        // Clicks anywhere else close it, and nothing is dimmed: a context menu is not
+        // modal, and the rest of the list stays readable behind it.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = onDismiss
+                )
+        )
+        Column(
+            Modifier
+                .offset { IntOffset(x, y) }
+                .width(width)
+                .background(AppTheme.Palette.menuPanel, RoundedCornerShape(6.dp))
+                .border(1.dp, AppTheme.Palette.menuEdge, RoundedCornerShape(6.dp))
+                .padding(vertical = 4.dp)
+        ) {
+            Text(
+                item.fileName,
+                fontSize = 10.sp,
+                color = AppTheme.Palette.faint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+            )
+            HorizontalDivider(color = AppTheme.Palette.outlineVariant)
+            actions.forEach { action ->
+                ContextRow(
+                    label = contextActionLabel(action),
+                    // Only removal is destructive, and only removal is coloured. A menu
+                    // where everything is red says nothing about what is dangerous.
+                    destructive = action == ContextAction.Remove,
+                    muted = action == ContextAction.AutomaticManagement,
+                    onClick = { onAction(action) }
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -220,13 +257,16 @@ private fun ContextRow(label: String, destructive: Boolean = false, muted: Boole
         fontSize = 12.sp,
         color = when {
             destructive -> AppTheme.Palette.error
-            muted -> MaterialTheme.colorScheme.onSurfaceVariant
-            else -> MaterialTheme.colorScheme.onSurface
+            muted -> AppTheme.Palette.faint
+            else -> AppTheme.Palette.onSurface
         },
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 7.dp)
+            // A menu row that does not change under the pointer does not read as
+            // clickable, which is the whole of what makes a menu feel like a menu.
+            .background(AppTheme.Palette.selection, RoundedCornerShape(3.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp)
     )
 }
 

@@ -74,6 +74,7 @@ import com.downloadhub.core.LibrarySort
 import com.downloadhub.core.SortDirection
 import java.io.File
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.unit.IntOffset
 import kotlin.math.abs
 
 /**
@@ -107,6 +108,16 @@ fun LibraryScreen(
     var optionsFor by remember { mutableStateOf<String?>(null) }
     /** Which download has its right-click menu open, if any. */
     var contextFor by remember { mutableStateOf<String?>(null) }
+    /**
+     * Where the pointer was when the menu was asked for.
+     *
+     * Read off the raw mouse event, which reports in the coordinates of the component it
+     * was delivered to - so these are already inside the list's own box and the menu can
+     * simply be offset by them. Screen coordinates would have to be converted back through
+     * the window and clipped to it, and every one of those steps is a way to open a menu
+     * somewhere the user cannot click.
+     */
+    var contextAt by remember { mutableStateOf(IntOffset.Zero) }
     /** Which download is being renamed. */
     var renaming by remember { mutableStateOf<String?>(null) }
     /** Which download is being given a different folder. */
@@ -254,7 +265,8 @@ fun LibraryScreen(
                                         onRetry = { actions.retry(item.id) },
                                         onOpen = { actions.revealDownload(item.location) },
                                         onOptions = { optionsFor = item.id },
-                                        onContext = {
+                                        onContext = { x, y ->
+                                            contextAt = IntOffset(x, y)
                                             contextFor = item.id
                                             selected = setOf(item.id)
                                         }
@@ -345,6 +357,8 @@ fun LibraryScreen(
             DownloadContextMenu(
                 item = item,
                 hasContentFiles = item.location != null || item.bytesDownloaded > 0L,
+                atX = contextAt.x,
+                atY = contextAt.y,
                 onAction = { action ->
                     contextFor = null
                     when (action) {
@@ -922,7 +936,7 @@ private fun DownloadRow(
     /** Opens this download's own settings. */
     onOptions: () -> Unit,
     /** Right-click: the menu every other torrent client opens. */
-    onContext: () -> Unit = {}
+    onContext: (Int, Int) -> Unit = { _, _ -> }
 ) {
     val running = item.status == DownloadStatus.RUNNING
     Row(
@@ -944,7 +958,7 @@ private fun DownloadRow(
                 // release, and a context menu that opens again on mouse-up is worse than
                 // one that opens once.
                 if (mouse != null && mouse.button == java.awt.event.MouseEvent.BUTTON3) {
-                    onContext()
+                    onContext(mouse.x, mouse.y)
                     event.changes.forEach { it.consume() }
                 }
             }
