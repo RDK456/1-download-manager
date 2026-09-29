@@ -217,16 +217,26 @@ fun main(args: Array<String>) {
                     // Hiding to the tray disposes the Window and these with it, which
                     // is the behaviour wanted anyway: a dialog cannot be used while
                     // its window is off screen.
-                    // A .torrent opened from Explorer, or handed over by a second copy.
-                    // It goes through the same dialog as a drop or a pick: a torrent is a
-                    // container, and queueing it unseen downloads all of it.
+                    // Every route into the app - a `.torrent` from Explorer, a magnet from
+                    // a browser, a link from a second copy - comes through here and is
+                    // shown in the pre-download dialog. It used to take a File and so
+                    // could only carry a `.torrent` off disk, which meant a magnet from
+                    // the browser had nowhere to go and was queued unseen.
                     LaunchedEffect(Unit) {
-                        controller.onTorrentNeedsReview = { file ->
-                            pendingAdd = PendingDownload.forLink(file.absolutePath)
+                        controller.onDownloadNeedsReview = { link ->
+                            val pending = PendingDownload.forLink(link)
+                            if (pending == null) {
+                                problem = "That cannot be downloaded: $link"
+                            } else {
+                                pendingAdd = pending
+                            }
+                            // Raised whether or not it parsed. A link that cannot be read
+                            // has to say so, and the message would otherwise sit behind a
+                            // window the user cannot see.
                             showWindow()
                         }
-                        // Only now that the callback exists can a `.torrent` be shown in
-                        // the dialog, so the command line and any hand-over are acted on
+                        // Only now that the callback exists can a link be shown in the
+                        // dialog, so the command line and any hand-over are acted on
                         // after this rather than before.
                         controller.queueTargets(startupTargets)
                     }

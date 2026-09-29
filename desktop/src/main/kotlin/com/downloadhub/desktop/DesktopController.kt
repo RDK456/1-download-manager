@@ -208,16 +208,26 @@ class DesktopController(
     val ui: StateFlow<DesktopUiState> = _ui.asStateFlow()
 
     /**
-     * Set by the window so a `.torrent` opened from Explorer can be shown in the
-     * pre-download dialog instead of being queued unseen.
+     * Set by the window, and the one way anything reaches the queue.
      *
-     * A callback rather than state because the dialog lives in the window, and the
-     * controller has no window. Null until the window exists, and a torrent handed over
-     * before then is queued directly - which is the old behaviour, so the worst case is
-     * what happened before rather than a lost download.
+     * Takes a link, which may be a magnet, an http URL, or a path to a `.torrent` on
+     * disk, and means "show this in the pre-download dialog".
+     *
+     * A callback rather than state, because the dialog lives in the window and the
+     * controller has no window.
+     *
+     * It used to be `onTorrentNeedsReview` and it took a `File`, so it could only carry a
+     * `.torrent` from disk. A magnet has no file, so a magnet from the browser could not
+     * use it and went straight into the queue: the download appeared with no dialog, no
+     * folder chosen, and no chance to say no. Every route in - a paste, a drop, Explorer,
+     * a second copy, the browser extension - now comes through here.
+     *
+     * Null until the window has composed. Everything queued before then falls back to
+     * adding directly, so the worst case is the old behaviour rather than a lost
+     * download.
      */
     @Volatile
-    var onTorrentNeedsReview: ((File) -> Unit)? = null
+    var onDownloadNeedsReview: ((String) -> Unit)? = null
 
     /**
      * The current settings.
@@ -279,8 +289,22 @@ class DesktopController(
         }
     }
 
-    /** Queues a link handed over by the browser. */
+    /**
+     * A link handed over by the browser extension.
+     *
+     * Routed to the pre-download dialog like everything else. It used to be queued
+     * directly, which is how clicking a magnet in the browser produced a row with no
+     * dialog: no folder chosen, no chance to see what it was, and no way to refuse it
+     * once it had started.
+     */
     private fun acceptCapturedLink(request: CaptureRequest) {
+        val review = onDownloadNeedsReview
+        if (review != null) {
+            review(request.url)
+            return
+        }
+        // The window is not up yet. Queued directly rather than dropped, so a link that
+        // arrives in the first moments is not lost.
         val name = request.fileName?.takeIf { it.isNotBlank() }
             ?: com.downloadhub.core.LinkParser.fileNameFrom(request.url)
         addDownload(
@@ -863,15 +887,10 @@ class DesktopController(
         if (targets.isEmpty()) return
         var added = 0
         var skipped = 0
+        var reviewed = 0
         targets.forEach { target ->
-            // A .torrent is a container, and queueing one unexamined downloads everything
-            // inside it. Those are handed to the window to show in the pre-download dialog,
-            // the same as one that is dropped on it or picked from disk. A magnet has no
-            // file list until peers answer, so it is queued directly.
-            if (target.torrentFile != null) {
-                onTorrentNeedsReview?.invoke(File(target.torrentFile))
-                return@forEach
-            }
+            // Checked here rather than after the dialog, so nothing already in the list
+            // is ever put in front of the user to be looked at again.
             val candidate = DownloadItem(
                 id = "candidate",
                 url = target.link,
@@ -883,6 +902,29 @@ class DesktopController(
                 skipped++
                 return@forEach
             }
+            /**
+             * Everything is shown in the pre-download dialog, whatever brought it here.
+             *
+             * A `.torrent` is a container and queueing one unexamined downloads
+             * everything inside it. A magnet is the same download in a different wrapper,
+             * and a plain link is the same as either: there is always a folder to choose
+             * and a chance to refuse before anything starts.
+             *
+             * Only a `.torrent` used to be reviewed. A magnet arriving from a
+             * magnet-aware browser - which is the ordinary way to start one now - went
+             * straight into the queue, which is what was reported: the row appeared and
+             * the dialog never did.
+             *
+             * With no window there is no dialog to show, so it is queued directly. That
+             * is the old behaviour and is better than losing the download.
+             */
+            val review = onDownloadNeedsReview
+            if (review != null) {
+                review(target.torrentFile ?: target.link)
+                reviewed++
+                return@forEach
+            }
+
             addDownload(
                 link = target.link,
                 audioOnly = false,
@@ -894,6 +936,10 @@ class DesktopController(
             )
             added++
         }
+        // Say nothing when everything is waiting behind a dialog. Announcing "added 1"
+        // for a download that has not started and may still be refused reads as though it
+        // were already running.
+        if (added == 0 && reviewed > 0) return
         _messages.value = when {
             added == 0 -> "That is already in the list."
             skipped == 0 -> if (added == 1) "Added 1 download from the link you opened."
