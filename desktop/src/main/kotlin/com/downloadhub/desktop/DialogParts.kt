@@ -52,7 +52,15 @@ internal fun SectionLabel(label: String) {
 @Composable
 internal fun StopDropdown(selected: Int, onChange: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    val labels = listOf("None", "Ratio reached", "Uploaded amount reached", "Seeding time reached")
+    // "Stop at 100%" is first after None because it is the one people reach for without
+    // knowing what a share ratio is.
+    val labels = listOf(
+        "None",
+        "When 100% downloaded",
+        "Ratio reached",
+        "Uploaded amount reached",
+        "Seeding time reached"
+    )
 
     Box {
         OutlinedButton(onClick = { open = true }) {

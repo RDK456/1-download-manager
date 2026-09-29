@@ -28,6 +28,56 @@ class AddDownloadDialogTest {
      * happens for the user whose torrent has that shape. Found by opening the dialog on a
      * real 13-file release whose paths all shared one name.
      */
+
+    /**
+     * "When 100% downloaded" is a real condition, not a limit of zero.
+     *
+     * A ratio of zero and a seed time of zero both read as "stop now", and for a torrent
+     * that has not started downloading that is a torrent that arrives dead. So it is its
+     * own thing, carried by its own flag, and it waits for the download to be whole.
+     */
+    @Test
+    fun stopAtCompletionIsItsOwnThingRatherThanALimitOfZero() {
+        val limits = com.downloadhub.core.TorrentStopCondition.WhenComplete.toShareLimits(1000L)
+        assertTrue(
+            "a limit of zero reads as stop-now, which kills the download before it starts",
+            limits.enabled
+        )
+        assertEquals(0.0, limits.ratioLimit, 0.0001)
+        assertEquals(0, limits.seedTimeLimitMinutes)
+        assertTrue(limits.stopWhenComplete)
+
+        // Nothing stops while it is still downloading.
+        assertFalse(
+            com.downloadhub.core.TransferRules.shouldStopSeeding(
+                downloadedBytes = 400L,
+                uploadedBytes = 0L,
+                seedingSinceEpochMillis = 0L,
+                nowEpochMillis = 1_700_000_000_000L,
+                limits = limits
+            )
+        )
+        // And everything stops the moment it is whole.
+        assertTrue(
+            com.downloadhub.core.TransferRules.shouldStopSeeding(
+                downloadedBytes = 1000L,
+                uploadedBytes = 0L,
+                seedingSinceEpochMillis = 1_700_000_000_000L,
+                nowEpochMillis = 1_700_000_001_000L,
+                limits = limits
+            )
+        )
+    }
+
+    @Test
+    fun theSecondStopConditionIsCompletionAndItNeedsNoValue() {
+        assertTrue(
+            "stop-at-completion is the one people reach for without knowing what a share " +
+                "ratio is, so it goes first after None",
+            stopConditionFrom(1, "") is com.downloadhub.core.TorrentStopCondition.WhenComplete
+        )
+        assertTrue(stopConditionFrom(0, "") is com.downloadhub.core.TorrentStopCondition.Never)
+    }
     @Test
     fun aTorrentWithRepeatedPathsDoesNotBreakTheFileList() {
         val duplicate = com.downloadhub.core.TorrentMetainfo(
@@ -259,18 +309,18 @@ class AddDownloadDialogTest {
     @Test
     fun theStopConditionChoicesMapOntoWhatTheEngineUnderstands() {
         assertTrue(stopConditionFrom(0, "2.0") is com.downloadhub.core.TorrentStopCondition.Never)
-        val ratio = stopConditionFrom(1, "2.5")
+        val ratio = stopConditionFrom(2, "2.5")
         assertTrue(ratio is com.downloadhub.core.TorrentStopCondition.AtRatio)
         assertEquals(2.5, (ratio as com.downloadhub.core.TorrentStopCondition.AtRatio).ratio, 0.001)
 
-        val amount = stopConditionFrom(2, "500")
+        val amount = stopConditionFrom(3, "500")
         assertTrue(amount is com.downloadhub.core.TorrentStopCondition.AtUploadedAmount)
         assertEquals(
             500L * 1024L * 1024L,
             (amount as com.downloadhub.core.TorrentStopCondition.AtUploadedAmount).bytes
         )
 
-        val time = stopConditionFrom(3, "30")
+        val time = stopConditionFrom(4, "30")
         assertEquals(
             30,
             (time as com.downloadhub.core.TorrentStopCondition.AfterSeedingFor).minutes
@@ -281,10 +331,10 @@ class AddDownloadDialogTest {
     fun anUnparseableStopValueMeansNeverRatherThanStopImmediately() {
         // A limit of zero would mean "stop now", which looks like the torrent finished the
         // instant it was added.
-        assertTrue(stopConditionFrom(1, "abc") is com.downloadhub.core.TorrentStopCondition.Never)
-        assertTrue(stopConditionFrom(1, "0") is com.downloadhub.core.TorrentStopCondition.Never)
-        assertTrue(stopConditionFrom(2, "") is com.downloadhub.core.TorrentStopCondition.Never)
-        assertTrue(stopConditionFrom(3, "-5") is com.downloadhub.core.TorrentStopCondition.Never)
+        assertTrue(stopConditionFrom(2, "abc") is com.downloadhub.core.TorrentStopCondition.Never)
+        assertTrue(stopConditionFrom(2, "0") is com.downloadhub.core.TorrentStopCondition.Never)
+        assertTrue(stopConditionFrom(3, "") is com.downloadhub.core.TorrentStopCondition.Never)
+        assertTrue(stopConditionFrom(4, "-5") is com.downloadhub.core.TorrentStopCondition.Never)
     }
 
     @Test

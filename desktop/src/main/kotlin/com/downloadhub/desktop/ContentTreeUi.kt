@@ -137,7 +137,16 @@ fun ContentTreeList(
                     // Keyed on the full path. In a tree that is unique even when two files
                     // share a name, which is the whole reason the flat list's key - the
                     // file index - no longer works here: a folder has no index at all.
-                    items(shown, key = { (node, _) -> node.fullPath }) { (node, depth) ->
+                    items(shown, key = { (node, _) ->
+                        // A file is identified by its index and a folder by its path,
+                        // and the two cannot collide. The path alone is not a key: a
+                        // torrent may list the same path twice, the tree keeps both, and
+                        // a duplicated key throws while the list is being laid out.
+                        when (node) {
+                            is ContentNode.File -> "f" + node.index
+                            is ContentNode.Folder -> "d" + node.fullPath
+                        }
+                    }) { (node, depth) ->
                         when (node) {
                             is ContentNode.Folder -> TreeFolderRow(
                                 node = node,
@@ -328,5 +337,35 @@ private fun TreeButton(label: String, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp)
+    )
+}
+
+/**
+ * The file list, for a caller that only reports the selection.
+ *
+ * A thin wrapper over [ContentTreeList] so the detail pane's Content tab and the
+ * pre-download dialog show the same tree and the one that only reports it cannot be
+ * mistaken for the one that edits it.
+ */
+@Composable
+fun ContentFileList(
+    rows: List<ContentRow>,
+    filter: String,
+    onFilter: (String) -> Unit,
+    selected: Set<Int>,
+    onSelectionChange: (Set<Int>) -> Unit,
+    onSelectAll: () -> Unit,
+    onSelectNone: () -> Unit,
+    readOnly: Boolean = false
+) {
+    ContentTreeList(
+        rows = rows,
+        selected = selected,
+        onSelectionChange = onSelectionChange,
+        filter = filter,
+        onFilter = onFilter,
+        onSelectAll = onSelectAll,
+        onSelectNone = onSelectNone,
+        readOnly = readOnly
     )
 }

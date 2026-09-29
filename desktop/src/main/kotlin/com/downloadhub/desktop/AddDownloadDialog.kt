@@ -317,38 +317,44 @@ fun AddDownloadDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        // Inside the Window, like every dialog here: a Dialog composed outside one has no
-        // Compose scene and takes the whole JVM down with it.
-        properties = APP_DIALOG_PROPERTIES,
-        title = {
-            Column {
-                Text(if (pending.isTorrent) "Add torrent" else "Add download")
-                Text(
-                    pending.name,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        text = {
-            /**
-             * Two columns, the way the reference clients lay it out.
-             *
-             * Stacked, the file list and the options compete for one scrollbar: a
-             * forty-file release pushed the stop condition and the information block
-             * off the bottom, and the things you choose between - which files, and
-             * where they go - were never on screen at the same time.
-             *
-             * The file list is on the right and takes the larger share, because it is
-             * the longer of the two and the one being read. The options are on the left
-             * and scroll on their own, so reaching the bottom of a long file list does
-             * not drag the folder with it.
-             */
-            val size = remember(pending.link) { DialogSize() }
-            ResizableDialogFrame(size) { _ ->
-            Row(Modifier.fillMaxSize()) {
+    val size = remember(pending.link) { DialogSize() }
+
+    DlmDialog(
+        title = if (pending.isTorrent) "Add torrent" else "Add download",
+        // The fetched name, when there is one: a magnet's `dn=` is a guess its author
+        // typed, and the swarm's metadata is the real one.
+        subtitle = if (metainfo.name.isNotBlank()) metainfo.name else pending.name,
+        width = size.widthDp.dp,
+        onDismiss = onDismiss,
+        actions = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = {
+                    val request = TorrentSelection.validated(
+                        meta = metainfo,
+                        link = pending.link,
+                        saveDirectory = File(directory),
+                        selected = selected.value,
+                        metainfoFile = pending.file,
+                        sequential = sequential,
+                        firstLastPiecesFirst = firstLastPieces,
+                        startImmediately = startNow,
+                        stopCondition = stopConditionFrom(stopWhen, stopValue),
+                        chosenFolder = folder
+                    )
+                    if (request != null) onConfirm(request)
+                },
+                // Disabled rather than silently doing nothing when nothing is selected:
+                // a button that looks live and then adds nothing is the bug this dialog
+                // was built to avoid.
+                enabled = pending.link.isNotBlank() &&
+                    (metainfo.files.isEmpty() || selected.value.isNotEmpty())
+            ) { Text(if (pending.isTorrent) "OK" else "Add") }
+        }
+    ) {
+        ResizableDialogFrame(size) { _ ->
+        Row(Modifier.fillMaxSize()) {
                 // ---- left: what to do with it -----------------------------------
                 Column(
                     Modifier
@@ -403,7 +409,7 @@ fun AddDownloadDialog(
                                 onChange = { stopWhen = it }
                             )
                         }
-                        if (stopWhen > 0) {
+                        if (stopWhen > 1) {
                             Spacer(Modifier.height(4.dp))
                             OutlinedTextField(
                                 value = stopValue,
@@ -436,23 +442,15 @@ fun AddDownloadDialog(
                         .weight(1f)
                         .fillMaxHeight()
                 ) {
-                    if (loading) {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text(
-                                "Reading the file list from the swarm...",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                     if (metainfo.files.isNotEmpty()) {
-                        ContentFileList(
+                        ContentTreeList(
+                            modifier = Modifier.weight(1f),
                             rows = rows,
                             filter = filter,
                             onFilter = { filter = it },
-                            // The selection is the dialog's own state, because the Add
+                            // The selection is the dialog's own state, because the OK
                             // button builds the request out of it. A list that kept a
-                            // private copy would draw ticks the Add button then ignored.
+                            // private copy would draw ticks OK then ignored.
                             selected = selected.value,
                             onSelectionChange = { chosen -> selected.value = chosen },
                             onSelectAll = {
@@ -523,81 +521,10 @@ fun AddDownloadDialog(
                     }
                 }
             }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val request = TorrentSelection.validated(
-                        meta = metainfo,
-                        link = pending.link,
-                        saveDirectory = File(directory),
-                        selected = selected.value,
-                        metainfoFile = pending.file,
-                        sequential = sequential,
-                        firstLastPiecesFirst = firstLastPieces,
-                        startImmediately = startNow,
-                        stopCondition = stopConditionFrom(stopWhen, stopValue),
-                        chosenFolder = folder
-                    )
-                    if (request != null) onConfirm(request)
-                },
-                // Disabled rather than silently doing nothing when nothing is selected:
-                // a button that looks live and then adds nothing is the bug this dialog
-                // was built to avoid.
-                enabled = pending.link.isNotBlank() &&
-                    (metainfo.files.isEmpty() || selected.value.isNotEmpty())
-            ) { Text(if (pending.isTorrent) "OK" else "Add") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
-/** One row of the file list. */
-data class ContentRow(val path: String, val index: Int, val size: Long) {
-    /** The last segment: a path column 90 characters wide shows one file and no context. */
-    val name: String get() = path.substringAfterLast('/')
-
-    /**
-     * What the list actually shows, shortened from the *front*.
-     *
-     * A release torrent names every one of its files the same 60-character way and tells
-     * them apart only in the last few characters - "[Judas] Chainsaw Man (Season 1)
-     * [1080p][HEVC x265 10bit] - 01.mkv" against the same for 02. Truncating that the
-     * usual way, at the end, makes all of them read "[Judas] Chainsaw Man (Season..." so
-     * the list cannot tell its own rows apart. Keeping the tail and dropping the head
-     * shows the part that differs, which is the part being looked for.
-     */
-    val displayName: String
-        get() {
-            val whole = name
-            return if (whole.length <= NAME_BUDGET) {
-                whole
-            } else {
-                "..." + whole.takeLast(NAME_BUDGET - 3)
-            }
         }
-
-    companion object {
-        /**
-         * How many characters of a name the list shows.
-         *
-         * A count rather than a measurement because the column is sized in `dp` and the
-         * characters are not a fixed width; this is close enough that a long name is cut
-         * rather than silently wrapped onto two lines, which is what a name column that
-         * grows does to a list of thirteen.
-         */
-        const val NAME_BUDGET = 44
     }
 }
 
-/**
- * The rows to show, filtered.
- *
- * The filter matches the whole path even though the name is displayed, because a torrent
- * with two files of the same name in different folders is common and filtering on the name
- * alone would hide one of them for no reason.
- */
 fun contentRowsFor(meta: TorrentMetainfo, filter: String): List<ContentRow> {
     val needle = filter.trim().lowercase(Locale.US)
     val all = meta.files.map { ContentRow(it.path, it.index, it.size) }
@@ -612,51 +539,6 @@ fun contentRowsFor(meta: TorrentMetainfo, filter: String): List<ContentRow> {
  * Content tab reports it. The tree itself lives in one place, so the two cannot drift into
  * showing the same torrent differently.
  */
-@Composable
-fun ContentFileList(
-    rows: List<ContentRow>,
-    filter: String,
-    onFilter: (String) -> Unit,
-    selected: Set<Int>,
-    onSelectionChange: (Set<Int>) -> Unit,
-    onSelectAll: () -> Unit,
-    onSelectNone: () -> Unit,
-    readOnly: Boolean = false
-) {
-    ContentTreeList(
-        rows = rows,
-        selected = selected,
-        onSelectionChange = onSelectionChange,
-        filter = filter,
-        onFilter = onFilter,
-        onSelectAll = onSelectAll,
-        onSelectNone = onSelectNone,
-        readOnly = readOnly
-    )
-}
-@Composable
-private fun HeaderCell(label: String, modifier: Modifier = Modifier) {
-    Text(
-        label,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier
-    )
-}
-
-@Composable
-private fun SmallButton(label: String, onClick: () -> Unit) {
-    Text(
-        label,
-        fontSize = 11.sp,
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-    )
-}
-
 /**
  * The torrent's own details, read-only.
  *
@@ -709,19 +591,6 @@ private fun InfoRow(label: String, value: String) {
     }
 }
 
-@Composable
-private fun StopRow(index: Int, label: String, current: Int, onChange: (Int) -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onChange(index) }
-    ) {
-        RadioButton(selected = current == index, onClick = { onChange(index) })
-        Text(label, fontSize = 12.sp)
-    }
-}
-
 /**
  * Turns the stop-sharing choice into a value the engine can act on.
  *
@@ -729,13 +598,14 @@ private fun StopRow(index: Int, label: String, current: Int, onChange: (Int) -> 
  * stop immediately and look like the torrent finished at once.
  */
 internal fun stopConditionFrom(which: Int, value: String): TorrentStopCondition = when (which) {
-    1 -> value.trim().toDoubleOrNull()?.takeIf { it > 0.0 }
+    // No value to read: the download finishing is the whole of the condition.
+    1 -> TorrentStopCondition.WhenComplete
+    2 -> value.trim().toDoubleOrNull()?.takeIf { it > 0.0 }
         ?.let { TorrentStopCondition.AtRatio(it) } ?: TorrentStopCondition.Never
-    2 -> value.trim().toDoubleOrNull()?.takeIf { it > 0.0 }?.let {
+    3 -> value.trim().toDoubleOrNull()?.takeIf { it > 0.0 }?.let {
         TorrentStopCondition.AtUploadedAmount((it * 1024L * 1024L).toLong())
     } ?: TorrentStopCondition.Never
-    3 -> value.trim().toIntOrNull()?.takeIf { it > 0 }
+    4 -> value.trim().toIntOrNull()?.takeIf { it > 0 }
         ?.let { TorrentStopCondition.AfterSeedingFor(it) } ?: TorrentStopCondition.Never
     else -> TorrentStopCondition.Never
 }
-

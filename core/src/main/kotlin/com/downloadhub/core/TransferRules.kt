@@ -53,9 +53,18 @@ data class ShareLimits(
     /** Stop once this much has been uploaded per byte downloaded. */
     val ratioLimit: Double = 0.0,
     /** Stop this many minutes after the download finished. */
-    val seedTimeLimitMinutes: Int = 0
+    val seedTimeLimitMinutes: Int = 0,
+    /**
+     * Stop sharing the instant the download completes, rather than after a period.
+     *
+     * Its own flag because it is not a limit and cannot be written as one. A ratio of
+     * zero and a seed time of zero both read as "stop now", and "now" for a torrent that
+     * has not started downloading is a torrent that arrives dead.
+     */
+    val stopWhenComplete: Boolean = false
 ) {
-    val enabled: Boolean get() = ratioLimit > 0.0 || seedTimeLimitMinutes > 0
+    val enabled: Boolean
+        get() = ratioLimit > 0.0 || seedTimeLimitMinutes > 0 || stopWhenComplete
 }
 
 object TransferRules {
@@ -143,6 +152,11 @@ object TransferRules {
         // Still downloading: seeding time cannot have elapsed.
         if (seedingSinceEpochMillis <= 0L) return false
 
+        // "Stop at 100%" is about the download, not about the sharing, and it is
+        // satisfied the moment the torrent is whole. Checked before the others because it
+        // is the only one of the three that can be true while the other two are at zero.
+        if (limits.stopWhenComplete) return true
+
         if (limits.ratioLimit > 0.0 && downloadedBytes > 0L) {
             if (shareRatio(downloadedBytes, uploadedBytes) >= limits.ratioLimit) return true
         }
@@ -163,6 +177,9 @@ object TransferRules {
     ): String? {
         if (!shouldStopSeeding(downloadedBytes, uploadedBytes, seedingSinceEpochMillis, nowEpochMillis, limits)) {
             return null
+        }
+        if (limits.stopWhenComplete) {
+            return "Stopped seeding as soon as the download finished (asked for stop at 100%)."
         }
         if (limits.ratioLimit > 0.0 && downloadedBytes > 0L &&
             shareRatio(downloadedBytes, uploadedBytes) >= limits.ratioLimit

@@ -158,3 +158,44 @@ fun visibleContentNodes(
         }
     }
 }
+
+/**
+ * One file, as a flat row.
+ *
+ * The shape the filter matches against and the tree is folded from, kept because a
+ * torrent's file list arrives as paths and nothing else.
+ */
+data class ContentRow(val path: String, val index: Int, val size: Long) {
+    /** The last segment: a path column wide enough for a name and no context. */
+    val name: String get() = path.substringAfterLast('/')
+
+    /**
+     * What the list actually shows, shortened from the *front*.
+     *
+     * A release torrent names every one of its files the same sixty characters and tells
+     * them apart only in the last few - "[Judas] Chainsaw Man (Season 1) [1080p][HEVC x265
+     * 10bit] - 01.mkv" against the same for 02. Truncated the usual way, at the end, all
+     * of them read "[Judas] Chainsaw Man (Season..." and the list cannot tell its own rows
+     * apart. Keeping the tail shows the part that differs, which is the part being looked
+     * for.
+     */
+    val displayName: String
+        get() {
+            val whole = name
+            return if (whole.length <= NAME_BUDGET) {
+                whole
+            } else {
+                "..." + whole.takeLast(NAME_BUDGET - 3)
+            }
+        }
+
+    companion object {
+        /**
+         * How many characters of a name the list shows.
+         *
+         * A count rather than a measurement because the column is sized in `dp` and the
+         * characters are not a fixed width.
+         */
+        const val NAME_BUDGET = 44
+    }
+}

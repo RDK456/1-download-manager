@@ -60,6 +60,20 @@ sealed class TorrentStopCondition {
     /** Keep seeding. */
     object Never : TorrentStopCondition()
 
+    /**
+     * Stop sharing the moment the download finishes.
+     *
+     * Distinct from a share limit, and not a special case of one: a ratio of zero and a
+     * seed time of zero both read as "stop immediately", including before the download
+     * has finished at all, and either would be a torrent that arrives already dead. This
+     * is the only condition that waits for completion and is about the download rather
+     * than the sharing.
+     *
+     * Worth having for the obvious case: a large release fetched from one seeder, where
+     * the last few per cent is the only part worth returning.
+     */
+    object WhenComplete : TorrentStopCondition()
+
     /** Stop once the share ratio reaches this. */
     data class AtRatio(val ratio: Double) : TorrentStopCondition()
 
@@ -80,6 +94,10 @@ sealed class TorrentStopCondition {
     /** The share limits this maps to, for the engine. */
     fun toShareLimits(downloadedBytes: Long): ShareLimits = when (this) {
         Never -> ShareLimits()
+        // Carried as its own flag, not as a limit of zero. A ratio of zero would stop
+        // sharing before the download had started, which is a torrent that arrives
+        // dead rather than one that stops when it is finished.
+        WhenComplete -> ShareLimits(stopWhenComplete = true)
         is AtRatio -> ShareLimits(ratioLimit = ratio)
         // An uploaded-amount limit is a ratio expressed in bytes, because that is the
         // only way the existing comparison can act on it.
