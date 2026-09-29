@@ -117,12 +117,19 @@ class DownloadLibraryTest {
     }
 
     @Test
-    fun torrentsAreExcludedUnlessAskedFor() {
+    fun aTorrentIsInTheDefaultListAndTheTorrentsTabNarrowsToIt() {
         val mixed = sample + item(
             "7", "ubuntu.torrent", DownloadStatus.COMPLETED,
             DownloadCategory.ARCHIVE, source = DownloadSource.TORRENT
         )
-        assertEquals(6, DownloadLibrary.visible(mixed, LibraryQuery()).size)
+        // The default query used to exclude it: six of seven downloads on screen, with
+        // nothing anywhere saying the seventh was being held back.
+        assertEquals(7, DownloadLibrary.visible(mixed, LibraryQuery()).size)
+        assertTrue(
+            "a torrent is a download and belongs in the main list",
+            DownloadLibrary.visible(mixed, LibraryQuery()).any { it.isTorrent }
+        )
+        // The Torrents tab narrows to it, rather than being the only place it can be seen.
         val torrents = DownloadLibrary.visible(mixed, LibraryQuery(torrentsOnly = true))
         assertEquals(1, torrents.size)
         assertEquals("ubuntu.torrent", torrents.first().fileName)

@@ -161,27 +161,71 @@ class SidebarTest {
             )
         }
         assertEquals(
-            "on the main tab the two torrents are hidden, so nothing may count them",
-            9,
+            "the main list holds every download, torrents included",
+            11,
             railCount(RailEntry.Status(LibraryGroup.ALL), scoped)
         )
     }
 
     /**
-     * Torrents is counted over the whole list, unlike everything else.
+     * A torrent appears in All Downloads, and also under Torrents.
      *
-     * Every other row narrows what the table is already showing, so it counts from that.
-     * Torrents is the opposite: it switches the table to a different set. Counting it
-     * from the current tab would make it read zero exactly when it is the one row worth
-     * pressing.
+     * The Torrents tab used to be a partition rather than a filter: `torrentsOnly !=
+     * item.isTorrent` hid a torrent from the main list entirely. So a queue of five
+     * downloads showed four, with nothing anywhere saying the fifth was being held back -
+     * and the count beside All Downloads was wrong by exactly the number of torrents.
      */
     @Test
-    fun torrentsIsCountedAcrossTheWholeListNotJustTheCurrentTab() {
+    fun aTorrentIsInAllDownloadsAndNotOnlyUnderTorrents() {
+        val torrent = mixed.first { it.isTorrent }
+
+        val all = DownloadLibrary.visible(mixed, LibraryQuery(group = LibraryGroup.ALL))
+        assertTrue(
+            "All Downloads must include torrents: ${all.map { it.fileName }}",
+            torrent.id in all.map { it.id }
+        )
+        assertEquals("nothing may be held back from the main list", mixed.size, all.size)
+
+        // And the Torrents tab narrows to just them, rather than being the only place
+        // they can be seen at all.
+        val onlyTorrents = DownloadLibrary.visible(
+            mixed,
+            LibraryQuery(torrentsOnly = true)
+        )
+        assertEquals(2, onlyTorrents.size)
+        assertTrue(onlyTorrents.all { it.isTorrent })
+    }
+
+    @Test
+    fun theMainListIsNotNarrowedByTheTorrentsTab() {
+        assertEquals(
+            "the main tab is everything",
+            mixed,
+            DownloadLibrary.scopedFor(mixed, torrentsOnly = false)
+        )
+        assertEquals(
+            "and the Torrents tab is a filter over the same list",
+            mixed.filter { it.isTorrent },
+            DownloadLibrary.scopedFor(mixed, torrentsOnly = true)
+        )
+    }
+
+    /**
+     * The Torrents count is the same on both tabs now.
+     *
+     * It used to be zero on the main tab, because the main tab hid them - which made the
+     * one row worth pressing read as empty exactly when it was the row you wanted.
+     */
+    @Test
+    fun torrentsAreCountedTheSameOnEitherTab() {
         assertEquals(2, railCount(RailEntry.Torrents, mixed))
         assertEquals(
-            "from the main tab, which is hiding both of them",
-            0,
+            2,
             railCount(RailEntry.Torrents, DownloadLibrary.scopedFor(mixed, torrentsOnly = false))
+        )
+        assertEquals(
+            2,
+            railCount(RailEntry.Torrents, DownloadLibrary.scopedFor(mixed, torrentsOnly = true))
         )
     }
 

@@ -161,7 +161,9 @@ data class LibraryQuery(
     val sort: LibrarySort = LibrarySort.RECENT
 ) {
     fun matches(item: DownloadItem): Boolean {
-        if (torrentsOnly != item.isTorrent) return false
+        // Only narrows when it is on. `torrentsOnly != item.isTorrent` would exclude
+        // torrents from the main list, which is a queue silently missing downloads.
+        if (torrentsOnly && !item.isTorrent) return false
         if (!category.matches(item)) return false
         if (!group.matches(item)) return false
         if (search.isNotBlank()) {
@@ -180,15 +182,20 @@ data class LibraryQuery(
 object DownloadLibrary {
 
         /**
-     * The items the current torrent tab is looking at.
+     * The items the current tab is looking at.
      *
-     * The tab is a filter, not a second list: a torrent is hidden entirely while the
-     * main tab is showing, and a non-torrent is hidden while the Torrents tab is. The
-     * sidebar counts have to come from the same set, or they describe rows that cannot
-     * be seen - "Programs 2" above an empty list, which is exactly what was happening.
+     * A torrent is a download like any other, so it belongs in All Downloads. It used to
+     * be hidden from the main list entirely and shown only under Torrents, which made
+     * the main list quietly wrong: a queue of five downloads showing four, with nothing
+     * to say one was being held back.
+     *
+     * So the main tab is everything and the Torrents tab is a filter over it. The counts
+     * still come from the same set the table is built from, or they describe rows that
+     * cannot be seen - "Programs 2" above an empty list, which is what was happening
+     * before.
      */
     fun scopedFor(items: List<DownloadItem>, torrentsOnly: Boolean): List<DownloadItem> =
-        items.filter { it.isTorrent == torrentsOnly }
+        if (torrentsOnly) items.filter { it.isTorrent } else items
 
     /** How many torrents there are, which is what the Torrents entry exists to say. */
     fun torrentCount(items: List<DownloadItem>): Int = items.count { it.isTorrent }
