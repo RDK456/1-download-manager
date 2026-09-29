@@ -28,12 +28,12 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -147,7 +147,13 @@ fun AddDownloadDialog(
     var stopWhen by remember(pending.link) { mutableStateOf(0) }
     var stopValue by remember(pending.link) { mutableStateOf("2.0") }
 
-    var reported by remember(pending.link) { mutableStateOf(false) }
+    // Reported from an effect rather than from `onSizeChanged`.
+    //
+    // A size callback fires *during* layout, and calling back into Compose from there
+    // changes state mid-layout, which Compose refuses with "layout state is not idle
+    // before measure starts" - a hard crash, and one that only shows up by actually
+    // opening the dialog.
+    LaunchedEffect(pending.link) { onShown() }
 
     val rows = remember(pending.link, filter) { contentRowsFor(pending.metainfo, filter) }
     val chosenSize = TorrentSelection.selectedSize(pending.metainfo, selected.value)
@@ -168,19 +174,7 @@ fun AddDownloadDialog(
             }
         },
         text = {
-            Column(
-                Modifier
-                    // Reported once laid out, not on entering the composition: entering
-                    // happens before the dialog has a size, and raising a zero-sized
-                    // window does nothing.
-                    .onSizeChanged {
-                        if (!reported) {
-                            reported = true
-                            onShown()
-                        }
-                    }
-                    .heightIn(max = 620.dp)
-            ) {
+            Column(Modifier.heightIn(max = 620.dp)) {
                 // ---- where it goes ----------------------------------------------
                 Text("Save at", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))

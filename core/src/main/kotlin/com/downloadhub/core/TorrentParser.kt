@@ -332,7 +332,11 @@ object TorrentParser {
             else -> {
                 val colon = indexOf(':', start)
                 val length = String(bytes, start, colon - start).toIntOrNull() ?: 0
-                String(bytes, colon + 1, minOf(length, end - colon - 1))
+                // ISO-8859-1, not the platform charset: a bencode string is a run of
+                // bytes and each maps to exactly one character. The default charset on
+                // Windows is windows-1252, whose undefined slots turn bytes into
+                // U+FFFD - which silently shortens piece hashes and mangles a name.
+                String(bytes, colon + 1, minOf(length, end - colon - 1), Charsets.ISO_8859_1)
             }
         }
 
@@ -345,7 +349,7 @@ object TorrentParser {
                 // every key into ":inf" and make the whole torrent unreadable.
                 val key = readValue(position)
                 val keyColon = indexOf(':', key.start)
-                val text = String(bytes, keyColon + 1, key.end - keyColon - 1)
+                val text = String(bytes, keyColon + 1, key.end - keyColon - 1, Charsets.ISO_8859_1)
                 val value = readValue(key.end)
                 result[text] = value
                 position = value.end

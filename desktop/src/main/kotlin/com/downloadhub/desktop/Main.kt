@@ -66,9 +66,15 @@ fun main(args: Array<String>) {
         FileAssociations.register(launcher)
     }
 
-    // Anything handed over by a copy that started while this one was already running.
-    // Taken once here, and polled below for anything that arrives later.
-    controller.queueTargets(IntakeChannel.take() + targets)
+    // Anything handed over by a copy that started while this one was already running,
+    // plus whatever was on the command line.
+    //
+    // Held rather than queued here. A `.torrent` among them has to be shown in the
+    // pre-download dialog, and that dialog belongs to the window - which does not exist
+    // yet at this point. Queueing here meant the review callback was still null, so the
+    // torrent was dropped: no dialog, no row, and nothing in the list to show for it.
+    // It is drained once the window has composed and set the callback.
+    val startupTargets = IntakeChannel.take() + targets
 
     // Declared outside `application` so the tray callbacks can reach the window state.
     var showWindow: () -> Unit = {}
@@ -215,6 +221,10 @@ fun main(args: Array<String>) {
                             pendingAdd = PendingDownload.forLink(file.absolutePath)
                             showWindow()
                         }
+                        // Only now that the callback exists can a `.torrent` be shown in
+                        // the dialog, so the command line and any hand-over are acted on
+                        // after this rather than before.
+                        controller.queueTargets(startupTargets)
                     }
 
                     if (showSetup) {
