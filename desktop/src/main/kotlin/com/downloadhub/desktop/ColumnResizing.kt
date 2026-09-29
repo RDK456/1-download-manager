@@ -33,6 +33,41 @@ data class ColumnWidths(
     fun all(tableDp: Float): Map<DownloadColumn, Float> =
         DownloadColumn.entries.associateWith { widthOf(it, tableDp) }
 
+    /**
+     * The width the name column may actually take, once the rest of the row is allowed for.
+     *
+     * A share is a proportion, and a proportion of a narrow window is a small number of
+     * pixels. Dragging the name to nine tenths and then narrowing the window left the
+     * fixed columns with nowhere to go, so the row's own buttons - pause, options - were
+     * pushed off the right-hand end and could not be reached at all.
+     *
+     * The cap is applied here rather than where the share is stored, so a wide window can
+     * still have a name that takes nine tenths of it. Clamping on store would quietly
+     * reduce the user's choice the first time they made it and never give it back.
+     */
+    fun effectiveNameWidth(layout: TableLayout, tableDp: Float): Float {
+        val fixed = fixedSpan(layout, tableDp)
+        val available = (tableDp - fixed).coerceAtLeast(ColumnWidths.MIN_NAME_DP)
+        return available.coerceAtMost(tableDp * nameShare)
+    }
+
+    /**
+     * Everything in a row that is not the name column: the other columns, the row's own
+     * checkbox and padding, and the actions at the right.
+     *
+     * The actions are the part that matters. They are the only way to pause a row or open
+     * its settings, so a layout that does not leave room for them has removed the row's
+     * controls rather than merely making it untidy.
+     */
+    fun fixedSpan(layout: TableLayout, tableDp: Float): Float {
+        // `fold` rather than `sumOf`: there is no Float overload, and the generic one is
+        // ambiguous with the numeric ones here.
+        val otherColumns = DownloadColumn.entries
+            .filter { it != DownloadColumn.NAME && ColumnDividers.isShown(it, layout) }
+            .fold(0f) { total, column -> total + widthOf(column, tableDp) }
+        return otherColumns + ROW_CHROME_DP + (if (layout.showRowActions) ROW_ACTION_DP else 0f)
+    }
+
     companion object {
         const val DEFAULT_NAME_SHARE = 0.5f
 
@@ -104,10 +139,30 @@ object ColumnDividers {
         )
         order.forEach { column ->
             if (!isShown(column, layout)) return@forEach
-            x += widths.widthOf(column, tableDp)
+            // The *resolved* width, the same one the cells are drawn at. Using the raw
+            // share here would put the drag handles somewhere other than the edges of
+            // the columns they are meant to move.
+            x += resolvedWidthOf(layout, widths, tableDp, column)
             result[column] = x
         }
         return result
+    }
+
+    /**
+     * One column's width as actually laid out, with the name capped so the row fits.
+     *
+     * Every caller goes through this. A header that measures one way and a row another is
+     * how the captions ended up sitting over the wrong columns.
+     */
+    fun resolvedWidthOf(
+        layout: TableLayout,
+        widths: ColumnWidths,
+        tableDp: Float,
+        column: DownloadColumn
+    ): Float = if (column == DownloadColumn.NAME) {
+        widths.effectiveNameWidth(layout, tableDp)
+    } else {
+        widths.widthOf(column, tableDp)
     }
 
     /** Is this column on screen at all, given what the layout has dropped? */
@@ -160,7 +215,7 @@ object ColumnDividers {
         tableDp: Float,
         layout: TableLayout
     ): ColumnWidths {
-        val current = widths.widthOf(column, tableDp)
+        val current = resolvedWidthOf(layout, widths, tableDp, column)
         val startOffset = offsets(layout, widths, tableDp)[column] ?: current
         val proposed = current + (toX - startOffset)
 

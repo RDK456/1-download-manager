@@ -194,6 +194,20 @@ const val CAPTION_FLOOR_DP = 68f
 /** An icon-only button: room for the 30 dp target and nothing more. */
 const val COMPACT_BUTTON_DP = 38f
 
+/**
+ * The toolbar caption's line height, in sp.
+ *
+ * Deliberately larger than the 10 sp of text it sets. The caption was clipped along its
+ * bottom edge on every button at once, all by the same few pixels, which is the signature
+ * of a line box measured from font metrics that fall short of the glyphs rather than of a
+ * button that is too small - giving the caption a fixed box made it worse, not better.
+ *
+ * So the line box is made taller than the text instead. This is the only value here that
+ * is about the caption; the button's own height is measured from its contents, because a
+ * button with a height constraint just moves the clip somewhere else.
+ */
+const val TOOLBAR_CAPTION_LINE_HEIGHT_SP = 16f
+
 const val TOOLBAR_BUTTON_COUNT = 9
 const val TOOLBAR_GAP_DP = 4f
 const val TOOLBAR_PADDING_DP = 20f

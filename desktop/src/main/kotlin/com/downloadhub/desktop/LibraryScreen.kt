@@ -697,12 +697,26 @@ private fun ToolbarButton(
         highlighted -> Color(0xFF0B1A14)
         else -> Color(0xFFB4C0C2)
     }
+    /**
+     * No height on the button, and none on the caption.
+     *
+     * The caption was clipped along its bottom edge on every button at once, all by the
+     * same few pixels. Giving the caption a fixed 15 dp box made it *worse*, not better,
+     * which is the clue: the text was not short of room in the layout, it was short of
+     * room in its own line box. Compose sizes a line from the font's metrics, and at
+     * 10 sp with the default font the descenders and the leading sit below where it
+     * measured to - so the glyphs were drawn past the bottom of the line and sliced.
+     *
+     * An explicit `lineHeight` makes the box tall enough for the glyphs, which is the
+     * only thing that was actually wrong. Constraining the box instead - by height, on
+     * either the text or the button - just moves the clip.
+     */
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .width(if (compact) COMPACT_BUTTON_DP.dp else buttonWidth.dp)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 4.dp)
+            .padding(vertical = 5.dp)
     ) {
         Box(
             modifier = Modifier
@@ -717,10 +731,16 @@ private fun ToolbarButton(
         }
         if (!compact) {
             Text(
-                label,
-                fontSize = 10.sp,
+                text = label,
+                // Generous relative to the 10 sp of text: the gap is what the line box
+                // would have been short by, and it is why the caption is not sliced.
+                style = androidx.compose.ui.text.TextStyle(
+                    fontSize = 10.sp,
+                    lineHeight = TOOLBAR_CAPTION_LINE_HEIGHT_SP.sp
+                ),
                 color = tint,
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
             )
@@ -756,7 +776,7 @@ private fun ColumnHeader(
         // disagreeing by a few pixels, so the headers sat over the wrong columns.
         DownloadColumn.entries.forEach { column ->
             if (!ColumnDividers.isShown(column, layout)) return@forEach
-            val width = widths.widthOf(column, tableDp)
+            val width = ColumnDividers.resolvedWidthOf(layout, widths, tableDp, column)
             Box(Modifier.width(width.dp)) {
                 ColumnHeaderCell(
                     label = column.label,
@@ -935,7 +955,14 @@ private fun DownloadRow(
         // The dragged width, not a weight. A weight cannot be dragged - the user has no
         // way to say "I want the name to be a third of this" and get it - and a weighted
         // name also cannot be lined up with a header cell that *is* a fixed width.
-        Column(Modifier.width(widths.widthOf(DownloadColumn.NAME, tableDp).dp).padding(end = 6.dp)) {
+        Column(
+            Modifier
+                // Capped, so the row's own buttons always have room. Dragged to nine
+                // tenths and then narrowed, they used to be pushed off the
+                // right-hand end of the window with no way to reach them.
+                .width(ColumnDividers.resolvedWidthOf(layout, widths, tableDp, DownloadColumn.NAME).dp)
+                .padding(end = 6.dp)
+        ) {
             Text(
                 item.fileName,
                 fontSize = 12.sp,
@@ -965,14 +992,14 @@ private fun DownloadRow(
         if (layout.size > 0.dp) {
             Cell(
                 DisplayFormat.bytes(item.totalBytes),
-                widths.widthOf(DownloadColumn.SIZE, tableDp).dp,
+                ColumnDividers.resolvedWidthOf(layout, widths, tableDp, DownloadColumn.SIZE).dp,
                 palette
             )
         }
         if (layout.showStatus) {
             Cell(
                 DisplayFormat.status(item),
-                widths.widthOf(DownloadColumn.STATUS, tableDp).dp,
+                ColumnDividers.resolvedWidthOf(layout, widths, tableDp, DownloadColumn.STATUS).dp,
                 palette,
                 colour = statusColour(item.status, palette)
             )
@@ -980,21 +1007,21 @@ private fun DownloadRow(
         if (layout.showSpeed) {
             Cell(
                 DisplayFormat.speed(item.speedBytesPerSecond),
-                widths.widthOf(DownloadColumn.SPEED, tableDp).dp,
+                ColumnDividers.resolvedWidthOf(layout, widths, tableDp, DownloadColumn.SPEED).dp,
                 palette
             )
         }
         if (layout.showTimeLeft) {
             Cell(
                 DisplayFormat.timeLeft(DownloadLibrary.estimateSecondsLeft(item)),
-                widths.widthOf(DownloadColumn.TIME_LEFT, tableDp).dp,
+                ColumnDividers.resolvedWidthOf(layout, widths, tableDp, DownloadColumn.TIME_LEFT).dp,
                 palette
             )
         }
         if (layout.showDateAdded) {
             Cell(
                 DisplayFormat.timeAgo(item.createdAt),
-                widths.widthOf(DownloadColumn.DATE_ADDED, tableDp).dp,
+                ColumnDividers.resolvedWidthOf(layout, widths, tableDp, DownloadColumn.DATE_ADDED).dp,
                 palette
             )
         }

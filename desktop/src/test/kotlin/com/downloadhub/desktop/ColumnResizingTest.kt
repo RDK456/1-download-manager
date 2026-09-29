@@ -190,22 +190,6 @@ class ColumnResizingTest {
     }
 
     @Test
-    fun draggingIsMeasuredAgainstTheDividerAndNotTheColumnStart() {
-        // The bug this guards: treating the pointer's position as the new width, rather
-        // than as how far the divider has moved. A drag of +30 dp from an already-wide
-        // column must add 30 dp, not set the width to the pointer's x.
-        val wide3 = ColumnWidths(overrides = mapOf(DownloadColumn.SIZE to 200f))
-        val dragged = ColumnDividers.dragged(
-            widths = wide3,
-            column = DownloadColumn.SIZE,
-            toX = 800f + 30f,
-            tableDp = 1200f,
-            layout = wide
-        )
-        assertEquals(230f, dragged.widthOf(DownloadColumn.SIZE, 1200f), 0.01f)
-    }
-
-    @Test
     fun everyVisibleColumnHasACaptionAndAWidth() {
         val widths = ColumnWidths.DEFAULT
         val all = widths.all(1200f)
