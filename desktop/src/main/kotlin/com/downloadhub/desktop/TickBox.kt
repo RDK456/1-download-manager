@@ -51,21 +51,21 @@ fun TickBox(
             Modifier
                 .size(size)
                 .background(
-                    if (checked && enabled) Color(0xFF34D399) else Color(0xFF0E1416),
+                    if (checked && enabled) AppTheme.Palette.accent else AppTheme.Palette.surface,
                     shape
                 )
                 .border(
                     width = 1.dp,
                     color = when {
-                        !enabled -> Color(0xFF1E2629)
-                        checked -> Color(0xFF34D399)
-                        else -> Color(0xFF3A4749)
+                        !enabled -> AppTheme.Palette.raised
+                        checked -> AppTheme.Palette.accent
+                        else -> AppTheme.Palette.outlineVariant
                     },
                     shape = shape
                 ),
             contentAlignment = Alignment.Center
         ) {
-            if (checked && enabled) TickMark(Color(0xFF07110D))
+            if (checked && enabled) TickMark(AppTheme.Palette.onAccent)
         }
     }
 }
@@ -110,14 +110,14 @@ fun TickRow(
                 color = if (enabled) {
                     androidx.compose.material3.MaterialTheme.colorScheme.onSurface
                 } else {
-                    androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                    DIALOG_SECONDARY
                 }
             )
             if (detail != null) {
                 Text(
                     detail,
                     fontSize = 10.sp,
-                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                    color = DIALOG_SECONDARY
                 )
             }
         }

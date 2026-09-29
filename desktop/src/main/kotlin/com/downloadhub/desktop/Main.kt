@@ -9,9 +9,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.Alignment
 import java.io.File
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPosition
+import com.downloadhub.core.ThemeMode
+import com.downloadhub.core.ThemePalette
 import kotlin.system.exitProcess
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -30,6 +34,15 @@ import androidx.compose.ui.window.rememberWindowState
  * 360 dp its lower entries are simply cut off.
  */
 val MINIMUM_WINDOW_SIZE = java.awt.Dimension(520, 360)
+
+/**
+ * The pre-download window's floor.
+ *
+ * 620x430, not the main window's 520x360. Two columns plus the file list's five headings
+ * need more than one does, and past this width the options column and the file list start
+ * taking from each other rather than from the spare room.
+ */
+val PRE_DOWNLOAD_MINIMUM_SIZE = java.awt.Dimension(620, 430)
 
 /**
  * Windows entry point.
@@ -91,13 +104,16 @@ fun main(args: Array<String>) {
 
     try {
         application {
-            // Material 3 otherwise falls back to its light scheme, so every dialog
-            // renders as a white box on top of this dark window - and near-white body
-            // text on that white surface would be unreadable. The whole UI is drawn
-            // in flat dark colours, so the scheme is declared to match rather than
-            // left to default.
-            MaterialTheme(colorScheme = AppTheme.darkScheme) {
+            // Material 3 otherwise falls back to its light scheme, so every dialog renders as a
+            // white box on top of this dark window - and near-white body text on that white
+            // surface would be unreadable. The scheme is derived from the same palette the
+            // flat-drawn rows read, so a dialog and the window it sits on are the same
+            // theme, and so changing the theme moves both.
             val state by controller.ui.collectAsState()
+            ProvideDesktopTheme(
+                palette = ThemePalette.fromValue(state.settings.themePalette),
+                mode = ThemeMode.fromValue(state.settings.themeMode)
+            ) {
             val windowState = rememberWindowState(size = DpSize(1180.dp, 720.dp))
             var visible by remember { mutableStateOf(true) }
             // The link-entry step, which only exists to collect a link before the
@@ -110,6 +126,18 @@ fun main(args: Array<String>) {
             // The download waiting to be looked at before it is queued, whatever kind
             // of download it is.
             var pendingAdd by remember { mutableStateOf<PendingDownload?>(null) }
+            /**
+             * The pre-download window's size and position.
+             *
+             * Remembered rather than recreated per open, so a window the user has made
+             * big for a forty-file release is still big for the next one. Recreating it
+             * each time is what makes a resized dialog snap back to its default every
+             * time it opens.
+             */
+            val preDownloadState = rememberWindowState(
+                position = WindowPosition(Alignment.Center),
+                size = DpSize(980.dp, 640.dp)
+            )
             // How a link typed into the box was going to be added, so a paste and a drop
             // reach the dialog the same way.
             var typedLink by remember { mutableStateOf("") }
@@ -285,29 +313,67 @@ fun main(args: Array<String>) {
                         )
                     }
 
+                    /**
+                     * The pre-download window is a real window, not a dialog.
+                     *
+                     * It has to be. The things asked for - click outside and it stays,
+                     * drag it somewhere, drag it bigger, maximise it - are all things a
+                     * hand-drawn panel over the main window cannot do, because it is part
+                     * of that window and shares its bounds. An OS window gets them from
+                     * the window manager, which already knows how.
+                     *
+                     * It is a `Window` rather than a `Dialog`, so it brings its own compose
+                     * scene and needs none from the main one. Opening the magnet's file
+                     * list raises the *main* window, not this one, so it comes forward to
+                     * be seen.
+                     */
                     pendingAdd?.let { pending ->
-                        AddDownloadDialog(
-                            pending = pending,
-                            defaultDirectory = state.settings.downloadDir,
-                            deleteCacheWhenRemoved = state.settings.deleteCacheWhenRemoved,
-                            // The window is the parent, so the chooser is owned by the app
-                            // and appears in front of it rather than behind.
-                            onPickDirectory = { pickFolder(File(state.settings.downloadDir)) },
-                            // A magnet carries no file list. It has one - in the swarm's
-                            // metadata, a few kilobytes away - and until it was asked for,
-                            // a magnet was the one kind of download where you could not
-                            // see what you were about to get, take three files out of
-                            // forty, or say no. The dialog says what it is waiting for.
-                            onLoadMetadata = controller.actions.readMagnetMetadata,
-                            onShown = { showWindow() },
-                            onConfirm = { request ->
-                                // Back out of the dialog first: leaving it composed while
-                                // the row appears underneath makes the app look stuck.
-                                pendingAdd = null
-                                controller.actions.addPrepared(request)
+                        Window(
+                            onCloseRequest = { pendingAdd = null },
+                            title = if (pending.isTorrent) {
+                                "Add torrent - 1 download manager"
+                            } else {
+                                "Add download - 1 download manager"
                             },
-                            onDismiss = { pendingAdd = null }
-                        )
+                            state = preDownloadState,
+                            resizable = true
+                        ) {
+                            // The same icon as the main window, set explicitly rather than
+                            // left to the exe's resources. Set here and not inherited, this
+                            // window carried Compose's own default - a running Java cup -
+                            // while the app it belongs to had an icon everywhere else.
+                            LaunchedEffect(window) {
+                                window.iconImages = AppArtwork.windowIcons()
+                                // A floor, and a deliberate one. The window is free to be
+                                // resized to any size at all, and below about this the two
+                                // columns have nothing to give each other: the options lose
+                                // the file list and the file list loses its headings. A
+                                // resizable window needs a point where "smaller" stops
+                                // meaning "worse".
+                                window.minimumSize = PRE_DOWNLOAD_MINIMUM_SIZE
+                            }
+                            AddDownloadDialog(
+                                pending = pending,
+                                defaultDirectory = state.settings.downloadDir,
+                                deleteCacheWhenRemoved = state.settings.deleteCacheWhenRemoved,
+                                // The window is the parent, so the chooser is owned by the
+                                // app and appears in front of it rather than behind.
+                                onPickDirectory = { pickFolder(File(state.settings.downloadDir)) },
+                                // A magnet carries no file list. It has one - in the
+                                // swarm's metadata, a few kilobytes away - and until it was
+                                // asked for, a magnet was the one kind of download where
+                                // you could not see what you were about to get, take three
+                                // files out of forty, or say no.
+                                onLoadMetadata = controller.actions.readMagnetMetadata,
+                                onConfirm = { request ->
+                                    // Close first: leaving the window open while the row
+                                    // appears underneath reads as two things at once.
+                                    pendingAdd = null
+                                    controller.actions.addPrepared(request)
+                                },
+                                onDismiss = { pendingAdd = null }
+                            )
+                        }
                     }
 
                     problem?.let { reason ->

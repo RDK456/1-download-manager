@@ -154,7 +154,23 @@ data class DesktopSettings(
      * would mean every current user silently skipped it and the flag would stay true, so
      * a genuinely new install could never be told apart.
      */
-    val setupComplete: Boolean = false
+    val setupComplete: Boolean = false,
+    /**
+     * Which of the nine themes, stored by name.
+     *
+     * Defaults to MINT, which is the green the desktop app has always been: a user
+     * upgrading sees no change, and the choice is the same one the Android app offers so
+     * that picking Ocean on a phone gives Ocean on the desktop.
+     */
+    val themePalette: String = "MINT",
+    /**
+     * Light, dark, or AMOLED.
+     *
+     * Dark by default, again to match what was there. AMOLED is a mode rather than a
+     * palette: it makes the background and surfaces true black and leaves the accent
+     * alone, so it works with all nine colours rather than replacing the choice.
+     */
+    val themeMode: String = "DARK"
 ) {
 
     /**

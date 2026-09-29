@@ -52,9 +52,18 @@ data class DesktopUiState(
     /** What was fetched, and what it is. Null until something has downloaded. */
     val downloadedUpdate: DownloadedUpdate? = null,
     val extensionReady: Boolean = false,
-    val extensionPath: String = "",
-    val palette: ColorScheme = DarkPalette
-)
+    val extensionPath: String = ""
+) {
+    /**
+     * The Material scheme, read from the theme in force.
+     *
+     * A body property rather than a constructor field, because a field would capture the
+     * scheme when the state was built and hold it: the window would change theme and this
+     * would not, so a dialog opened afterwards would be a different colour from the window
+     * it was opened over.
+     */
+    val palette: ColorScheme get() = AppTheme.schemeFor(AppTheme.Palette.colors)
+}
 
 /** Callbacks the UI is allowed to invoke. */
 data class DesktopActions(
@@ -147,26 +156,7 @@ data class DesktopActions(
     val quit: () -> Unit
 )
 
-/** The dark two-tone palette used on the desktop, matching the Android dark theme. */
-val DarkPalette: ColorScheme = darkColorScheme(
-    primary = Color(0xFF34D399),
-    onPrimary = Color(0xFF06210F),
-    primaryContainer = Color(0xFF1F3D30),
-    onPrimaryContainer = Color(0xFFE6FFF2),
-    secondary = Color(0xFF6EE7B7),
-    onSecondary = Color(0xFF06180C),
-    secondaryContainer = Color(0xFF1D4C3B),
-    onSecondaryContainer = Color(0xFFEFFFF7),
-    background = Color(0xFF12171A),
-    onBackground = Color(0xFFE6EDEE),
-    surface = Color(0xFF1A2124),
-    onSurface = Color(0xFFE6EDEE),
-    surfaceVariant = Color(0xFF262F33),
-    onSurfaceVariant = Color(0xFFB4C0C2),
-    outline = Color(0xFF46545A),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005)
-)
+
 
 /**
  * Owns application state for the desktop app.
@@ -661,8 +651,7 @@ class DesktopController(
             downloadedUpdate = _downloadedUpdate.value,
             updateReleaseName = _availableRelease.value?.displayName,
             extensionReady = extension.available,
-            extensionPath = extension.pathForDisplay(),
-            palette = DarkPalette
+            extensionPath = extension.pathForDisplay()
         )
     }
 
@@ -1184,3 +1173,4 @@ private fun exitProcess(code: Int) {
 internal val APP_VERSION: String = runCatching {
     DesktopController::class.java.`package`?.implementationVersion
 }.getOrNull()?.takeIf { it.isNotBlank() } ?: "unknown"
+

@@ -219,7 +219,7 @@ private fun ContextRow(label: String, destructive: Boolean = false, muted: Boole
         label,
         fontSize = 12.sp,
         color = when {
-            destructive -> androidx.compose.ui.graphics.Color(0xFFEF5350)
+            destructive -> AppTheme.Palette.error
             muted -> MaterialTheme.colorScheme.onSurfaceVariant
             else -> MaterialTheme.colorScheme.onSurface
         },

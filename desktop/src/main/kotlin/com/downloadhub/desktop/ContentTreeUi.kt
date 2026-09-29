@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -97,12 +100,18 @@ fun ContentTreeList(
                 TreeButton("Select All", onSelectAll)
                 TreeButton("Select None", onSelectNone)
             }
+            // Weighted with a cap rather than a fixed width. It was 170 dp unconditionally,
+            // so in a narrow window the three things on this line asked for more than the
+            // pane had and the filter box - the widest of them - was pushed off the right
+            // edge. It now takes what is going and gives it back as the window grows.
             OutlinedTextField(
                 value = filter,
                 onValueChange = onFilter,
                 label = { Text("Filter files", fontSize = 11.sp) },
                 singleLine = true,
-                modifier = Modifier.width(170.dp)
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .widthIn(min = 90.dp, max = 170.dp)
             )
             if (readOnly) {
                 Text(
@@ -113,17 +122,28 @@ fun ContentTreeList(
             }
         }
         Spacer(Modifier.height(6.dp))
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))
-                .padding(horizontal = 6.dp, vertical = 4.dp)
-        ) {
-            TreeHeader("Name", Modifier.weight(1f))
-            TreeHeader("Size", Modifier.width(78.dp))
-            TreeHeader("Prog", Modifier.width(50.dp))
-            TreeHeader("Pri", Modifier.width(48.dp))
-            TreeHeader("Remaining", Modifier.width(84.dp))
+        // Measured, so the headings can be fitted to the same widths the rows use. A header
+        // that is a fixed set of widths and rows that are not is a header over the wrong
+        // columns.
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val cols = TreeLayout.columnsFor(maxWidth.value)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    // The main window's own header colour, not the theme's surfaceVariant.
+                    // That is a lighter grey than the surface it sits on, and against this
+                    // window's near-black it read as a lit panel rather than a heading -
+                    // the brightest thing in the dialog, which is the opposite of what a
+                    // heading should be.
+                    .background(TREE_BAND, RoundedCornerShape(3.dp))
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
+            ) {
+                TreeHeader("Name", Modifier.weight(1f))
+                TreeHeader("Size", Modifier.width(cols.size.dp).padding(end = 5.dp))
+                if (cols.showsProgress) TreeHeader("Prog", Modifier.width(cols.progress.dp).padding(end = 5.dp))
+                if (cols.showsPriority) TreeHeader("Pri", Modifier.width(cols.priority.dp).padding(end = 5.dp))
+                if (cols.showsRemaining) TreeHeader("Remain", Modifier.width(cols.remaining.dp).padding(end = 5.dp))
+            }
         }
         Box(
             Modifier
@@ -155,10 +175,17 @@ fun ContentTreeList(
                             is ContentNode.Folder -> "d" + node.fullPath
                         }
                     }) { (node, depth) ->
+                        // Measured per row rather than once per list, so a row laid out
+                        // during a drag is already at the width the row after it will be.
+                        // Measuring once and caching it is what produced the state where
+                        // the heading had four columns and the rows had two.
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            val cols = TreeLayout.columnsFor(maxWidth.value)
                         when (node) {
                             is ContentNode.Folder -> TreeFolderRow(
                                 node = node,
                                 depth = depth,
+                                cols = cols,
                                 selected = selected,
                                 open = node.fullPath in expanded,
                                 readOnly = readOnly,
@@ -187,6 +214,7 @@ fun ContentTreeList(
                             is ContentNode.File -> TreeFileRow(
                                 node = node,
                                 depth = depth,
+                                cols = cols,
                                 selected = node.index in selected,
                                 readOnly = readOnly,
                                 onToggle = {
@@ -200,6 +228,7 @@ fun ContentTreeList(
                                 }
                             )
                         }
+                        }
                     }
                 }
             }
@@ -212,6 +241,7 @@ fun ContentTreeList(
 private fun TreeFolderRow(
     node: ContentNode.Folder,
     depth: Int,
+    cols: TreeColumns,
     selected: Set<Int>,
     open: Boolean,
     readOnly: Boolean,
@@ -274,13 +304,21 @@ private fun TreeFolderRow(
             fontSize = 11.sp,
             color = TREE_SECONDARY,
             maxLines = 1,
-            modifier = Modifier.width(78.dp)
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.width(cols.size.dp).padding(end = 5.dp)
         )
         // Nothing has been fetched, and a folder has no priority of its own: a dash
-        // rather than a number that would be a lie about a folder of twelve files.
-        Text("-", fontSize = 11.sp, color = TREE_SECONDARY, modifier = Modifier.width(50.dp))
-        Text("-", fontSize = 11.sp, color = TREE_SECONDARY, modifier = Modifier.width(48.dp))
-        Text("-", fontSize = 11.sp, color = TREE_SECONDARY, modifier = Modifier.width(84.dp))
+        // rather than a number that would be a lie about a folder of twelve files. A
+        // column that is not drawn at all draws nothing, rather than a dash in a gap.
+        if (cols.showsProgress) {
+            Text("-", fontSize = 11.sp, color = TREE_SECONDARY, modifier = Modifier.width(cols.progress.dp).padding(end = 5.dp))
+        }
+        if (cols.showsPriority) {
+            Text("-", fontSize = 11.sp, color = TREE_SECONDARY, modifier = Modifier.width(cols.priority.dp).padding(end = 5.dp))
+        }
+        if (cols.showsRemaining) {
+            Text("-", fontSize = 11.sp, color = TREE_SECONDARY, modifier = Modifier.width(cols.remaining.dp).padding(end = 5.dp))
+        }
     }
 }
 
@@ -289,6 +327,7 @@ private fun TreeFolderRow(
 private fun TreeFileRow(
     node: ContentNode.File,
     depth: Int,
+    cols: TreeColumns,
     selected: Boolean,
     readOnly: Boolean,
     onToggle: () -> Unit
@@ -317,26 +356,39 @@ private fun TreeFileRow(
             if (node.size > 0) DisplayFormat.bytes(node.size) else "-",
             fontSize = 11.sp,
             color = TREE_SECONDARY,
-            modifier = Modifier.width(78.dp)
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.width(cols.size.dp).padding(end = 5.dp)
         )
-        Text(
-            "0%",
-            fontSize = 11.sp,
-            color = TREE_SECONDARY,
-            modifier = Modifier.width(50.dp)
-        )
-        Text(
-            "Normal",
-            fontSize = 11.sp,
-            color = TREE_SECONDARY,
-            modifier = Modifier.width(48.dp)
-        )
-        Text(
-            if (node.size > 0) DisplayFormat.bytes(node.size) else "-",
-            fontSize = 11.sp,
-            color = TREE_SECONDARY,
-            modifier = Modifier.width(84.dp)
-        )
+        if (cols.showsProgress) {
+            Text(
+                "0%",
+                fontSize = 11.sp,
+                color = TREE_SECONDARY,
+                maxLines = 1,
+                modifier = Modifier.width(cols.progress.dp).padding(end = 5.dp)
+            )
+        }
+        if (cols.showsPriority) {
+            Text(
+                "Normal",
+                fontSize = 11.sp,
+                color = TREE_SECONDARY,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.width(cols.priority.dp).padding(end = 5.dp)
+            )
+        }
+        if (cols.showsRemaining) {
+            Text(
+                if (node.size > 0) DisplayFormat.bytes(node.size) else "-",
+                fontSize = 11.sp,
+                color = TREE_SECONDARY,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.width(cols.remaining.dp).padding(end = 5.dp)
+            )
+        }
     }
 }
 
@@ -356,9 +408,14 @@ private fun TreeButton(label: String, onClick: () -> Unit) {
     Text(
         label,
         fontSize = 11.sp,
+        color = TREE_PRIMARY,
         modifier = Modifier
             .clickable(onClick = onClick)
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))
+            // A hair above the surface, not the theme's surfaceVariant. On this dark
+            // scheme surfaceVariant is lighter than the pane behind it, so two small
+            // buttons sat on a lit slab - which read as "these are the important
+            // controls", when they are the ones you need least.
+            .background(TREE_BAND, RoundedCornerShape(3.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp)
     )
 }
@@ -400,6 +457,14 @@ fun ContentFileList(
  * a filename against - the list looked disabled. These are the same values the main
  * window's rows use, so a file list and a download list are legibly the same surface.
  */
-private val TREE_PRIMARY = androidx.compose.ui.graphics.Color(0xFFD6DEDF)
-private val TREE_SECONDARY = androidx.compose.ui.graphics.Color(0xFF8A9799)
-private val TREE_HEADER = androidx.compose.ui.graphics.Color(0xFFB4C0C2)
+private val TREE_PRIMARY: Color get() = AppTheme.Palette.onSurface
+private val TREE_SECONDARY: Color get() = AppTheme.Palette.muted
+private val TREE_HEADER: Color get() = AppTheme.Palette.muted
+
+/**
+ * The band behind the headings and the two small buttons.
+ *
+ * The main window's own header colour, and slightly under its surface, so a header is the
+ * quietest thing on the pane rather than the brightest.
+ */
+private val TREE_BAND: Color get() = AppTheme.Palette.band

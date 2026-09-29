@@ -117,23 +117,74 @@ class DialogScopingTest {
     }
 
     /**
-     * The dialogs render on Material's light surface unless the app declares a dark
-     * scheme, which put a white box - and near-white body text on white - in the
-     * middle of a dark window.
+     * The dialogs render on Material's light surface unless the app supplies a scheme of
+     * its own, which put a white box - and near-white body text on white - in the middle
+     * of a dark window.
+     *
+     * This used to look for the literal `MaterialTheme(` in Main.kt. The window now goes
+     * through `ProvideDesktopTheme`, which builds the scheme and wraps `MaterialTheme`
+     * itself, so the spelling changed while the fault it guards against did not. The
+     * assertion is on what is provided rather than on how it is spelled - a test that
+     * fails when correct code is renamed is a test that gets deleted instead of fixed,
+     * and then the fault comes back.
+     *
+     * Both a dark and a light scheme are required: the app now offers a light theme, and
+     * a light theme with a hard-wired dark scheme puts the same white box back.
      */
     @Test
-    fun theAppDeclaresADarkSchemeSoDialogsAreNotWhite() {
+    fun theAppSuppliesAMaterialSchemeSoDialogsAreNotWhite() {
         val text = source.readText()
         assertTrue(
-            "no MaterialTheme in Main.kt, so every dialog falls back to Material's " +
-                "light surface",
-            text.contains("MaterialTheme(")
+            "no theme provided in Main.kt, so every dialog falls back to Material's " +
+                "default light surface",
+            text.contains("ProvideDesktopTheme(")
         )
         val theme = File("src/main/kotlin/com/downloadhub/desktop/AppTheme.kt")
         assertTrue("AppTheme.kt is missing", theme.isFile)
+        val themeText = theme.readText()
         assertTrue(
-            "the scheme must be dark, not the default light one",
-            theme.readText().contains("darkColorScheme(")
+            "the dark mode must build a dark scheme, not the default light one",
+            themeText.contains("darkColorScheme(")
+        )
+        assertTrue(
+            "the light mode must build a light scheme; with only a dark one, choosing " +
+                "Light renders every dialog as Material's default",
+            themeText.contains("lightColorScheme(")
+        )
+    }
+
+    /**
+     * The flat-drawn parts of the window have to read the theme too.
+     *
+     * A scheme reaches Material components and nothing else. Rows, headers, the sidebar
+     * and the status strip are flat fills, and they were literals - which is why the
+     * desktop app looked identical however the Material theme was set, and why a theme
+     * picker would have changed nothing a user could see.
+     */
+    @Test
+    fun theFlatDrawnFillsReadTheThemeRatherThanLiterals() {
+        val dir = File("src/main/kotlin/com/downloadhub/desktop")
+        val allowed = setOf(
+            // The app's own scheme, and the dialog properties beside it.
+            "AppTheme.kt",
+            // Browser brand marks: Firefox is orange on every website and so is here.
+            "BrowserIntegrationMenu.kt",
+            // A scrim is black at every theme - that is what a scrim is.
+            "UpdateDialog.kt",
+            "MenuBar.kt"
+        )
+        val offenders = dir.listFiles { f: java.io.File -> f.extension == "kt" }
+            .orEmpty()
+            .filter { it.name !in allowed }
+            .mapNotNull { file ->
+                Regex("Color\\(0x[0-9A-Fa-f]{8}\\)")
+                    .find(file.readText())
+                    ?.let { "${file.name}: ${it.value}" }
+            }
+        assertTrue(
+            "these files paint with fixed colours, so they ignore the chosen theme:\n" +
+                offenders.joinToString("\n"),
+            offenders.isEmpty()
         )
     }
 }

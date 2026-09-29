@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,7 +40,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -218,7 +221,6 @@ fun AddDownloadDialog(
     onConfirm: (TorrentAddRequest) -> Unit,
     onDismiss: () -> Unit,
     /**
-     * Called once the dialog has a real size, so the window can raise itself.
      *
      * Without it a dialog opened by a `.torrent` double-clicked in Explorer can open
      * behind Explorer: the file comes to the front, and the window that owns the dialog is
@@ -255,21 +257,21 @@ fun AddDownloadDialog(
      *
      * Held here rather than pushed back into the caller because the file list, the folder
      * name, the totals and the information block all read it, and a magnet's arrives
-     * after the dialog is already on screen.
+     * after this is already on screen.
      */
     var metainfo by remember(pending.link) { mutableStateOf(pending.metainfo) }
     var loading by remember(pending.link) { mutableStateOf(false) }
-    var loadNote by remember(pending.link) { mutableStateOf<String?>(null) }
 
+    /**
+     * Only a magnet needs its file list fetched: it does not carry one, and it has one in
+     * the swarm's metadata, a few kilobytes away.
+     */
     val wantsMetadata = pending.metainfo.files.isEmpty() && pending.isTorrent
     LaunchedEffect(pending.link) {
         if (wantsMetadata) {
             loading = true
             onLoadMetadata(pending.link) { fetched ->
                 if (fetched != null && fetched.files.isNotEmpty()) {
-                    // The selection is seeded from the fetched list. Left as it was it
-                    // would be empty against a list of forty files, and the Add button
-                    // would be disabled on a dialog that is plainly able to add it.
                     selected.value = TorrentSelection.allSelected(fetched)
                     folder = TorrentSelection.contentFolder(fetched, folder)
                 }
@@ -279,23 +281,14 @@ fun AddDownloadDialog(
         }
     }
 
-    // Reported from an effect rather than from `onSizeChanged`.
-    //
-    // A size callback fires *during* layout, and calling back into Compose from there
-    // changes state mid-layout, which Compose refuses with "layout state is not idle
-    // before measure starts" - a hard crash, and one that only shows up by actually
-    // opening the dialog.
-    LaunchedEffect(pending.link) { onShown() }
-
     /**
-     * Keyed on the metadata as well as the filter.
+     * The file list, keyed on the metadata as well as the filter.
      *
-     * It was not, and that is the bug behind "shows as no files": a magnet's list
-     * arrives after the dialog has composed, so `remember` handed back the empty tree it
-     * built on the first pass and never rebuilt it. The count line reads
-     * `metainfo.files.size` live, so it said "0 of 12 files" over an empty list - the two
-     * numbers came from different places, which is why it looked like the list knew it
-     * had twelve files and could not show them.
+     * It was not, and that is the bug behind "shows as no files": a magnet's list arrives
+     * after this has composed, so `remember` handed back the empty tree it built on the
+     * first pass and never rebuilt it. The count line reads `metainfo.files.size` live,
+     * so it said "0 of 12 files" over an empty list - the two numbers came from different
+     * places.
      */
     val rows = remember(metainfo, filter) { contentRowsFor(metainfo, filter) }
     val chosenSize = TorrentSelection.selectedSize(metainfo, selected.value)
@@ -305,8 +298,7 @@ fun AddDownloadDialog(
      *
      * Done here rather than only inside the loader's callback, so it holds however the
      * metadata arrived - fetched for a magnet, read from a file - and so a list that was
-     * empty and then was not cannot leave the Add button disabled with every box
-     * unticked.
+     * empty and then was not cannot leave OK disabled with every box unticked.
      */
     LaunchedEffect(metainfo.files.size) {
         if (metainfo.files.isNotEmpty() && selected.value.isEmpty()) {
@@ -317,17 +309,217 @@ fun AddDownloadDialog(
         }
     }
 
-    val size = remember(pending.link) { DialogSize() }
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        // ---- the heading, with the buttons on the same line --------------------
+        Row(
+            Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (pending.isTorrent) "Add torrent" else "Add download",
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = DIALOG_PRIMARY
+                )
+                Text(
+                    // The fetched name when there is one: a magnet's `dn=` is a guess
+                    // its author typed, and the swarm's metadata is the real one.
+                    if (metainfo.name.isNotBlank()) metainfo.name else pending.name,
+                    fontSize = 12.sp,
+                    color = DIALOG_SECONDARY,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
 
-    DlmDialog(
-        title = if (pending.isTorrent) "Add torrent" else "Add download",
-        // The fetched name, when there is one: a magnet's `dn=` is a guess its author
-        // typed, and the swarm's metadata is the real one.
-        subtitle = if (metainfo.name.isNotBlank()) metainfo.name else pending.name,
-        width = size.widthDp.dp,
-        onDismiss = onDismiss,
-        actions = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+        // ---- two columns -------------------------------------------------------
+        BoxWithConstraints(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+        ) {
+            // A share of the window's width, clamped at both ends, rather than a
+            // constant. Fixed at 340 dp it was right in exactly one window size: drag the
+            // window narrower and the two columns between them ran out of room, so the
+            // file list's four numbers stopped fitting and its rows were drawn past the
+            // right-hand edge and gone. The list takes whatever is left, and fits its
+            // columns to it.
+            val optionsWidth = (maxWidth.value * OPTIONS_COLUMN_SHARE)
+                .coerceIn(OPTIONS_COLUMN_MIN_DP, OPTIONS_COLUMN_MAX_DP)
+            Row(Modifier.fillMaxSize()) {
+            // ---- left: what to do with it -----------------------------------
+            Column(
+                Modifier
+                    .width(optionsWidth.dp)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+                    .padding(end = 14.dp)
+            ) {
+                SectionLabel("Save at")
+                // The Browse button beside the field, not under it: a folder you can
+                // only type into is a folder nobody chooses.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = directory,
+                        onValueChange = { directory = it },
+                        label = { Text("Folder", fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    OutlinedButton(
+                        onClick = { onPickDirectory()?.let { directory = it.absolutePath } },
+                        modifier = Modifier.height(36.dp)
+                    ) { Text("Browse", fontSize = 12.sp) }
+                }
+                if (metainfo.files.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = folder,
+                        onValueChange = { folder = it },
+                        label = { Text("Content layout - folder name", fontSize = 12.sp) },
+                        singleLine = true,
+                        enabled = !metainfo.isSingleFile,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (pending.isTorrent) {
+                    SectionLabel("Torrent options")
+                    TickRow("Start torrent", startNow) { startNow = it }
+                    TickRow("Download in sequential order", sequential) { sequential = it }
+                    TickRow(
+                        "Download first and last pieces first",
+                        firstLastPieces
+                    ) { firstLastPieces = it }
+
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Stop condition",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = DIALOG_PRIMARY,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        StopDropdown(selected = stopWhen, onChange = { stopWhen = it })
+                    }
+                    if (stopWhen > 1) {
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = stopValue,
+                            onValueChange = { stopValue = it },
+                            label = {
+                                Text(
+                                    when (stopWhen) {
+                                        2 -> "Ratio (for example 2.0)"
+                                        3 -> "Amount in MB (for example 500)"
+                                        else -> "Minutes (for example 30)"
+                                    },
+                                    fontSize = 12.sp
+                                )
+                            },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    TorrentInformationBlock(metainfo)
+                }
+            }
+
+            // ---- right: what is in it ---------------------------------------
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                if (metainfo.files.isNotEmpty()) {
+                    ContentTreeList(
+                        modifier = Modifier.weight(1f),
+                        rows = rows,
+                        filter = filter,
+                        onFilter = { filter = it },
+                        // The selection is this window's own state, because OK builds the
+                        // request out of it. A list that kept a private copy would draw
+                        // ticks OK then ignored.
+                        selected = selected.value,
+                        onSelectionChange = { chosen -> selected.value = chosen },
+                        onSelectAll = {
+                            selected.value = TorrentSelection.allSelected(metainfo)
+                        },
+                        onSelectNone = { selected.value = emptySet() }
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "${selected.value.size} of ${metainfo.files.size} files, " +
+                            DisplayFormat.bytes(chosenSize) +
+                            if (chosenSize < metainfo.totalSize) {
+                                " of ${DisplayFormat.bytes(metainfo.totalSize)}"
+                            } else {
+                                ""
+                            },
+                        fontSize = 11.sp,
+                        color = DIALOG_SECONDARY
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        // A magnet's list is being fetched, and a plain link's genuinely
+                        // cannot have one. Those are different things and must not share
+                        // a sentence: one is a wait, the other is a fact. The old wording
+                        // claimed the second about the first, so a magnet offered no
+                        // choices at all on the grounds that it had none - when it had
+                        // simply not been asked.
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            if (loading) {
+                                Text(
+                                    "Reading the file list from the swarm...",
+                                    fontSize = 12.sp,
+                                    color = DIALOG_SECONDARY
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                LinearProgressIndicator(
+                                    modifier = Modifier.width(220.dp),
+                                    color = AppTheme.Palette.accent,
+                                    trackColor = AppTheme.Palette.raised
+                                )
+                            } else {
+                                Text(
+                                    when {
+                                        pending.link.startsWith("magnet:", ignoreCase = true) ->
+                                            "No peers answered in time, so the file list is " +
+                                                "not available yet. You can still set where " +
+                                                "it goes, whether it starts straight away, " +
+                                                "and when it should stop sharing."
+
+                                        else ->
+                                            "The size of this is not known until the " +
+                                                "headers arrive, so there is nothing to " +
+                                                "choose here."
+                                    },
+                                    fontSize = 12.sp,
+                                    color = DIALOG_SECONDARY,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 12.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            }
+        }
+
+        // ---- the buttons -------------------------------------------------------
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 14.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = DIALOG_SECONDARY) }
             Spacer(Modifier.width(8.dp))
             Button(
                 onClick = {
@@ -352,187 +544,9 @@ fun AddDownloadDialog(
                     (metainfo.files.isEmpty() || selected.value.isNotEmpty())
             ) { Text(if (pending.isTorrent) "OK" else "Add") }
         }
-    ) {
-        ResizableDialogFrame(size) { _ ->
-        Row(Modifier.fillMaxSize()) {
-                // ---- left: what to do with it -----------------------------------
-                Column(
-                    Modifier
-                        .width(DialogSize.OPTIONS_COLUMN_DP.dp)
-                        .fillMaxHeight()
-                        .verticalScroll(rememberScrollState())
-                        .padding(end = 12.dp)
-                ) {
-                    Text("Save at", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    Spacer(Modifier.height(4.dp))
-                    // The Browse button, in a row with the field rather than under it.
-                    // The rewrite dropped it, and a folder you can only type into is a
-                    // folder nobody chooses.
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = directory,
-                            onValueChange = { directory = it },
-                            label = { Text("Folder", fontSize = 12.sp) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        OutlinedButton(
-                            onClick = { onPickDirectory()?.let { directory = it.absolutePath } },
-                            modifier = Modifier.height(36.dp)
-                        ) { Text("Browse", fontSize = 12.sp) }
-                    }
-                    if (metainfo.files.isNotEmpty()) {
-                        Spacer(Modifier.height(6.dp))
-                        OutlinedTextField(
-                            value = folder,
-                            onValueChange = { folder = it },
-                            label = { Text("Content layout - folder name", fontSize = 12.sp) },
-                            singleLine = true,
-                            enabled = !metainfo.isSingleFile,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    if (pending.isTorrent) {
-                        SectionLabel("Torrent options")
-                        TickRow("Start torrent", startNow) { startNow = it }
-                        TickRow("Download in sequential order", sequential) { sequential = it }
-                        TickRow(
-                            "Download first and last pieces first",
-                            firstLastPieces
-                        ) { firstLastPieces = it }
-
-                        Spacer(Modifier.height(6.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "Stop condition",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(end = 8.dp)
-                            )
-                            // A dropdown rather than four stacked radios: with the file
-                            // list beside it, four rows of it was a third of the column
-                            // for a choice that is only ever one of four.
-                            StopDropdown(
-                                selected = stopWhen,
-                                onChange = { stopWhen = it }
-                            )
-                        }
-                        if (stopWhen > 1) {
-                            Spacer(Modifier.height(4.dp))
-                            OutlinedTextField(
-                                value = stopValue,
-                                onValueChange = { stopValue = it },
-                                label = {
-                                    Text(
-                                        when (stopWhen) {
-                                            1 -> "Ratio (for example 2.0)"
-                                            2 -> "Amount in MB (for example 500)"
-                                            else -> "Minutes (for example 30)"
-                                        },
-                                        fontSize = 12.sp
-                                    )
-                                },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    if (pending.isTorrent) {
-                        TorrentInformationBlock(metainfo)
-                    }
-                }
-
-                // ---- right: what is in it ---------------------------------------
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                ) {
-                    if (metainfo.files.isNotEmpty()) {
-                        ContentTreeList(
-                            modifier = Modifier.weight(1f),
-                            rows = rows,
-                            filter = filter,
-                            onFilter = { filter = it },
-                            // The selection is the dialog's own state, because the OK
-                            // button builds the request out of it. A list that kept a
-                            // private copy would draw ticks OK then ignored.
-                            selected = selected.value,
-                            onSelectionChange = { chosen -> selected.value = chosen },
-                            onSelectAll = {
-                                selected.value = TorrentSelection.allSelected(metainfo)
-                            },
-                            onSelectNone = { selected.value = emptySet() }
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "${selected.value.size} of ${metainfo.files.size} files, " +
-                                DisplayFormat.bytes(chosenSize) +
-                                if (chosenSize < metainfo.totalSize) {
-                                    " of ${DisplayFormat.bytes(metainfo.totalSize)}"
-                                } else {
-                                    ""
-                                },
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            // A magnet's list is being fetched, and a plain link's
-                            // genuinely cannot have one. Those are different things and
-                            // must not share a sentence: one is a wait, the other is a
-                            // fact. The old wording claimed the second about the first,
-                            // so a magnet offered no choices at all on the grounds that
-                            // it had none - when it had simply not been asked.
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                if (loading) {
-                                    Text(
-                                        "Reading the file list from the swarm...",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Spacer(Modifier.height(10.dp))
-                                    LinearProgressIndicator(
-                                        modifier = Modifier.width(220.dp),
-                                        color = androidx.compose.ui.graphics.Color(0xFF34D399),
-                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                                    )
-                                } else {
-                                    Text(
-                                        when {
-                                            pending.link.startsWith("magnet:", ignoreCase = true) ->
-                                                "No peers answered in time, so the file list " +
-                                                    "is not available yet. You can still set " +
-                                                    "where it goes, whether it starts straight " +
-                                                    "away, and when it should stop sharing."
-
-                                            else ->
-                                                "The size of this is not known until the " +
-                                                    "headers arrive, so there is nothing to " +
-                                                    "choose here."
-                                        },
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(horizontal = 12.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
+
 
 fun contentRowsFor(meta: TorrentMetainfo, filter: String): List<ContentRow> {
     val needle = filter.trim().lowercase(Locale.US)
@@ -540,14 +554,6 @@ fun contentRowsFor(meta: TorrentMetainfo, filter: String): List<ContentRow> {
     return if (needle.isEmpty()) all else all.filter { it.path.lowercase(Locale.US).contains(needle) }
 }
 
-/**
- * The torrent's file list.
- *
- * A thin wrapper over [ContentTreeList], kept because two callers want the same list with
- * different amounts of editing: the pre-download dialog edits it, and the detail pane's
- * Content tab reports it. The tree itself lives in one place, so the two cannot drift into
- * showing the same torrent differently.
- */
 /**
  * The torrent's own details, read-only.
  *
@@ -558,7 +564,7 @@ fun contentRowsFor(meta: TorrentMetainfo, filter: String): List<ContentRow> {
 @Composable
 fun TorrentInformationBlock(metainfo: TorrentMetainfo) {
     Column(Modifier.fillMaxWidth()) {
-        Text("Torrent information", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = androidx.compose.ui.graphics.Color(0xFFD6DEDF))
+        Text("Torrent information", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = DIALOG_PRIMARY)
         Spacer(Modifier.height(4.dp))
         InfoRow("Name", metainfo.name)
         InfoRow(
@@ -594,9 +600,9 @@ private fun InfoRow(label: String, value: String) {
             // A fixed label column so the values line up. An info hash is 64 characters
             // wide and a label that resized with it would push the values around.
             modifier = Modifier.width(96.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = DIALOG_SECONDARY
         )
-        Text(value, fontSize = 11.sp, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 11.sp, color = DIALOG_PRIMARY, modifier = Modifier.weight(1f))
     }
 }
 
@@ -618,4 +624,18 @@ internal fun stopConditionFrom(which: Int, value: String): TorrentStopCondition 
         ?.let { TorrentStopCondition.AfterSeedingFor(it) } ?: TorrentStopCondition.Never
     else -> TorrentStopCondition.Never
 }
+
+
+/**
+ * The options column's width: a share of the window's, clamped at both ends.
+ *
+ * 36% is where the information block's 64-character info hash stops wrapping while the
+ * file list still has room for a name and three numbers. The window is resizable, so these
+ * are starting points rather than constraints - but a clamped share is what stops the two
+ * columns either crowding each other out or leaving the file list a strip.
+ */
+private const val OPTIONS_COLUMN_SHARE = 0.36f
+private const val OPTIONS_COLUMN_MIN_DP = 250f
+private const val OPTIONS_COLUMN_MAX_DP = 400f
+
 

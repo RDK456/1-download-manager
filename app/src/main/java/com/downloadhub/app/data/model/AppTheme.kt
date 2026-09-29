@@ -4,142 +4,140 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import com.downloadhub.core.ThemeMode as CoreThemeMode
+import com.downloadhub.core.ThemePalette as CoreThemePalette
+import com.downloadhub.core.resolveThemeColors
 
 /**
- * Two-tone colour schemes: a tinted surface with one strong accent, so the app
- * reads as "white + green", "white + blue" and so on. Every theme ships a light
- * and a dark variant; AMOLED is pure black.
+ * The nine themes, and what each one resolves to.
+ *
+ * The names, accents and light-surface tints used to be declared here, and the desktop app
+ * had a single hardcoded green beside them. Nothing tied the two together, so "the same
+ * themes on both" was something to keep remembering rather than something the build could
+ * check - and the way it usually fails is quietly: one app gains a theme, or renames one,
+ * and nobody notices until a user has chosen differently on two devices.
+ *
+ * So the palette now lives in `:core`, as plain numbers with no Compose type, and this
+ * enum is a view over it. The names and accents are the core's by construction; what is
+ * left here is the one thing core cannot do, which is turning resolved colours into a
+ * Compose scheme.
+ *
+ * The Android app is the one that had the working themes, so the direction of the change
+ * matters: this app now follows `:core`, and the desktop app has been brought up to it.
  */
 enum class AppTheme(
-    val label: String,
-    val accent: Color,
-    val accentDark: Color,
-    val surfaceHint: Color
+    /** The core palette behind this theme. The source of every value below. */
+    val palette: CoreThemePalette
 ) {
-    MINT("Mint", Color(0xFF10B981), Color(0xFF34D399), Color(0xFFE7F8F1)),
-    FOREST("Forest", Color(0xFF15803D), Color(0xFF4ADE80), Color(0xFFE8F5EC)),
-    OCEAN("Ocean", Color(0xFF0284C7), Color(0xFF38BDF8), Color(0xFFE6F4FB)),
-    ROYAL("Royal", Color(0xFF4F46E5), Color(0xFF818CF8), Color(0xFFECEBFE)),
-    VIOLET("Violet", Color(0xFF7C3AED), Color(0xFFA78BFA), Color(0xFFF1EAFE)),
-    SUNSET("Sunset", Color(0xFFEA580C), Color(0xFFFB923C), Color(0xFFFDEEE2)),
-    ROSE("Rose", Color(0xFFE11D48), Color(0xFFFB7185), Color(0xFFFDE9EE)),
-    SLATE("Slate", Color(0xFF475569), Color(0xFF94A3B8), Color(0xFFEEF1F5)),
-    AMOLED("AMOLED", Color(0xFF22C55E), Color(0xFF4ADE80), Color(0xFF000000));
+    MINT(CoreThemePalette.MINT),
+    FOREST(CoreThemePalette.FOREST),
+    OCEAN(CoreThemePalette.OCEAN),
+    ROYAL(CoreThemePalette.ROYAL),
+    VIOLET(CoreThemePalette.VIOLET),
+    SUNSET(CoreThemePalette.SUNSET),
+    ROSE(CoreThemePalette.ROSE),
+    SLATE(CoreThemePalette.SLATE),
+    AMOLED(CoreThemePalette.AMOLED);
+
+    val label: String get() = palette.label
+
+    /** The stored name, which is the core's. Stable: renaming one would reset a choice. */
+    val value: String get() = palette.value
+
+    val accent: Color get() = Color(palette.accent)
+    val accentDark: Color get() = Color(palette.accentDark)
+    val surfaceHint: Color get() = Color(palette.lightSurfaceHint)
 
     /**
- * Resolves the palette for a mode.
- *
- * [pureBlack] is the AMOLED *mode*. It only replaces the background and surface
- * with true black; the accent still comes from this theme. The AMOLED mode
- * therefore composes with any colour theme, and selecting it no longer discards
- * the colour the user chose.
- */
-fun colorScheme(dark: Boolean, pureBlack: Boolean = false): ColorScheme = when {
-    pureBlack || this == AMOLED -> blackScheme()
-    dark -> darkScheme()
-    else -> lightScheme()
-}
+     * Resolves the palette for a mode.
+     *
+     * [pureBlack] is the AMOLED *mode*. It only replaces the background and surface with
+     * true black; the accent still comes from this theme. The AMOLED mode therefore
+     * composes with any colour theme, and selecting it no longer discards the colour the
+     * user chose - which is what conflating a mode with a palette caused before.
+     */
+    fun colorScheme(dark: Boolean, pureBlack: Boolean = false): ColorScheme =
+        schemeOf(resolveThemeColors(palette, modeOf(dark, pureBlack)))
 
-    private fun lightScheme(): ColorScheme = lightColorScheme(
-        primary = accent,
-        onPrimary = Color.White,
-        primaryContainer = surfaceHint,
-        onPrimaryContainer = shade(accent, 0.75f),
-        secondary = shade(accent, 0.72f),
-        onSecondary = Color.White,
-        // A checked Switch paints its track with secondaryContainer and its
-        // thumb with onSecondaryContainer, so these two must differ in
-        // brightness or the toggle looks like an empty pill.
-        secondaryContainer = tint(accent, 0.25f),
-        onSecondaryContainer = Color.White,
-        tertiary = shade(accent, 0.55f),
-        onTertiary = Color.White,
-        background = Color(0xFFFBFCFC),
-        onBackground = Color(0xFF11181A),
-        surface = Color(0xFFFFFFFF),
-        onSurface = Color(0xFF11181A),
-        surfaceVariant = Color(0xFFEDF2F3),
-        onSurfaceVariant = Color(0xFF445457),
-        outline = Color(0xFFB7C3C5),
-        outlineVariant = Color(0xFFDCE3E4),
-        error = Color(0xFFBA1A1A),
-        onError = Color.White
-    )
-
-    private fun darkScheme(): ColorScheme = darkColorScheme(
-        primary = accentDark,
-        onPrimary = Color(0xFF06210F),
-        primaryContainer = shade(accentDark, 0.62f),
-        onPrimaryContainer = Color(0xFFE6FFF2),
-        secondary = shade(accentDark, 0.72f),
-        onSecondary = Color(0xFF06180C),
-        // Dark themes keep a visibly grey surface so that AMOLED (pure black)
-        // reads as a deliberate choice rather than a slightly darker shade.
-        secondaryContainer = shade(accentDark, 0.55f),
-        onSecondaryContainer = Color(0xFFEFFCF4),
-        tertiary = tint(accentDark, 0.6f),
-        onTertiary = Color(0xFF06210F),
-        background = Color(0xFF12171A),
-        onBackground = Color(0xFFE6EDEE),
-        surface = Color(0xFF1A2124),
-        onSurface = Color(0xFFE6EDEE),
-        surfaceVariant = Color(0xFF262F33),
-        onSurfaceVariant = Color(0xFFB4C0C2),
-        outline = Color(0xFF46545A),
-        outlineVariant = Color(0xFF2C3639),
-        error = Color(0xFFFFB4AB),
-        onError = Color(0xFF690005)
-    )
-
-    /**
- * True black, built from this theme's own accent so AMOLED works with every
- * colour theme rather than imposing one. Containers get a small lift off black,
- * otherwise switches, chips and cards disappear into the background.
- */
-private fun blackScheme(): ColorScheme = darkColorScheme(
-    primary = accentDark,
-    onPrimary = Color(0xFF06180C),
-    primaryContainer = shade(accentDark, 0.7f),
-    onPrimaryContainer = Color(0xFFEFFCF4),
-    secondary = shade(accentDark, 0.75f),
-    onSecondary = Color(0xFF06180C),
-    secondaryContainer = shade(accentDark, 0.55f),
-    onSecondaryContainer = Color(0xFFEFFCF4),
-    tertiary = tint(accentDark, 0.6f),
-    onTertiary = Color(0xFF06180C),
-    background = Color(0xFF000000),
-    onBackground = Color(0xFFEDF3F3),
-    surface = Color(0xFF000000),
-    onSurface = Color(0xFFEDF3F3),
-    surfaceVariant = Color(0xFF0D0F0F),
-    onSurfaceVariant = Color(0xFFA8B4B5),
-    outline = Color(0xFF3A3A3A),
-    outlineVariant = Color(0xFF1B1B1B),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005)
-)
+    private fun modeOf(dark: Boolean, pureBlack: Boolean): CoreThemeMode = when {
+        pureBlack || this == AMOLED -> CoreThemeMode.AMOLED
+        dark -> CoreThemeMode.DARK
+        else -> CoreThemeMode.LIGHT
+    }
 
     /** Perceived brightness of this theme's accent, used by tests and previews. */
-    fun accentLuminance(): Float = 0.299f * accent.red + 0.587f * accent.green + 0.114f * accent.blue
+    fun accentLuminance(): Float = palette.accentLuminance()
 
     companion object {
         fun fromValue(value: String?): AppTheme =
-            entries.firstOrNull { it.name == value } ?: MINT
+            entries.firstOrNull { it.value.equals(value, ignoreCase = true) } ?: MINT
     }
 }
 
-/** Multiplies the colour channels, used to build deeper container tones. */
-private fun shade(color: Color, factor: Float): Color = Color(
-    red = (color.red * factor).coerceIn(0f, 1f),
-    green = (color.green * factor).coerceIn(0f, 1f),
-    blue = (color.blue * factor).coerceIn(0f, 1f),
-    alpha = 1f
-)
+/**
+ * Builds a Compose scheme from resolved colours.
+ *
+ * The same builder on every platform and every mode, because the alternative is what the
+ * desktop app had: a second hand-written scheme beside the first, with its own tints
+ * chosen against one green, so the two drifted and the flat-drawn parts of the desktop
+ * window followed neither.
+ */
+private fun schemeOf(c: com.downloadhub.core.ThemeColors): ColorScheme {
+    val accent = Color(c.accent)
+    val onAccent = Color(c.onAccent)
+    val container = Color(c.accentContainer)
+    val onContainer = Color(c.onAccentContainer)
+    val onSurface = Color(c.onSurface)
+    val muted = Color(c.muted)
+    val raised = Color(c.raised)
+    val background = Color(c.background)
+    val surface = Color(c.surface)
+    val outline = Color(c.outline)
+    val outlineVariant = Color(c.outlineVariant)
+    val error = Color(c.error)
+    val onError = Color(c.onError)
 
-/** Blends the colour towards white, used for subtle tinted surfaces. */
-private fun tint(color: Color, factor: Float): Color = Color(
-    red = color.red + (1f - color.red) * factor,
-    green = color.green + (1f - color.green) * factor,
-    blue = color.blue + (1f - color.blue) * factor,
-    alpha = 1f
-)
+    return if (c.isDark) {
+        darkColorScheme(
+            primary = accent,
+            onPrimary = onAccent,
+            primaryContainer = container,
+            onPrimaryContainer = onContainer,
+            secondary = accent,
+            onSecondary = onAccent,
+            secondaryContainer = container,
+            onSecondaryContainer = onContainer,
+            background = background,
+            onBackground = onSurface,
+            surface = surface,
+            onSurface = onSurface,
+            surfaceVariant = raised,
+            onSurfaceVariant = muted,
+            outline = outline,
+            outlineVariant = outlineVariant,
+            error = error,
+            onError = onError
+        )
+    } else {
+        lightColorScheme(
+            primary = accent,
+            onPrimary = onAccent,
+            primaryContainer = container,
+            onPrimaryContainer = onContainer,
+            secondary = accent,
+            onSecondary = onAccent,
+            secondaryContainer = container,
+            onSecondaryContainer = onContainer,
+            background = background,
+            onBackground = onSurface,
+            surface = surface,
+            onSurface = onSurface,
+            surfaceVariant = raised,
+            onSurfaceVariant = muted,
+            outline = outline,
+            outlineVariant = outlineVariant,
+            error = error,
+            onError = onError
+        )
+    }
+}

@@ -464,7 +464,7 @@ private fun VerticalRule() {
         Modifier
             .width(1.dp)
             .fillMaxHeight()
-            .background(Color(0xFF2C3639))
+            .background(AppTheme.Palette.outlineVariant)
     )
 }
 
@@ -492,7 +492,7 @@ private fun CategoryRail(
         modifier = Modifier
             .width(width)
             .fillMaxHeight()
-            .background(Color(0xFF161C1F))
+            .background(AppTheme.Palette.band)
             .verticalScroll(rememberScrollState())
             .padding(vertical = 6.dp)
     ) {
@@ -554,7 +554,7 @@ private fun GroupHeader(label: String) {
         label,
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
-        color = Color(0xFF6E7B7D),
+        color = AppTheme.Palette.faint,
         modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 2.dp)
     )
 }
@@ -572,7 +572,7 @@ private fun RailRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (selected) Color(0xFF22302E) else Color.Transparent)
+            .background(if (selected) AppTheme.Palette.accentContainer else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(
                 start = if (compact) 7.dp else 14.dp,
@@ -589,7 +589,7 @@ private fun RailRow(
             androidx.compose.material3.Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (selected) Color(0xFF34D399) else Color(0xFF7E8C8E),
+                tint = if (selected) AppTheme.Palette.accent else AppTheme.Palette.faint,
                 modifier = Modifier
                     .size(15.dp)
                     .padding(end = 0.dp)
@@ -600,13 +600,13 @@ private fun RailRow(
             label,
             fontSize = 12.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) Color(0xFF34D399) else Color(0xFFD6DEDF),
+            color = if (selected) AppTheme.Palette.accent else AppTheme.Palette.onSurface,
             modifier = Modifier.weight(1f)
         )
         Text(
             "$count",
             fontSize = 11.sp,
-            color = if (selected) Color(0xFF34D399) else Color(0xFF6E7B7D)
+            color = if (selected) AppTheme.Palette.accent else AppTheme.Palette.faint
         )
     }
 }
@@ -637,7 +637,7 @@ private fun LibraryToolbar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF1A2124))
+            .background(AppTheme.Palette.surface)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -693,9 +693,9 @@ private fun ToolbarButton(
     buttonWidth: Float = CAPTION_BUTTON_DP
 ) {
     val tint = when {
-        !enabled -> Color(0xFF4A5759)
-        highlighted -> Color(0xFF0B1A14)
-        else -> Color(0xFFB4C0C2)
+        !enabled -> AppTheme.Palette.faint
+        highlighted -> AppTheme.Palette.accentContainer
+        else -> AppTheme.Palette.muted
     }
     /**
      * No height on the button, and none on the caption.
@@ -722,7 +722,7 @@ private fun ToolbarButton(
             modifier = Modifier
                 .size(30.dp)
                 .background(
-                    if (highlighted && enabled) Color(0xFF34D399) else Color.Transparent,
+                    if (highlighted && enabled) AppTheme.Palette.accent else Color.Transparent,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
                 ),
             contentAlignment = Alignment.Center
@@ -765,7 +765,7 @@ private fun ColumnHeader(
             // them the incoming maximum - the whole table. The header then swallowed the
             // list and every row and the status bar went off the bottom of the window.
             .height(HEADER_HEIGHT_DP.dp)
-            .background(Color(0xFF161C1F))
+            .background(AppTheme.Palette.band)
             .padding(start = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -845,7 +845,7 @@ private fun ResizeHandle(onDrag: (Float) -> Unit, modifier: Modifier = Modifier)
             Modifier
                 .width(1.dp)
                 .fillMaxHeight()
-                .background(Color(0xFF3A4749))
+                .background(AppTheme.Palette.outlineVariant)
         )
     }
 }
@@ -874,7 +874,7 @@ private fun ColumnHeaderCell(
             label,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
-            color = if (active) Color(0xFF34D399) else Color(0xFF8A9799)
+            color = if (active) AppTheme.Palette.accent else AppTheme.Palette.muted
         )
         if (active) {
             Icon(
@@ -882,7 +882,7 @@ private fun ColumnHeaderCell(
                 else DlmIcons.ArrowDownward,
                 null,
                 Modifier.size(11.dp),
-                tint = Color(0xFF34D399)
+                tint = AppTheme.Palette.accent
             )
         }
     }
@@ -916,7 +916,7 @@ private fun DownloadRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (checked) Color(0xFF1C2A28) else Color.Transparent)
+            .background(if (checked) AppTheme.Palette.accentContainer else Color.Transparent)
             .clickable(onClick = onToggle)
             // The secondary button, read off the raw event rather than taken through
             // `combinedClickable`'s long-press.
@@ -944,12 +944,12 @@ private fun DownloadRow(
                 .width(26.dp)
                 .height(16.dp)
                 .background(
-                    if (checked) Color(0xFF34D399) else Color(0xFF1A2124),
+                    if (checked) AppTheme.Palette.accent else AppTheme.Palette.surface,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
                 ),
             contentAlignment = Alignment.Center
         ) {
-            if (checked) Icon(Icons.Default.Check, null, Modifier.size(11.dp), tint = Color(0xFF0B1A14))
+            if (checked) Icon(Icons.Default.Check, null, Modifier.size(11.dp), tint = AppTheme.Palette.accentContainer)
         }
 
         // The dragged width, not a weight. A weight cannot be dragged - the user has no
@@ -975,8 +975,8 @@ private fun DownloadRow(
                 LinearProgressIndicator(
                     progress = { item.progressPercent / 100f },
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFF34D399),
-                    trackColor = Color(0xFF222C2F)
+                    color = AppTheme.Palette.accent,
+                    trackColor = AppTheme.Palette.raised
                 )
             } else {
                 Text(
@@ -1087,21 +1087,21 @@ private fun IconButton(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, description, Modifier.size(size), tint = Color(0xFF8A9799))
+        Icon(icon, description, Modifier.size(size), tint = AppTheme.Palette.muted)
     }
 }
 
 private fun statusColour(status: DownloadStatus, palette: androidx.compose.material3.ColorScheme): Color =
     when (status) {
-        DownloadStatus.COMPLETED -> Color(0xFF34D399)
-        DownloadStatus.RUNNING -> Color(0xFF34D399)
+        DownloadStatus.COMPLETED -> AppTheme.Palette.accent
+        DownloadStatus.RUNNING -> AppTheme.Palette.accent
         DownloadStatus.FAILED -> palette.error
         else -> palette.onSurfaceVariant
     }
 
 @Composable
 private fun StatusBar(state: DesktopUiState, all: List<DownloadItem>) {
-    Surface(color = Color(0xFF161C1F)) {
+    Surface(color = AppTheme.Palette.band) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1112,20 +1112,20 @@ private fun StatusBar(state: DesktopUiState, all: List<DownloadItem>) {
             Text(
                 "${DownloadLibrary.activeCount(all)} active",
                 fontSize = 11.sp,
-                color = Color(0xFF8A9799)
+                color = AppTheme.Palette.muted
             )
             Spacer(Modifier.width(16.dp))
             Text(
                 DisplayFormat.speed(DownloadLibrary.totalSpeed(all)),
                 fontSize = 11.sp,
-                color = Color(0xFF8A9799)
+                color = AppTheme.Palette.muted
             )
             if (state.message != null) {
                 Spacer(Modifier.width(16.dp))
                 Text(
                     state.message,
                     fontSize = 11.sp,
-                    color = Color(0xFF34D399)
+                    color = AppTheme.Palette.accent
                 )
             }
         }

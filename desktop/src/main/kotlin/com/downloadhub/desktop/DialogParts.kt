@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -113,3 +114,14 @@ internal fun InfoPair(label: String, value: String, valueColour: androidx.compos
         )
     }
 }
+
+/**
+ * The pre-download window's two greys.
+ *
+ * The theme's `onSurfaceVariant` is right for a caption and wrong for a label you are
+ * meant to read, and on this dark scheme the left-hand column was dim enough that the
+ * labels and the values looked the same weight. These are the values the rest of the app
+ * uses for text it wants read.
+ */
+internal val DIALOG_PRIMARY: Color get() = AppTheme.Palette.onSurface
+internal val DIALOG_SECONDARY: Color get() = AppTheme.Palette.muted

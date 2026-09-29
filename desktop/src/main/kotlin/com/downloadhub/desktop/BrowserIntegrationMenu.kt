@@ -66,7 +66,7 @@ fun BrowserIntegrationMenu(
 
     Surface(
         modifier = modifier.width(320.dp),
-        color = Color(0xFF1E2629),
+        color = AppTheme.Palette.raised,
         shape = RoundedCornerShape(8.dp)
     ) {
         Column(Modifier.padding(vertical = 6.dp)) {
@@ -74,7 +74,7 @@ fun BrowserIntegrationMenu(
                 "Download Browser Integration",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF34D399),
+                color = AppTheme.Palette.accent,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
             )
             Box(
@@ -82,7 +82,7 @@ fun BrowserIntegrationMenu(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 3.dp)
                     .height(1.dp)
-                    .background(Color(0xFF2C3639))
+                    .background(AppTheme.Palette.outlineVariant)
             )
 
             BrowserTarget.entries.forEach { browser ->
@@ -98,10 +98,10 @@ fun BrowserIntegrationMenu(
                     Text(
                         browser.label,
                         fontSize = 12.sp,
-                        color = Color(0xFFD6DEDF)
+                        color = AppTheme.Palette.onSurface
                     )
                     Spacer(Modifier.weight(1f))
-                    Text("›", fontSize = 13.sp, color = Color(0xFF6E7B7D))
+                    Text("›", fontSize = 13.sp, color = AppTheme.Palette.faint)
                 }
             }
 
@@ -110,7 +110,7 @@ fun BrowserIntegrationMenu(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 6.dp)
                     .height(1.dp)
-                    .background(Color(0xFF2C3639))
+                    .background(AppTheme.Palette.outlineVariant)
             )
             MenuRow("Open extension folder", onClick = { onOpenFolder(extensionRoot) })
             MenuRow("Close", onClick = onClose)
@@ -151,7 +151,7 @@ private fun MenuRow(label: String, onClick: () -> Unit) {
     Text(
         label,
         fontSize = 12.sp,
-        color = Color(0xFFB4C0C2),
+        color = AppTheme.Palette.muted,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -210,32 +210,32 @@ private fun BrowserHelpDialog(
                             "${index + 1}.",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF34D399),
+                            color = AppTheme.Palette.accent,
                             modifier = Modifier.width(16.dp)
                         )
-                        Text(step, fontSize = 12.sp, color = Color(0xFFD6DEDF))
+                        Text(step, fontSize = 12.sp, color = AppTheme.Palette.onSurface)
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                Text("Folder to load", fontSize = 11.sp, color = Color(0xFF8A9799))
+                Text("Folder to load", fontSize = 11.sp, color = AppTheme.Palette.muted)
                 Text(
                     folder.absolutePath,
                     fontSize = 11.sp,
-                    color = Color(0xFF34D399)
+                    color = AppTheme.Palette.accent
                 )
                 Spacer(Modifier.height(8.dp))
-                Text("Pairing code", fontSize = 11.sp, color = Color(0xFF8A9799))
-                Text(token, fontSize = 12.sp, color = Color(0xFF34D399))
+                Text("Pairing code", fontSize = 11.sp, color = AppTheme.Palette.muted)
+                Text(token, fontSize = 12.sp, color = AppTheme.Palette.accent)
             }
         },
         confirmButton = {
             androidx.compose.material3.TextButton(onClick = { onOpenFolder(folder) }) {
-                Text("Open folder", color = Color(0xFF34D399))
+                Text("Open folder", color = AppTheme.Palette.accent)
             }
         },
         dismissButton = {
             androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text("Close", color = Color(0xFFB4C0C2))
+                Text("Close", color = AppTheme.Palette.muted)
             }
         }
     )

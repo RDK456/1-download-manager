@@ -60,6 +60,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DownloadStatus
 import java.io.File
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.clip
+import com.downloadhub.core.ThemeMode
+import com.downloadhub.core.ThemePalette
 import java.util.Locale
 
 @Composable
@@ -86,6 +91,8 @@ fun SettingsDialog(
     // looking at this wants to know where the bytes are going.
     var cache by remember { mutableStateOf(settings.cacheDir) }
     var deleteCache by remember { mutableStateOf(settings.deleteCacheWhenRemoved) }
+    var themePalette by remember { mutableStateOf(ThemePalette.fromValue(settings.themePalette)) }
+    var themeMode by remember { mutableStateOf(ThemeMode.fromValue(settings.themeMode)) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -96,6 +103,12 @@ fun SettingsDialog(
             // happens to be. The old layout grew with its content, so a long path pushed
             // the last setting off the bottom of the dialog with no way to reach it.
             Column(Modifier.width(440.dp).verticalScroll(rememberScrollState())) {
+                SectionHeading("Appearance")
+                ThemePicker(themePalette, themeMode) { p, m ->
+                    themePalette = p
+                    themeMode = m
+                }
+                Spacer(Modifier.height(12.dp))
                 SectionHeading("Downloads")
                 FolderRow(
                     label = "Download folder",
@@ -214,7 +227,9 @@ fun SettingsDialog(
                         closeToTray = closeToTray,
                         // Trimmed: a trailing space in a path is a folder that does not exist.
                         cacheDir = cache.trim(),
-                        deleteCacheWhenRemoved = deleteCache
+                        deleteCacheWhenRemoved = deleteCache,
+                        themePalette = themePalette.value,
+                        themeMode = themeMode.value
                     )
                 )
             }) { Text("Save") }
@@ -224,6 +239,107 @@ fun SettingsDialog(
 }
 
 // --- settings layout helpers ------------------------------------------------
+
+/**
+ * The nine themes and the three modes.
+ *
+ * Each swatch is drawn *in its own theme* - the panel behind it is that theme's surface,
+ * the bar is its accent, the label is its text colour - rather than being nine coloured
+ * rectangles with a name underneath. A palette you cannot see is a palette you cannot
+ * choose, and the nine accents are close enough together in a list of dots that Ocean and
+ * Royal are indistinguishable until one of them is applied to a whole window.
+ *
+ * Three rows of three rather than a wrapping flow: nine items at a fixed width fit in the
+ * settings dialog's 440 dp without needing an experimental layout, and a grid lines up in
+ * a way a wrapped list does not.
+ */
+@Composable
+private fun ThemePicker(
+    palette: ThemePalette,
+    mode: ThemeMode,
+    onChange: (ThemePalette, ThemeMode) -> Unit
+) {
+    Column {
+        ThemePalette.entries.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { entry ->
+                    Box(Modifier.weight(1f)) {
+                        ProvideDesktopTheme(entry, mode) {
+                            ThemeSwatch(
+                                entry = entry,
+                                selected = entry == palette,
+                                onClick = { onChange(entry, mode) }
+                            )
+                        }
+                    }
+                }
+                // Keeps the last row's three cells the same width as the rows above even
+                // when the final row has fewer entries.
+                repeat(3 - row.size) { Box(Modifier.weight(1f)) }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ThemeMode.entries.forEach { entry ->
+                if (entry == mode) {
+                    Button(onClick = { onChange(palette, entry) }) { Text(entry.label) }
+                } else {
+                    OutlinedButton(onClick = { onChange(palette, entry) }) { Text(entry.label) }
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "AMOLED makes the background true black and leaves the accent alone, so it " +
+                "works with any of the nine.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** One theme's swatch, drawn in that theme. */
+@Composable
+private fun ThemeSwatch(entry: ThemePalette, selected: Boolean, onClick: () -> Unit) {
+    val p = AppTheme.Palette
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .background(p.background)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) p.accent else p.outline,
+                shape = RoundedCornerShape(4.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(6.dp)
+    ) {
+        Text(
+            entry.label,
+            style = MaterialTheme.typography.labelMedium,
+            color = p.onSurface,
+            maxLines = 1
+        )
+        Spacer(Modifier.height(4.dp))
+        // A row and a bar: the two things a theme is, at a glance, side by side.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(18.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(p.surface)
+        ) {
+            Box(Modifier.fillMaxHeight().weight(1f))
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .width(14.dp)
+                    .background(p.accent)
+            )
+        }
+    }
+}
 
 /**
  * A section heading in the settings.

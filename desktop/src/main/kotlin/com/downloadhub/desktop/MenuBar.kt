@@ -74,7 +74,7 @@ fun MenuBar(
     val offsets = remember { mutableStateMapOf<String, Int>() }
 
     Box {
-        Surface(color = Color(0xFF1A2124)) {
+        Surface(color = AppTheme.Palette.surface) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val roomForWordmark = maxWidth >= MENU_BAR_WORDMARK_MINIMUM
                 Row(
@@ -89,7 +89,7 @@ fun MenuBar(
                             "1 download manager",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF34D399)
+                            color = AppTheme.Palette.accent
                         )
                         Spacer(Modifier.width(20.dp))
                     }
@@ -106,7 +106,7 @@ fun MenuBar(
                         open = toggle(open, "Help")
                     }
                     Spacer(Modifier.weight(1f))
-                    Text("v$version", fontSize = 11.sp, color = Color(0xFF6E7B7D))
+                    Text("v$version", fontSize = 11.sp, color = AppTheme.Palette.faint)
                 }
             }
         }
@@ -203,8 +203,9 @@ private val MENU_BAR_HEIGHT = 34.dp
 private val MENU_BAR_WORDMARK_MINIMUM = 700.dp
 
 private val MENU_PANEL_WIDTH = 210.dp
-private val MENU_PANEL_COLOUR = Color(0xFF1E2629)
-private val MENU_PANEL_EDGE = Color(0x33FFFFFF)
+private val MENU_PANEL_COLOUR: Color get() = AppTheme.Palette.menuPanel
+private val MENU_PANEL_EDGE: Color get() = AppTheme.Palette.menuEdge
+/** A scrim is the same in every theme: black, at half strength, over whatever is behind it. */
 private val MENU_SCRIM = Color(0x8C000000)
 
 /** Shared by a label and the items in the panel it opens, so their text lines up. */
@@ -228,10 +229,10 @@ private fun MenuLabel(
     Text(
         label,
         fontSize = 12.sp,
-        color = if (active) Color(0xFF0B1A14) else Color(0xFFB4C0C2),
+        color = if (active) AppTheme.Palette.accentContainer else AppTheme.Palette.muted,
         modifier = Modifier
             .onGloballyPositioned { onPlaced(it.positionInRoot().x.toInt()) }
-            .background(if (active) Color(0xFF34D399) else Color.Transparent)
+            .background(if (active) AppTheme.Palette.accent else Color.Transparent)
             .clickable(onClick = onClick)
             // The same inset the items in the panel use, so an item's text lines up
             // with the entry it belongs to. These were 12 and 14, which is a two-pixel
@@ -245,7 +246,7 @@ private fun MenuItem(label: String, onClick: () -> Unit) {
     Text(
         label,
         fontSize = 12.sp,
-        color = Color(0xFFD6DEDF),
+        color = AppTheme.Palette.onSurface,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -260,6 +261,6 @@ private fun MenuDivider() {
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .height(1.dp)
-            .background(Color(0xFF2C3639))
+            .background(AppTheme.Palette.outlineVariant)
     )
 }
