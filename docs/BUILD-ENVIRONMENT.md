@@ -24,3 +24,20 @@ released build is on GitHub, so nothing user-facing depends on `%TEMP%`.
     set JAVA_HOME=C:\dlm-tools\jdk-17.0.20.1+1
     set ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk
     gradlew :core:test :desktop:test
+## The native torrent library, and `%TEMP%`
+
+`libtorrent4j` unpacks its 13 MB native library to `%TEMP%\libtorrent4j.dll` the first
+time a test touches it. That file is left behind, and a run that finds it already there
+sometimes fails to load it:
+
+    NoClassDefFoundError: Could not initialize class org.libtorrent4j.swig.libtorrent_jni
+    libtorrent4j JNI call failed; jni.path=C:\Users\RDK\AppData\Local\Temp\libtorrent4j.dll
+
+One failure poisons every test after it, because the class is already half-initialised,
+so the message points at whichever test happened to run second rather than at the real
+cause. Delete the file and run again:
+
+    del "%TEMP%\libtorrent4j.dll"
+
+This is the same `%TEMP%` unreliability as above, showing up in a place that looks like a
+code failure. Before believing a libtorrent test failure, check whether the DLL is there.

@@ -293,6 +293,12 @@ fun main(args: Array<String>) {
                             // The window is the parent, so the chooser is owned by the app
                             // and appears in front of it rather than behind.
                             onPickDirectory = { pickFolder(File(state.settings.downloadDir)) },
+                            // A magnet carries no file list. It has one - in the swarm's
+                            // metadata, a few kilobytes away - and until it was asked for,
+                            // a magnet was the one kind of download where you could not
+                            // see what you were about to get, take three files out of
+                            // forty, or say no. The dialog says what it is waiting for.
+                            onLoadMetadata = controller.actions.readMagnetMetadata,
                             onShown = { showWindow() },
                             onConfirm = { request ->
                                 // Back out of the dialog first: leaving it composed while

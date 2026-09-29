@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -220,7 +221,15 @@ fun AddDownloadDialog(
      * behind it. The dialog is present either way, which is what makes it read as "the
      * dialog does not open".
      */
-    onShown: () -> Unit = {}
+    onShown: () -> Unit = {},
+    /**
+     * Asked to fetch a magnet's file list, which the magnet does not carry.
+     *
+     * Called once, when the dialog opens on a magnet. The result is handed back on the
+     * same thread; the dialog shows a "reading the file list" state meanwhile and carries
+     * on with what it knows if nothing arrives.
+     */
+    onLoadMetadata: (String, (TorrentMetainfo?) -> Unit) -> Unit = { _, done -> done(null) }
 ) {
     val selected = remember(pending.link) {
         mutableStateOf(TorrentSelection.allSelected(pending.metainfo))
@@ -236,6 +245,36 @@ fun AddDownloadDialog(
     var stopWhen by remember(pending.link) { mutableStateOf(0) }
     var stopValue by remember(pending.link) { mutableStateOf("2.0") }
 
+    /**
+     * The metadata in force, which starts as whatever the caller already had and is
+     * replaced by the fetched one.
+     *
+     * Held here rather than pushed back into the caller because the file list, the folder
+     * name, the totals and the information block all read it, and a magnet's arrives
+     * after the dialog is already on screen.
+     */
+    var metainfo by remember(pending.link) { mutableStateOf(pending.metainfo) }
+    var loading by remember(pending.link) { mutableStateOf(false) }
+    var loadNote by remember(pending.link) { mutableStateOf<String?>(null) }
+
+    val wantsMetadata = pending.metainfo.files.isEmpty() && pending.isTorrent
+    LaunchedEffect(pending.link) {
+        if (wantsMetadata) {
+            loading = true
+            onLoadMetadata(pending.link) { fetched ->
+                if (fetched != null && fetched.files.isNotEmpty()) {
+                    // The selection is seeded from the fetched list. Left as it was it
+                    // would be empty against a list of forty files, and the Add button
+                    // would be disabled on a dialog that is plainly able to add it.
+                    selected.value = TorrentSelection.allSelected(fetched)
+                    folder = TorrentSelection.contentFolder(fetched, folder)
+                }
+                metainfo = fetched ?: metainfo
+                loading = false
+            }
+        }
+    }
+
     // Reported from an effect rather than from `onSizeChanged`.
     //
     // A size callback fires *during* layout, and calling back into Compose from there
@@ -244,8 +283,8 @@ fun AddDownloadDialog(
     // opening the dialog.
     LaunchedEffect(pending.link) { onShown() }
 
-    val rows = remember(pending.link, filter) { contentRowsFor(pending.metainfo, filter) }
-    val chosenSize = TorrentSelection.selectedSize(pending.metainfo, selected.value)
+    val rows = remember(pending.link, filter) { contentRowsFor(metainfo, filter) }
+    val chosenSize = TorrentSelection.selectedSize(metainfo, selected.value)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -289,7 +328,7 @@ fun AddDownloadDialog(
                         onValueChange = { folder = it },
                         label = { Text("Content layout - folder name", fontSize = 12.sp) },
                         singleLine = true,
-                        enabled = !pending.metainfo.isSingleFile,
+                        enabled = !metainfo.isSingleFile,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -299,7 +338,7 @@ fun AddDownloadDialog(
                 Spacer(Modifier.height(10.dp))
 
                 // ---- the files ---------------------------------------------------
-                if (pending.hasFileList) {
+                if (metainfo.files.isNotEmpty()) {
                     Text("Files", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                     Spacer(Modifier.height(4.dp))
                     ContentFileList(
@@ -312,16 +351,16 @@ fun AddDownloadDialog(
                         selected = selected.value,
                         onSelectionChange = { chosen -> selected.value = chosen },
                         onSelectAll = {
-                            selected.value = TorrentSelection.allSelected(pending.metainfo)
+                            selected.value = TorrentSelection.allSelected(metainfo)
                         },
                         onSelectNone = { selected.value = emptySet() }
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "${selected.value.size} of ${pending.metainfo.files.size} files, " +
+                        "${selected.value.size} of ${metainfo.files.size} files, " +
                             DisplayFormat.bytes(chosenSize) +
-                            if (chosenSize < pending.metainfo.totalSize) {
-                                " of ${DisplayFormat.bytes(pending.metainfo.totalSize)}"
+                            if (chosenSize < metainfo.totalSize) {
+                                " of ${DisplayFormat.bytes(metainfo.totalSize)}"
                             } else {
                                 ""
                             },
@@ -330,21 +369,41 @@ fun AddDownloadDialog(
                     )
                 } else {
                     // Said out loud rather than showing an empty pane: a magnet and a
-                    // plain link have no file list, and a blank area says nothing about
-                    // whether that is a bug.
-                    Text(
-                        when {
-                            pending.link.startsWith("magnet:", ignoreCase = true) ->
-                                "A magnet has no file list until it connects, so there is " +
-                                    "nothing to choose here. You can still set where it goes " +
-                                    "and when it should stop sharing."
-                            else ->
-                                "The size of this is not known until the headers arrive, " +
-                                    "so there is nothing to choose here."
-                        },
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    // A magnet's list is being fetched, and a plain link's genuinely
+                    // cannot have one. Those are different things and must not share a
+                    // sentence: one is a wait, the other is a fact. The old wording claimed
+                    // the second about the first, so a magnet offered no choices at all on
+                    // the grounds that it had none - when it had simply not been asked.
+                    if (loading) {
+                        Text(
+                            "Reading the file list from the swarm...",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = androidx.compose.ui.graphics.Color(0xFF34D399),
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    } else {
+                        Text(
+                            when {
+                                pending.link.startsWith("magnet:", ignoreCase = true) ->
+                                    "No peers answered in time, so the file list is not " +
+                                        "available yet. You can still set where it goes, " +
+                                        "whether it starts straight away, and when it " +
+                                        "should stop sharing."
+
+                                else ->
+                                    "The size of this is not known until the headers " +
+                                        "arrive, so there is nothing to choose here."
+                            },
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -391,7 +450,7 @@ fun AddDownloadDialog(
                     Spacer(Modifier.height(10.dp))
                     HorizontalDivider()
                     Spacer(Modifier.height(10.dp))
-                    TorrentInformationBlock(pending.metainfo)
+                    TorrentInformationBlock(metainfo)
                 }
             }
         },
@@ -399,7 +458,7 @@ fun AddDownloadDialog(
             Button(
                 onClick = {
                     val request = TorrentSelection.validated(
-                        meta = pending.metainfo,
+                        meta = metainfo,
                         link = pending.link,
                         saveDirectory = File(directory),
                         selected = selected.value,
@@ -416,7 +475,7 @@ fun AddDownloadDialog(
                 // a button that looks live and then adds nothing is the bug this dialog
                 // was built to avoid.
                 enabled = pending.link.isNotBlank() &&
-                    (pending.metainfo.files.isEmpty() || selected.value.isNotEmpty())
+                    (metainfo.files.isEmpty() || selected.value.isNotEmpty())
             ) { Text(if (pending.isTorrent) "OK" else "Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

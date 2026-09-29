@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Everything the UI renders, in one immutable value. */
 data class DesktopUiState(
@@ -88,6 +89,18 @@ data class DesktopActions(
      * a cache setting feel broken.
      */
     val chooseCacheFolder: () -> File?,
+    /**
+     * Fetches a magnet's file list so the pre-download dialog can show it.
+     *
+     * Takes a magnet and a completion rather than returning a value: it waits on the
+     * swarm for up to twenty seconds, which is far too long to hold up a call on the UI
+     * thread, and the dialog is already on screen saying what it is waiting for.
+     *
+     * The completion is called with null when nothing arrives, which is not a failure -
+     * a magnet with nobody on it is a magnet with no file list, and the dialog still
+     * offers a folder, a name and a stop condition.
+     */
+    val readMagnetMetadata: (String, (com.downloadhub.core.TorrentMetainfo?) -> Unit) -> Unit,
     /** Puts text on the clipboard, for "Copy magnet link". */
     val copyToClipboard: (String) -> Unit,
     /** Saves a torrent's .torrent somewhere the user picks. */
@@ -708,6 +721,7 @@ class DesktopController(
         },
         chooseFolder = ::chooseFolder,
         chooseCacheFolder = ::chooseCacheFolder,
+        readMagnetMetadata = ::readMagnetMetadata,
         copyToClipboard = { text -> copyToClipboard(text) },
         exportTorrent = ::exportTorrent,
         renameDownload = ::renameDownload,
@@ -1122,6 +1136,26 @@ class DesktopController(
         store.update(id) { it.copy(outputPath = folder.absolutePath) }
         store.persist()
         refresh()
+    }
+
+    /**
+     * Asks the swarm what a magnet contains.
+     *
+     * Off the UI thread and off the caller's thread, because it blocks on peers. The
+     * read is a lookup: the torrent is added paused and its session is thrown away as
+     * soon as the metadata is in, so nothing appears in the list and no data is
+     * downloaded on the way.
+     */
+    fun readMagnetMetadata(
+        magnet: String,
+        done: (com.downloadhub.core.TorrentMetainfo?) -> Unit
+    ) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                com.downloadhub.core.TorrentMetadataReader.read(magnet)
+            }
+            done(result.getOrNull())
+        }
     }
 
     fun close() {
