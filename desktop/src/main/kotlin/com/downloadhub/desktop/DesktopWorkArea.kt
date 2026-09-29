@@ -25,6 +25,17 @@ class DesktopWorkArea(private val settings: () -> DesktopSettings) : WorkArea {
 
     override fun workFile(id: String): File = AppPaths.workDir.resolve("part-$id")
 
+    /**
+     * The scratch folder a torrent's pieces are written into.
+     *
+     * Separate from an HTTP download's single `part-<id>` file, because a torrent's
+     * pieces are spread across whatever the torrent contains. Removing the item has to be
+     * able to find and delete exactly this, and a rule that guessed one shape for both
+     * left whichever was wrong behind on disk.
+     */
+    fun torrentWorkDir(id: String): File =
+        AppPaths.workDir.resolve("torrent-$id").apply { if (!isDirectory) mkdirs() }
+
     override fun publishFile(
         source: File,
         preferredName: String,

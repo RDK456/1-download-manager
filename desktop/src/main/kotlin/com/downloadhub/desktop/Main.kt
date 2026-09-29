@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.DpSize
+import java.io.File
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import kotlin.system.exitProcess
@@ -96,6 +97,17 @@ fun main(args: Array<String>) {
             var showAdd by remember { mutableStateOf(false) }
             var showSettings by remember { mutableStateOf(false) }
             var closing by remember { mutableStateOf(false) }
+            // The download waiting to be looked at before it is queued, whatever kind
+            // of download it is.
+            var pendingAdd by remember { mutableStateOf<PendingDownload?>(null) }
+            // How a link typed into the box was going to be added, so a paste and a drop
+            // reach the dialog the same way.
+            var typedLink by remember { mutableStateOf("") }
+            var problem by remember { mutableStateOf<String?>(null) }
+
+            // The one-time setup screen, shown on the first launch of any profile that
+            // has not seen it. The flag is written whichever button is pressed.
+            var showSetup by remember { mutableStateOf(shouldShowSetup(controller.settings.value)) }
 
             showWindow = { visible = true; windowState.isMinimized = false }
             hideWindow = { visible = false }
@@ -157,6 +169,21 @@ fun main(args: Array<String>) {
                     LaunchedEffect(window) {
                         window.iconImages = AppArtwork.windowIcons()
                         window.minimumSize = MINIMUM_WINDOW_SIZE
+
+                        // Drag and drop for .torrent files, attached to the AWT window
+                        // because this Compose version has no drop pointer event at all.
+                        installTorrentDropTarget(
+                            window = window,
+                            onTorrent = { file ->
+                                pendingAdd = PendingDownload.forLink(file.absolutePath)
+                                    ?: run {
+                                        problem = "${file.name} could not be read."
+                                        null
+                                    }
+                                showWindow()
+                            },
+                            onProblem = { reason -> problem = reason }
+                        )
                     }
 
                     LibraryScreen(
@@ -180,14 +207,68 @@ fun main(args: Array<String>) {
                     // Hiding to the tray disposes the Window and these with it, which
                     // is the behaviour wanted anyway: a dialog cannot be used while
                     // its window is off screen.
-                    if (showAdd) {
-                        AddDownloadDialog(
-                            onDismiss = { showAdd = false },
-                            onAdd = { link, audioOnly, format, height, playlist ->
-                                controller.actions.addDownload(link, audioOnly, format, height, playlist)
-                                showAdd = false
+                    // A .torrent opened from Explorer, or handed over by a second copy.
+                    // It goes through the same dialog as a drop or a pick: a torrent is a
+                    // container, and queueing it unseen downloads all of it.
+                    LaunchedEffect(Unit) {
+                        controller.onTorrentNeedsReview = { file ->
+                            pendingAdd = PendingDownload.forLink(file.absolutePath)
+                            showWindow()
+                        }
+                    }
+
+                    if (showSetup) {
+                        SetupDialog(
+                            downloadDir = state.settings.downloadDir,
+                            items = setupItems(
+                                ytDlpReady = state.ytDlpStatus.isNotBlank() &&
+                                    !state.ytDlpStatus.contains("could not", ignoreCase = true),
+                                ytDlpDetail = state.ytDlpStatus,
+                                extensionReady = state.extensionReady,
+                                captureEnabled = state.settings.browserCaptureEnabled
+                            ),
+                            onChooseFolder = { pickFolder(File(state.settings.downloadDir)) },
+                            onFinish = { dir ->
+                                showSetup = false
+                                // Applied through settings rather than directly, so a bad
+                                // path is caught the same way it is everywhere else.
+                                controller.actions.updateSettings(
+                                    state.settings.copy(downloadDir = dir, setupComplete = true)
+                                )
+                            },
+                            onDismiss = {
+                                showSetup = false
+                                // Marked complete even when dismissed. A screen that
+                                // reappears every launch until it is filled in is not a
+                                // setup screen, it is a startup failure.
+                                controller.actions.updateSettings(
+                                    state.settings.copy(setupComplete = true)
+                                )
                             }
                         )
+                    }
+
+                    pendingAdd?.let { pending ->
+                        AddDownloadDialog(
+                            pending = pending,
+                            defaultDirectory = state.settings.downloadDir,
+                            deleteCacheWhenRemoved = state.settings.deleteCacheWhenRemoved,
+                            // The window is the parent, so the chooser is owned by the app
+                            // and appears in front of it rather than behind.
+                            onPickDirectory = { pickFolder(File(state.settings.downloadDir)) },
+                            onShown = { showWindow() },
+                            onConfirm = { request ->
+                                // Back out of the dialog first: leaving it composed while
+                                // the row appears underneath makes the app look stuck.
+                                pendingAdd = null
+                                controller.actions.addPrepared(request)
+                            },
+                            onDismiss = { pendingAdd = null }
+                        )
+                    }
+
+                    problem?.let { reason ->
+                        TorrentProblemDialog(message = reason) { problem = null }
                     }
 
                     if (showSettings) {
@@ -202,6 +283,7 @@ fun main(args: Array<String>) {
                                 showSettings = false
                             },
                             onChooseFolder = controller.actions.chooseFolder,
+                            onChooseCacheFolder = controller.actions.chooseCacheFolder,
                             onToggleCapture = controller.actions.setBrowserCapture,
                             extensionReady = state.extensionReady,
                             extensionPath = state.extensionPath,

@@ -35,7 +35,7 @@ const val ROW_CHROME_DP = 26f + 16f
  * rather than only on running rows, because share limits are wanted on a finished
  * download and everything else on a paused one.
  */
-const val ROW_ACTION_DP = 40f
+const val ROW_ACTION_DP = 52f
 
 /**
  * The name ellipsises rather than the row wrapping to two lines, which is what keeps

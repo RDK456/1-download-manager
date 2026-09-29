@@ -9,6 +9,7 @@ import com.downloadhub.core.DownloadCategory
 import com.downloadhub.core.DownloadItem
 import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.LinkParser
+import com.downloadhub.core.TorrentSelection
 import com.downloadhub.core.DownloadStatus
 import java.io.File
 import java.util.UUID
@@ -57,6 +58,14 @@ data class DesktopUiState(
 /** Callbacks the UI is allowed to invoke. */
 data class DesktopActions(
     val addDownload: (String, Boolean, String, Int?, Boolean) -> Unit,
+    /**
+     * Queues whatever the pre-download dialog was opened for.
+     *
+     * Separate from [addDownload] because it carries the file selection, save directory
+     * and share limits the dialog collected, and none of that fits the link-shaped
+     * signature the plain dialog used.
+     */
+    val addPrepared: (com.downloadhub.core.TorrentAddRequest) -> Unit,
     val pause: (String) -> Unit,
     val resume: (String) -> Unit,
     val retry: (String) -> Unit,
@@ -71,6 +80,22 @@ data class DesktopActions(
     val resumeAll: () -> Unit,
     val updateSettings: (DesktopSettings) -> Unit,
     val chooseFolder: () -> File?,
+    /**
+     * Browses for the temporary-file cache.
+     *
+     * Separate from [chooseFolder] even though both open the same dialog: the two are
+     * different folders, and starting the picker in the wrong one is a small way to make
+     * a cache setting feel broken.
+     */
+    val chooseCacheFolder: () -> File?,
+    /** Puts text on the clipboard, for "Copy magnet link". */
+    val copyToClipboard: (String) -> Unit,
+    /** Saves a torrent's .torrent somewhere the user picks. */
+    val exportTorrent: (String) -> Unit,
+    /** Renames a finished download, on disk and in the list. */
+    val renameDownload: (String, String) -> Unit,
+    /** Points an unfinished download at a different folder. */
+    val setDownloadLocation: (String, String) -> Unit,
     val setBrowserCapture: (Boolean) -> Unit,
     val consumeMessage: () -> Unit,
     val setTorrentsTab: (Boolean) -> Unit,
@@ -182,6 +207,27 @@ class DesktopController(
     private val _ui = MutableStateFlow(DesktopUiState())
     val ui: StateFlow<DesktopUiState> = _ui.asStateFlow()
 
+    /**
+     * Set by the window so a `.torrent` opened from Explorer can be shown in the
+     * pre-download dialog instead of being queued unseen.
+     *
+     * A callback rather than state because the dialog lives in the window, and the
+     * controller has no window. Null until the window exists, and a torrent handed over
+     * before then is queued directly - which is the old behaviour, so the worst case is
+     * what happened before rather than a lost download.
+     */
+    @Volatile
+    var onTorrentNeedsReview: ((File) -> Unit)? = null
+
+    /**
+     * The current settings.
+     *
+     * Public because the first-run screen has to decide whether to show itself before the
+     * UI state has been built, and `ui.value.settings` is only available once that has
+     * happened.
+     */
+    val settings: StateFlow<DesktopSettings> get() = settingsState
+
     // --- in-app updates ------------------------------------------------------
 
     private val updateChecker = DesktopUpdateChecker()
@@ -205,7 +251,13 @@ class DesktopController(
         // first run. An installed program directory can be read-only, and yt-dlp has to
         // be a real file on disk for the app to execute it, so this is not optional.
         scope.launch {
-            tools.install()
+            // Adopt the configured cache folder at startup as well as on save, or a folder
+        // set in a previous session is ignored until the user changes it again.
+        runCatching {
+            val folder = settingsState.value.cacheDirFile()
+            if (folder.isDirectory || folder.mkdirs()) AppPaths.cacheDirectory = folder
+        }
+        tools.install()
             if (extension.install()) refresh()
         }
         // The pairing token is generated on first run and has to reach disk, or it
@@ -579,6 +631,7 @@ class DesktopController(
 
     val actions: DesktopActions = DesktopActions(
         addDownload = ::addDownload,
+        addPrepared = ::addPrepared,
         pause = { id ->
             val item = store.get(id)
             if (item?.source == DownloadSource.TORRENT) torrents.pause(id) else engine.pause(id)
@@ -617,11 +670,24 @@ class DesktopController(
         pauseAll = { engine.pauseAll() },
         resumeAll = { engine.resumeAll() },
         updateSettings = { updated ->
+            // The cache folder is a process-wide path, so it is applied here rather than
+            // at the next start. Saving it and still writing to the old folder until a
+            // restart reads as the setting doing nothing at all, which is the complaint
+            // that made it worth having.
+            runCatching {
+                val folder = updated.cacheDirFile()
+                if (folder.isDirectory || folder.mkdirs()) AppPaths.cacheDirectory = folder
+            }
             settingsState.value = updated
             DesktopSettings.save(updated)
             refresh()
         },
         chooseFolder = ::chooseFolder,
+        chooseCacheFolder = ::chooseCacheFolder,
+        copyToClipboard = { text -> copyToClipboard(text) },
+        exportTorrent = ::exportTorrent,
+        renameDownload = ::renameDownload,
+        setDownloadLocation = ::setDownloadLocation,
         setBrowserCapture = ::setBrowserCapture,
         consumeMessage = ::consumeMessage,
         setTorrentsTab = ::setTorrentsTab,
@@ -647,6 +713,44 @@ class DesktopController(
      * A magnet or a .torrent URL goes to the torrent engine, a YouTube link goes
      * to yt-dlp, and anything else is a plain HTTP transfer.
      */
+    /**
+     * Queues whatever the pre-download dialog was opened for.
+     *
+     * One path for all three kinds of add, because the dialog is offered for all three.
+     * A `.torrent` is copied into the app's own folder first: the file the user picked
+     * is usually in Downloads, which gets tidied, and a queued torrent whose .torrent has
+     * gone is a permanent row that can never start.
+     */
+    fun addPrepared(request: com.downloadhub.core.TorrentAddRequest) {
+        val file = request.metainfoFile
+        val link = if (file != null) {
+            val kept = File(
+                AppPaths.torrentRoot,
+                TorrentSelection.safeName(request.metainfo.name).ifBlank { "torrent" } + ".torrent"
+            )
+            val bytes = runCatching { file.readBytes() }.getOrNull()
+            if (bytes != null && runCatching {
+                    kept.parentFile?.mkdirs(); kept.writeBytes(bytes); true
+                }.getOrDefault(false)) {
+                kept
+            } else {
+                file
+            }
+        } else {
+            null
+        }
+        addDownload(
+            link = link?.absolutePath ?: request.link,
+            audioOnly = false,
+            format = "m4a",
+            height = null,
+            playlist = false,
+            preferredName = request.metainfo.name.ifBlank { LinkParser.fileNameFrom(request.link) },
+            torrentFile = link,
+            torrentRequest = request
+        )
+    }
+
     fun addDownload(
         link: String,
         audioOnly: Boolean,
@@ -661,7 +765,15 @@ class DesktopController(
          * which of the two it is. Nothing set this before, which is why a .torrent
          * picked from the machine could sit in the list for ever without starting.
          */
-        torrentFile: File? = null
+        torrentFile: File? = null,
+        /**
+         * The choices made in the pre-download dialog, when it was used.
+         *
+         * Null is the normal path for a magnet or a link, and everything then behaves
+         * exactly as it did. A non-null request carries the file selection, save
+         * directory and share limits the dialog collected.
+         */
+        torrentRequest: com.downloadhub.core.TorrentAddRequest? = null
     ) {
         val trimmed = link.trim()
         if (trimmed.isEmpty()) return
@@ -671,6 +783,19 @@ class DesktopController(
                 ?.let { File(it) }
                 ?.takeIf { it.isFile }
         val source = LinkParser.sourceFor(trimmed)
+
+        // Anything that is not a link, a magnet or a file on this machine cannot be
+        // downloaded. Queued anyway it sits in the list and then fails with "no protocol:
+        // <the text>", which reads as the app failing rather than as the input being
+        // wrong. Refusing here names the actual problem.
+        if (localTorrent == null && !LinkParser.isFetchable(trimmed)) {
+            _messages.value =
+                "That is not a link, a magnet or a file on this computer, so there is " +
+                    "nothing to download from it."
+            refresh()
+            return
+        }
+
         val id = UUID.randomUUID().toString()
         val name = preferredName?.takeIf { it.isNotBlank() }
             ?.let { LinkParser.sanitizeFileName(it) }
@@ -684,11 +809,29 @@ class DesktopController(
                 fileName = name,
                 source = source,
                 category = LinkParser.categoryFor(source, name),
-                status = DownloadStatus.QUEUED,
                 quality = height?.toString(),
                 audioFormat = if (audioOnly) format else null,
                 playlist = playlist,
-                torrentFilePath = localTorrent?.absolutePath
+                torrentFilePath = localTorrent?.absolutePath,
+                // "Add but do not start" has to reach the queue as a paused row. Left
+                // queued it starts anyway the instant the torrent loop looks at it, which
+                // is exactly what the user unticked to avoid.
+                status = if (torrentRequest != null && !torrentRequest.startImmediately) {
+                    DownloadStatus.PAUSED
+                } else {
+                    DownloadStatus.QUEUED
+                },
+                outputPath = torrentRequest?.saveDirectory?.absolutePath,
+                shareRatioLimit = torrentRequest?.let {
+                    it.stopCondition.toShareLimits(it.metainfo.totalSize).ratioLimit
+                } ?: 0.0,
+                seedTimeLimitMinutes = torrentRequest?.let {
+                    it.stopCondition.toShareLimits(it.metainfo.totalSize).seedTimeLimitMinutes
+                } ?: 0,
+                torrentSelectedFiles = torrentRequest?.selectedFiles?.toList().orEmpty(),
+                torrentSequential = torrentRequest?.sequentialDownload ?: false,
+                torrentFirstLastPiecesFirst = torrentRequest?.downloadFirstAndLastPiecesFirst ?: false,
+                torrentContentFolder = torrentRequest?.contentFolder.orEmpty()
             )
         )
         store.persist()
@@ -721,6 +864,14 @@ class DesktopController(
         var added = 0
         var skipped = 0
         targets.forEach { target ->
+            // A .torrent is a container, and queueing one unexamined downloads everything
+            // inside it. Those are handed to the window to show in the pre-download dialog,
+            // the same as one that is dropped on it or picked from disk. A magnet has no
+            // file list until peers answer, so it is queued directly.
+            if (target.torrentFile != null) {
+                onTorrentNeedsReview?.invoke(File(target.torrentFile))
+                return@forEach
+            }
             val candidate = DownloadItem(
                 id = "candidate",
                 url = target.link,
@@ -823,6 +974,109 @@ class DesktopController(
             null
         }
     }.getOrNull()
+
+    /** Opens the picker at the current cache folder, not at the download folder. */
+    fun chooseCacheFolder(): File? = runCatching {
+        val chooser = JFileChooser(settingsState.value.cacheDirFile().takeIf { it.isDirectory })
+        chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+        chooser.isAcceptAllFileFilterUsed = false
+        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+            chooser.selectedFile
+        } else {
+            null
+        }
+    }.getOrNull()
+
+    /**
+     * Puts text on the clipboard.
+     *
+     * A failure is reported rather than swallowed: a "Copy magnet link" that silently
+     * does nothing is a menu item that reads as broken.
+     */
+    fun copyToClipboard(text: String) {
+        val done = runCatching {
+            java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(
+                java.awt.datatransfer.StringSelection(text),
+                null
+            )
+        }.isSuccess
+        if (!done) _messages.value = "Could not reach the clipboard."
+        refresh()
+    }
+
+    /**
+     * Saves a torrent's `.torrent` file somewhere the user picks.
+     *
+     * Copied from the copy the app keeps rather than re-fetched: the original the user
+     * dropped is usually gone by now, and this is the same bytes that identify the
+     * torrent.
+     */
+    fun exportTorrent(id: String) {
+        val item = store.get(id)
+        val source = item?.torrentFilePath?.let(::File)?.takeIf { it.isFile }
+        if (item?.source != DownloadSource.TORRENT || source == null) {
+            // A magnet has no file until peers have answered, so there is genuinely
+            // nothing to save. Saying so beats a save dialog that produces an empty file.
+            _messages.value =
+                "This torrent has no .torrent file yet. A magnet only gets one once it " +
+                    "has connected."
+            refresh()
+            return
+        }
+        val chooser = JFileChooser(File(System.getProperty("user.home") ?: ".", item.fileName + ".torrent"))
+        chooser.dialogTitle = "Save the torrent file"
+        if (chooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+            val chosen = chooser.selectedFile
+            val target = if (chosen.name.endsWith(".torrent", ignoreCase = true)) {
+                chosen
+            } else {
+                File(chosen.parentFile, chosen.name + ".torrent")
+            }
+            if (!runCatching { target.writeBytes(source.readBytes()) }.isSuccess) {
+                _messages.value = "Could not write that file."
+            }
+        }
+        refresh()
+    }
+
+    /**
+     * Renames a finished download.
+     *
+     * The file on disk is renamed, not just the row: a download whose label says one
+     * thing and whose file is called another is worse than one that cannot be renamed.
+     */
+    fun renameDownload(id: String, name: String) {
+        val item = store.get(id) ?: return
+        val safe = name.substringAfterLast('/').substringAfterLast('\\').trim()
+        if (safe.isEmpty()) return
+        val current = item.location?.let(::File)
+        if (current != null && current.isFile) {
+            val target = File(current.parentFile, safe)
+            if (!runCatching { current.renameTo(target) }.getOrDefault(false)) {
+                _messages.value = "Could not rename that file. It may be in use."
+                refresh()
+                return
+            }
+            store.update(id) { it.copy(fileName = safe, location = target.absolutePath) }
+        } else {
+            store.update(id) { it.copy(fileName = safe) }
+        }
+        store.persist()
+        refresh()
+    }
+
+    /** Points an unfinished download at a different folder. */
+    fun setDownloadLocation(id: String, path: String) {
+        val folder = File(path)
+        if (!folder.isDirectory && !folder.mkdirs()) {
+            _messages.value = "That folder could not be created."
+            refresh()
+            return
+        }
+        store.update(id) { it.copy(outputPath = folder.absolutePath) }
+        store.persist()
+        refresh()
+    }
 
     fun close() {
         store.persist()

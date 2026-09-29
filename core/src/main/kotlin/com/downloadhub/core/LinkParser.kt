@@ -74,6 +74,22 @@ object LinkParser {
     }
 
     /**
+     * The `dn` parameter of a magnet, which is the torrent's own name.
+     *
+     * Present on almost every real magnet and the only name a magnet carries, so without
+     * it the list shows the raw link. A magnet has no path, so [fileNameFrom] cannot see
+     * it and falls back to "download" - which is what the pre-download dialog's title and
+     * the list would then say.
+     */
+    fun magnetDisplayName(magnet: String): String? =
+        magnet.split('&')
+            .firstOrNull { it.startsWith("dn=", ignoreCase = true) }
+            ?.substring(3)
+            ?.let { runCatching { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }.getOrNull() }
+            ?.replace('+', ' ')
+            ?.takeIf { it.isNotBlank() }
+
+    /**
      * Is this link a video, or a site that serves video?
      *
      * This is what decides whether the quality and audio choices mean anything. They are

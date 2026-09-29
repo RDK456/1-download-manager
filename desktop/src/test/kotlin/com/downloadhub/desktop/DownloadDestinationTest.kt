@@ -220,13 +220,22 @@ class DownloadDestinationTest {
             "there is no delete-choice dialog",
             screen.contains("DeleteChoiceDialog")
         )
+        // One button and a tick box, as qBittorrent does it. Two buttons put a
+        // destructive choice next to a safe one and made the safe one the odd shape; the
+        // tick box says what else will happen without putting two verdicts side by side.
         assertTrue(
-            "the dialog must offer keeping the file",
-            screen.contains("Just remove from list")
+            "the dialog must offer keeping the file, which is the unticked box",
+            screen.contains("Also remove the content files")
         )
         assertTrue(
-            "the dialog must offer deleting the file",
-            screen.contains("Delete ") && screen.contains("file")
+            "the dialog's single button is Remove, and it must not be a delete verb - " +
+                "the tick box is what decides",
+            screen.contains("Text(\"Remove\")")
+        )
+        assertTrue(
+            "the tick box must start on the user's own default, or the setting is not " +
+                "reaching the dialog",
+            screen.contains("deleteFilesDefault = state.settings.deleteCacheWhenRemoved")
         )
     }
 
@@ -234,26 +243,30 @@ class DownloadDestinationTest {
     fun bothChoicesReachTheStore() {
         val screen = File("src/main/kotlin/com/downloadhub/desktop/LibraryScreen.kt").readText()
         assertTrue(
-            "the list-only answer is not wired",
-            screen.contains("actions.removeSelectingFiles(it, false)")
-        )
-        assertTrue(
-            "the delete-the-file answer is not wired",
-            screen.contains("actions.removeSelectingFiles(it, true)")
+            "the tick box's answer is not wired through to the removal",
+            screen.contains("actions.removeSelectingFiles(it, deleteFiles)")
         )
     }
 
     @Test
     fun theStoreHonoursTheChoice() {
         val store = File("src/main/kotlin/com/downloadhub/desktop/DesktopStore.kt").readText()
-        val body = store.substringAfter("fun remove(id: String, deleteFiles: Boolean)").substringBefore("\n    }")
+        val body = store
+            .substringAfter("fun remove(id: String, deleteFiles: Boolean")
+            .substringBefore("\n    }")
         assertTrue(
             "the store must take the file with it only when asked:\n$body",
             body.contains("if (deleteFiles)")
         )
         assertTrue(
-            "the scratch copy must go either way, or a partial download is stranded",
-            body.contains("workDir")
+            "the scratch copy must go when asked, or a partial download nobody wanted " +
+                "is stranded in the cache:\n$body",
+            body.contains("if (deleteCache)")
+        )
+        assertTrue(
+            "and it must be looked up under the item's own cache key, not its id - a " +
+                "torrent's bytes are a folder, not a `part-<id>` file",
+            body.contains("cacheKey")
         )
     }
 

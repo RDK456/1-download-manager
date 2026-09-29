@@ -2,12 +2,17 @@ package com.downloadhub.desktop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,7 +37,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,13 +50,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DisplayFormat
 import com.downloadhub.core.DownloadColumn
 import com.downloadhub.core.DownloadItem
 import com.downloadhub.core.DownloadLibrary
+import java.awt.event.MouseEvent
 import com.downloadhub.core.DownloadPriority
 import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.DownloadStatus
@@ -93,6 +98,14 @@ fun LibraryScreen(
     var deleting by remember { mutableStateOf(emptySet<String>()) }
     /** Which download has its options dialog open, if any. */
     var optionsFor by remember { mutableStateOf<String?>(null) }
+    /** Which download has its right-click menu open, if any. */
+    var contextFor by remember { mutableStateOf<String?>(null) }
+    /** Which download is being renamed. */
+    var renaming by remember { mutableStateOf<String?>(null) }
+    /** Which download is being given a different folder. */
+    var relocating by remember { mutableStateOf<String?>(null) }
+    /** Which bottom pane is open on the torrents tab. */
+    var detailTab by remember { mutableStateOf(TorrentTab.GENERAL) }
 
     val all = state.items.map { it.toCoreItem() }
     val query = LibraryQuery(
@@ -181,6 +194,9 @@ fun LibraryScreen(
                                         layout = table,
                                         checked = item.id in selected,
                                         onToggle = {
+                                            // Selecting a row is what the bottom pane
+                                            // follows, so it shows the download that was
+                                            // last touched rather than an arbitrary one.
                                             selected = if (item.id in selected) {
                                                 selected - item.id
                                             } else {
@@ -191,7 +207,11 @@ fun LibraryScreen(
                                         onResume = { actions.resume(item.id) },
                                         onRetry = { actions.retry(item.id) },
                                         onOpen = { actions.revealDownload(item.location) },
-                                    onOptions = { optionsFor = item.id }
+                                        onOptions = { optionsFor = item.id },
+                                        onContext = {
+                                            contextFor = item.id
+                                            selected = setOf(item.id)
+                                        }
                                     )
                                     HorizontalDivider(
                                         color = state.palette.outline.copy(alpha = 0.25f),
@@ -200,6 +220,19 @@ fun LibraryScreen(
                                 }
                         }
                     }
+
+                    // Only on the Torrents tab: on the main list this would be two
+                    // thirds of the window given over to one download.
+                    if (state.torrentsTab) {
+                        TorrentDetailPanel(
+                            item = all.firstOrNull { it.id in selected }
+                                ?: all.firstOrNull { it.source == com.downloadhub.core.DownloadSource.TORRENT },
+                            tab = detailTab,
+                            onTab = { detailTab = it }
+                        )
+                        TorrentStatusBar(all)
+                    }
+
                     StatusBar(state, all)
                 }
                 }
@@ -226,22 +259,89 @@ fun LibraryScreen(
         }
 
         if (deleting.isNotEmpty()) {
+            // Anything with bytes on disk - a finished file or a half-fetched partial - has
+            // something the tick box can be about. Only a download that has not written
+            // anything yet does not.
+            val onDisk = state.items.filter {
+                it.id in deleting &&
+                    (it.status == DownloadStatus.COMPLETED || it.bytesDownloaded > 0L)
+            }
             DeleteChoiceDialog(
                 count = deleting.size,
-                // A running download has no file on disk yet, so the question would
-                // be meaningless for it.
-                canDeleteFiles = state.items.any {
-                    it.id in deleting && it.status == DownloadStatus.COMPLETED
+                canDeleteFiles = onDisk.isNotEmpty(),
+                // One name when there is a single item: "Remove 'ubuntu.iso'?" says far
+                // more than "Remove this download?", and this is the one dialog where
+                // naming it prevents removing the wrong row.
+                subject = if (deleting.size == 1) {
+                    "'" + (onDisk.firstOrNull()?.fileName
+                        ?: state.items.firstOrNull { it.id in deleting }?.fileName
+                        ?: "it") + "'"
+                } else {
+                    "these ${deleting.size} downloads"
                 },
-                onKeepFiles = {
-                    deleting.forEach { actions.removeSelectingFiles(it, false) }
-                    deleting = emptySet()
-                },
-                onDeleteFiles = {
-                    deleting.forEach { actions.removeSelectingFiles(it, true) }
+                // Starts on whatever the user chose in settings, so the common case needs
+                // no thought and the unusual one is one tick away.
+                deleteFilesDefault = state.settings.deleteCacheWhenRemoved,
+                onConfirm = { deleteFiles ->
+                    deleting.forEach { actions.removeSelectingFiles(it, deleteFiles) }
                     deleting = emptySet()
                 },
                 onDismiss = { deleting = emptySet() }
+            )
+        }
+
+        // The right-click menu, the rename box and the relocation box. All three look
+        // their item up in `all` rather than holding a copy, so a row that has since been
+        // removed closes its dialog instead of acting on a stale snapshot of itself.
+        all.firstOrNull { it.id == contextFor }?.let { item ->
+            DownloadContextMenu(
+                item = item,
+                hasContentFiles = item.location != null || item.bytesDownloaded > 0L,
+                onAction = { action ->
+                    contextFor = null
+                    when (action) {
+                        ContextAction.Pause -> actions.pause(item.id)
+                        ContextAction.Resume -> actions.resume(item.id)
+                        ContextAction.ForceStart -> actions.retry(item.id)
+                        ContextAction.Options -> optionsFor = item.id
+                        ContextAction.SetLocation -> relocating = item.id
+                        ContextAction.Rename -> renaming = item.id
+                        ContextAction.OpenFolder -> actions.revealDownload(item.location)
+                        // The clipboard is the one part of this that can fail silently,
+                        // and a menu item that does nothing is worse than a message.
+                        ContextAction.CopyMagnet -> actions.copyToClipboard(magnetLinkFor(item))
+                        ContextAction.ExportTorrent -> actions.exportTorrent(item.id)
+                        // Always offered, never enabled: see ContextAction.
+                        ContextAction.AutomaticManagement -> Unit
+                        ContextAction.Remove -> {
+                            deleting = setOf(item.id)
+                            contextFor = null
+                        }
+                    }
+                },
+                onDismiss = { contextFor = null }
+            )
+        }
+
+        all.firstOrNull { it.id == renaming }?.let { item ->
+            RenameDownloadDialog(
+                currentName = item.fileName,
+                onConfirm = { name ->
+                    actions.renameDownload(item.id, name)
+                    renaming = null
+                },
+                onDismiss = { renaming = null }
+            )
+        }
+
+        all.firstOrNull { it.id == relocating }?.let { item ->
+            SetLocationDialog(
+                currentDirectory = item.outputPath ?: state.settings.downloadDir,
+                onConfirm = { path ->
+                    actions.setDownloadLocation(item.id, path)
+                    relocating = null
+                },
+                onDismiss = { relocating = null }
             )
         }
     }
@@ -253,45 +353,75 @@ fun LibraryScreen(
  * Two answers people actually want - tidy the list but keep the file, or take the file
  * too - plus the implicit third, cancelling, which leaving the dialog open provides.
  */
+/**
+ * The remove confirmation.
+ *
+ * One button, not two. The earlier version asked "remove it, or remove it and delete the
+ * files?" and answered with two buttons, which puts a destructive choice beside a safe one
+ * and makes the safe one the unusual shape. Modelled on qBittorrent's instead: one
+ * "Remove" button, and a tick box that says what else will happen.
+ *
+ * The tick box is the part that matters. Removing a download that never finished has two
+ * reasonable outcomes - the half-fetched file is wanted again, or it is not - and guessing
+ * wrong either strands a partial file nobody can account for, or throws away work the
+ * user came back for. So it is asked, and it starts on the user's own default.
+ */
 @Composable
 private fun DeleteChoiceDialog(
     count: Int,
     canDeleteFiles: Boolean,
-    onKeepFiles: () -> Unit,
-    onDeleteFiles: () -> Unit,
+    subject: String = if (count == 1) "this download" else "these $count downloads",
+    deleteFilesDefault: Boolean = false,
+    onConfirm: (deleteFiles: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val subject = if (count == 1) "this download" else "these $count downloads"
-    androidx.compose.material3.AlertDialog(
+    var deleteFiles by remember(count, canDeleteFiles) { mutableStateOf(deleteFilesDefault) }
+
+    AlertDialog(
         onDismissRequest = onDismiss,
-            properties = APP_DIALOG_PROPERTIES,
+        properties = APP_DIALOG_PROPERTIES,
         title = { Text("Remove $subject?") },
         text = {
-            Text(
+            Column {
                 if (canDeleteFiles) {
-                    "Remove $subject from the list, or remove " +
-                        (if (count == 1) "it" else "them") + " and delete the " +
-                        (if (count == 1) "file" else "files") + " from disk?"
+                    // A folder, a file and a half-finished one are all different things to
+                    // delete, so the label says which rather than saying "content files"
+                    // whatever that happens to be.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TickBox(checked = deleteFiles, onChange = { deleteFiles = it })
+                        Text(
+                            "Also remove the content files",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (deleteFiles) {
+                            "This deletes what is on disk. It cannot be undone."
+                        } else {
+                            "The download is removed from the list and what it has " +
+                                "fetched so far is kept in the cache."
+                        },
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 } else {
-                    "Remove $subject from the list? Nothing has been written to disk yet."
+                    Text(
+                        "Remove $subject from the list? Nothing has been written to disk yet.",
+                        fontSize = 12.sp
+                    )
                 }
-            )
+            }
         },
         confirmButton = {
-            if (canDeleteFiles) {
-                androidx.compose.material3.TextButton(onClick = onDeleteFiles) {
-                    Text("Delete " + if (count == 1) "file" else "files")
-                }
+            TextButton(onClick = { onConfirm(if (canDeleteFiles) deleteFiles else false) }) {
+                Text("Remove")
             }
         },
-        dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onKeepFiles) {
-                Text("Just remove from list")
-            }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
-
 @Composable
 private fun VerticalRule() {
     Box(
@@ -621,6 +751,7 @@ private fun ColumnHeaderCell(
     }
 }
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 private fun DownloadRow(
     item: DownloadItem,
@@ -633,7 +764,9 @@ private fun DownloadRow(
     onRetry: () -> Unit,
     onOpen: () -> Unit,
     /** Opens this download's own settings. */
-    onOptions: () -> Unit
+    onOptions: () -> Unit,
+    /** Right-click: the menu every other torrent client opens. */
+    onContext: () -> Unit = {}
 ) {
     val running = item.status == DownloadStatus.RUNNING
     Row(
@@ -641,6 +774,24 @@ private fun DownloadRow(
             .fillMaxWidth()
             .background(if (checked) Color(0xFF1C2A28) else Color.Transparent)
             .clickable(onClick = onToggle)
+            // The secondary button, read off the raw event rather than taken through
+            // `combinedClickable`'s long-press.
+            //
+            // Compose Desktop treats a secondary press as the start of a long press and
+            // holds it. That produced two failures from one cause: the context menu never
+            // opened, and - because the same handler sat in the row's own chain - the pause
+            // and gear buttons inside the row stopped responding too. `combinedClickable`
+            // is not used anywhere in this row.
+            .onPointerEvent(PointerEventType.Press) { event ->
+                val mouse = event.nativeEvent as? java.awt.event.MouseEvent
+                // The button number, not `isRightButtonDown`: the flag is also set on the
+                // release, and a context menu that opens again on mouse-up is worse than
+                // one that opens once.
+                if (mouse != null && mouse.button == java.awt.event.MouseEvent.BUTTON3) {
+                    onContext()
+                    event.changes.forEach { it.consume() }
+                }
+            }
             .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -744,14 +895,29 @@ private fun Cell(
     )
 }
 
+/**
+ * A small icon button on a row.
+ *
+ * The `onClick` used to be accepted and then ignored - the composable drew the icon and
+ * nothing else, which is why the pause, retry and gear buttons on every row did nothing
+ * when pressed. The icon is drawn at [size] and the whole button is a 24 dp target, so it
+ * can actually be hit with a mouse.
+ */
 @Composable
 private fun IconButton(
-    size: androidx.compose.ui.unit.Dp,
+    size: Dp,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
     onClick: () -> Unit
 ) {
-    Icon(icon, description, Modifier.size(size), tint = Color(0xFF8A9799))
+    Box(
+        Modifier
+            .size(24.dp)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, description, Modifier.size(size), tint = Color(0xFF8A9799))
+    }
 }
 
 private fun statusColour(status: DownloadStatus, palette: androidx.compose.material3.ColorScheme): Color =
@@ -820,5 +986,14 @@ internal fun QueuedDownload.toCoreItem() = DownloadItem(
     shareRatioLimit = shareRatioLimit,
     seedTimeLimitMinutes = seedTimeLimitMinutes,
     seedingSinceEpochMillis = seedingSinceEpochMillis,
-    seedingStoppedAtEpochMillis = seedingStoppedAtEpochMillis
+    seedingStoppedAtEpochMillis = seedingStoppedAtEpochMillis,
+    torrentSelectedFiles = torrentSelectedFiles,
+    torrentSequential = torrentSequential,
+    torrentFirstLastPiecesFirst = torrentFirstLastPiecesFirst,
+    torrentContentFolder = torrentContentFolder,
+    uploadRate = uploadRate,
+    seeds = seeds,
+    peerCount = peerCount,
+    uploadedBytes = uploadedBytes,
+    completedAt = completedAt
 )

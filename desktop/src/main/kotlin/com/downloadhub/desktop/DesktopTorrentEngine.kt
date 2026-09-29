@@ -32,8 +32,13 @@ class DesktopTorrentEngine(
     private val onChange: () -> Unit,
     private val scope: CoroutineScope
 ) {
+    // Torrent bytes go into the chosen cache folder, not straight into the download
+    // folder. A torrent is written in place and reassembled from many peers, so it cannot
+    // be fetched to a scratch file and moved at the end the way an HTTP download is - and
+    // putting it in the download folder would scatter half-written files through the
+    // user's finished ones.
     private val engine = TorrentEngine(
-        torrentRoot = { AppPaths.torrentRoot },
+        torrentRoot = { area.torrentWorkDir("staging") },
         // Unpack the native library into the app's own profile, not %TEMP%. On a
         // machine whose TEMP is a network share or a locked volume, the extraction
         // fails and libtorrent4j then reports a missing library, which points at the
@@ -187,7 +192,23 @@ class DesktopTorrentEngine(
                 speedBytesPerSecond = snapshot.downloadRate,
                 torrentInfoHash = snapshot.infoHash.takeIf { hash -> hash.isNotBlank() },
                 fileName = snapshot.name?.takeIf { name -> name.isNotBlank() } ?: it.fileName,
-                errorMessage = snapshot.error
+                errorMessage = snapshot.error,
+                // Mirrored rather than read straight from the engine, so the detail pane
+                // and the status strip show the same numbers as the row. A pane that
+                // polled the engine separately would show figures that disagree with the
+                // list by a second, which is worse than not showing them at all.
+                uploadRate = snapshot.uploadRate,
+                seeds = snapshot.seeds,
+                peerCount = snapshot.peers,
+                uploadedBytes = snapshot.uploadedBytes,
+                // Stamped once, on the first reading that says it finished. Re-stamping
+                // every poll would make "finished at" mean "most recent poll", which is
+                // not a time anyone can act on.
+                completedAt = if (snapshot.isFinished && it.completedAt == 0L) {
+                    System.currentTimeMillis()
+                } else {
+                    it.completedAt
+                }
             )
         }
         onChange()
@@ -279,8 +300,13 @@ class DesktopTorrentEngine(
         onChange()
     }
 
-    fun remove(id: String, deleteFiles: Boolean) {
-        store.get(id)?.let { engine.remove(it.toCoreItem(), deleteFiles) }
+    fun remove(id: String, deleteFiles: Boolean, deleteCache: Boolean = true) {
+        val item = store.get(id) ?: return
+        // libtorrent is told about the files it wrote; the scratch folder is ours, and
+        // only ours to delete. Both are needed - the engine knows the published files, and
+        // the scratch folder is where a half-finished torrent actually lives.
+        if (deleteFiles) engine.remove(item.toCoreItem(), deleteFiles)
+        if (deleteCache) runCatching { area.torrentWorkDir(id).deleteRecursively() }
     }
 
     fun close() {

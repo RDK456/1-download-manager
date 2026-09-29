@@ -44,7 +44,26 @@ object AppPaths {
     val pendingIntakeFile: File get() = File(home, "pending-intake.txt")
 
     /** Scratch space for in-flight transfers, kept off the destination folder. */
-    val workDir: File by lazy { File(home, "work").apply { mkdirs() } }
+    /**
+     * Where in-flight and temporary files go.
+     *
+     * Settable, because a cache on the system drive is a real complaint: a user with a
+     * small SSD wants partials on a spinning disk, and one with a slow system drive wants
+     * them somewhere faster. A getter rather than a `by lazy`, because the folder is read
+     * from settings that can change while the app runs.
+     */
+    @Volatile
+    var cacheDirectory: File = File(home, "cache").apply { mkdirs() }
+
+    /**
+     * The scratch directory, one level under the chosen cache.
+     *
+     * Kept separate from the cache root so a user who points the cache at a shared drive
+     * gets a folder of their own rather than writing partials loose beside other
+     * applications' files.
+     */
+    val workDir: File
+        get() = File(cacheDirectory, "work").apply { if (!isDirectory) mkdirs() }
 
     val defaultDownloadDir: File by lazy {
         File(System.getProperty("user.home") ?: ".", "Downloads" + File.separator + "DownloadHub")
@@ -66,13 +85,18 @@ object AppPaths {
      * The profile folder is where the app already keeps everything else, so it is
      * known to work.
      */
-    val cacheDir: File by lazy { File(home, "cache").apply { mkdirs() } }
+    val cacheDir: File get() = cacheDirectory
 
     /** Where the libtorrent native library is unpacked to. */
-    val nativeLibDir: File by lazy { File(cacheDir, "libtorrent4j-native").apply { mkdirs() } }
+    /**
+     * Pinned to the app's own profile rather than the chosen cache: it is unpacked before
+     * any settings are read, and a library that had to be re-extracted every time the
+     * cache folder changed would be a slow way to learn a wrong path was typed.
+     */
+    val nativeLibDir: File by lazy { File(home, "cache/libtorrent4j-native").apply { mkdirs() } }
 
     /** Staging area for a downloaded update installer or portable zip. */
-    val updateDir: File by lazy { File(cacheDir, "update").apply { mkdirs() } }
+    val updateDir: File by lazy { File(home, "cache/update").apply { mkdirs() } }
 
     /**
      * Where an unpacked portable build goes before it is started.
@@ -104,8 +128,44 @@ data class DesktopSettings(
     val captureToken: String = "",
     val browserCaptureEnabled: Boolean = true,
     val closeToTray: Boolean = true,
-    val startMinimised: Boolean = false
+    val startMinimised: Boolean = false,
+    /**
+     * Where in-flight and temporary files go. Blank means the app's own profile folder.
+     *
+     * A download is written here first and moved to [downloadDir] only when it is whole,
+     * so this is the folder that fills up while a large download runs - which is why a
+     * user with a small system drive needs to be able to move it.
+     */
+    val cacheDir: String = "",
+    /**
+     * Whether removing an unfinished download also deletes what it had fetched.
+     *
+     * True by default, because the usual reason for removing something is that it is
+     * unwanted, and a half-downloaded file nobody wanted is not something anyone wants to
+     * come back to. It is a setting rather than a rule because the other case is real: a
+     * download abandoned to free up a slot and picked up again later.
+     */
+    val deleteCacheWhenRemoved: Boolean = true,
+    /**
+     * Whether the first-run setup has been seen.
+     *
+     * False by default, so an existing install upgrading into a version with the setup
+     * sees it once rather than never - the lesser of the two mistakes. Defaulting to true
+     * would mean every current user silently skipped it and the flag would stay true, so
+     * a genuinely new install could never be told apart.
+     */
+    val setupComplete: Boolean = false
 ) {
+
+    /**
+     * Where temporary files go, with the default applied.
+     *
+     * Blank means "the app's own folder", never the process's working directory - which
+     * on Windows is wherever the app was started from, so a user who ran it from a
+     * downloads folder would silently fill that up with partials.
+     */
+    fun cacheDirFile(): File =
+        cacheDir.takeIf { it.isNotBlank() }?.let(::File) ?: AppPaths.cacheDirectory
     val speedLimitEnabled: Boolean get() = speedLimitBytesPerSecond > 0L
 
     fun downloadDirFile(): File = File(downloadDir)
@@ -175,8 +235,42 @@ data class QueuedDownload(
     /** When it began seeding, so a time limit has something to count from. */
     val seedingSinceEpochMillis: Long = 0L,
     /** When sharing stopped, if it did. Zero means it has not. */
-    val seedingStoppedAtEpochMillis: Long = 0L
-)
+    val seedingStoppedAtEpochMillis: Long = 0L,
+    // --- choices made in the pre-download dialog -------------------------------
+
+    /** Which files inside this torrent to fetch. Empty means all of them. */
+    val torrentSelectedFiles: List<Int> = emptyList(),
+    /** Fetch files in order. */
+    val torrentSequential: Boolean = false,
+    /** Fetch the first and last pieces first, so video can start playing sooner. */
+    val torrentFirstLastPiecesFirst: Boolean = false,
+    /** Folder under the save directory that the torrent's files go in. */
+    val torrentContentFolder: String = "",
+    // --- torrent readings, mirrored from the engine for the detail pane ------------
+
+    /** Bytes per second being uploaded. */
+    val uploadRate: Long = 0L,
+    /** Peers that have the whole file. */
+    val seeds: Int = 0,
+    /** Peers that have some of it. */
+    val peerCount: Int = 0,
+    /** Bytes uploaded over the torrent's whole life. */
+    val uploadedBytes: Long = 0L,
+    /** When it finished downloading. */
+    val completedAt: Long = 0L
+) {
+
+    /**
+     * The scratch name this item's bytes go under.
+     *
+     * Two kinds of transfer, two shapes: an HTTP download is a single `part-<id>` file,
+     * while a torrent's pieces are spread across a folder of its own. Removing an item
+     * has to know which, or it deletes a folder that was never there and leaves the real
+     * one behind.
+     */
+    val cacheKey: String
+        get() = if (source == DownloadSource.TORRENT) "torrent-$id" else id
+}
 
 /** JSON-backed queue, loaded once and written on change (debounced by the caller). */
 class DesktopStore(initial: List<QueuedDownload> = emptyList()) {
@@ -224,12 +318,17 @@ class DesktopStore(initial: List<QueuedDownload> = emptyList()) {
      * behind would strand a partial download nobody asked for.
      */
     @Synchronized
-    fun remove(id: String, deleteFiles: Boolean) {
+    fun remove(id: String, deleteFiles: Boolean, deleteCache: Boolean = true) {
         val item = items.remove(id) ?: return
         if (deleteFiles) {
             item.location?.let { path -> runCatching { File(path).deleteRecursively() } }
         }
-        runCatching { AppPaths.workDir.resolve(id).deleteRecursively() }
+        // The scratch copy follows the same choice as the finished file, and for an
+        // unfinished download it *is* the file - there is nothing else on disk. Leaving it
+        // behind is how a cache quietly fills up with partials nobody can account for.
+        if (deleteCache) {
+            runCatching { AppPaths.workDir.resolve(item.cacheKey).deleteRecursively() }
+        }
     }
 
     /** Deletes the saved file and the scratch copy. */

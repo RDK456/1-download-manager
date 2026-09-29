@@ -60,93 +60,6 @@ import com.downloadhub.core.DownloadStatus
 import java.io.File
 import java.util.Locale
 
-/**
- * The Windows app.
- *
- * Same shape as the Android screens - two list tabs and a settings page - so the
- * two builds stay recognisable, but everything Android specific (foreground
- * service, SAF tree, WorkManager recovery) has no desktop equivalent and is
- * simply absent.
- */
-@Composable
-fun AddDownloadDialog(
-    onDismiss: () -> Unit,
-    onAdd: (String, Boolean, String, Int?, Boolean) -> Unit
-) {
-    var link by remember { mutableStateOf("") }
-    var audioOnly by remember { mutableStateOf(false) }
-    var format by remember { mutableStateOf("m4a") }
-    var height by remember { mutableStateOf("1080") }
-    var playlist by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-            properties = APP_DIALOG_PROPERTIES,
-        title = { Text("Add a download") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = link,
-                    onValueChange = { link = it },
-                    label = { Text("Link, magnet or .torrent URL") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("AUDIO", "720", "1080", "2160", "best").forEach { preset ->
-                        val selected = if (preset == "AUDIO") audioOnly else (!audioOnly && height == preset)
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                if (preset == "AUDIO") audioOnly = !audioOnly
-                                else {
-                                    audioOnly = false
-                                    height = preset
-                                }
-                            },
-                            label = { Text(if (preset == "AUDIO") "Audio only" else preset, fontSize = 12.sp) }
-                        )
-                    }
-                }
-                if (audioOnly) {
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("m4a", "mp3", "opus", "wav").forEach { option ->
-                            FilterChip(
-                                selected = format == option,
-                                onClick = { format = option },
-                                label = { Text(option, fontSize = 12.sp) }
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.Checkbox(checked = playlist, onCheckedChange = { playlist = it })
-                    Text("Whole playlist (YouTube)", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val parsed = height.toIntOrNull()
-                    onAdd(
-                        link.trim(),
-                        audioOnly,
-                        format,
-                        if (audioOnly) null else parsed,
-                        playlist
-                    )
-                },
-                enabled = link.isNotBlank()
-            ) { Text("Add") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
 @Composable
 fun SettingsDialog(
     settings: DesktopSettings,
@@ -156,6 +69,7 @@ fun SettingsDialog(
     onDismiss: () -> Unit,
     onSave: (DesktopSettings) -> Unit,
     onChooseFolder: () -> File?,
+    onChooseCacheFolder: () -> File? = onChooseFolder,
     onToggleCapture: (Boolean) -> Unit,
     extensionReady: Boolean,
     extensionPath: String,
@@ -166,6 +80,10 @@ fun SettingsDialog(
     var speed by remember { mutableStateOf(settings.speedLimitBytesPerSecond.toString()) }
     var retries by remember { mutableStateOf(settings.maxRetries.toString()) }
     var closeToTray by remember { mutableStateOf(settings.closeToTray) }
+    // Shown as the folder itself rather than "the app's own folder", because a user
+    // looking at this wants to know where the bytes are going.
+    var cache by remember { mutableStateOf(settings.cacheDir) }
+    var deleteCache by remember { mutableStateOf(settings.deleteCacheWhenRemoved) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -209,9 +127,42 @@ fun SettingsDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "Temporary files",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "A download is written here first and moved to the download folder " +
+                        "only when it is whole, so this is the folder that fills up during " +
+                        "a transfer. Leave it empty to use the app's own folder.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = cache,
+                        onValueChange = { cache = it },
+                        label = { Text("Cache folder") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { onChooseCacheFolder()?.let { cache = it.absolutePath } }) {
+                        Icon(DlmIcons.Folder, contentDescription = "Choose a cache folder")
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TickBox(checked = deleteCache, onChange = { deleteCache = it })
+                    Text(
+                        "Delete the cache when an unfinished download is removed",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.Checkbox(checked = closeToTray, onCheckedChange = { closeToTray = it })
+                    TickBox(checked = closeToTray, onChange = { closeToTray = it })
                     Text("Close to the system tray", style = MaterialTheme.typography.bodySmall)
                 }
                 Text(
@@ -294,7 +245,10 @@ fun SettingsDialog(
                         maxConcurrent = concurrent.toIntOrNull()?.coerceIn(1, 8) ?: 3,
                         speedLimitBytesPerSecond = (speed.toLongOrNull() ?: 0L) * 1024L,
                         maxRetries = retries.toIntOrNull()?.coerceIn(0, 5) ?: 2,
-                        closeToTray = closeToTray
+                        closeToTray = closeToTray,
+                        // Trimmed: a trailing space in a path is a folder that does not exist.
+                        cacheDir = cache.trim(),
+                        deleteCacheWhenRemoved = deleteCache
                     )
                 )
             }) { Text("Save") }
