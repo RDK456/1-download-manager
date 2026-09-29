@@ -3,6 +3,7 @@ package com.downloadhub.core
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import org.libtorrent4j.AddTorrentParams
+import org.libtorrent4j.Priority
 import org.libtorrent4j.SessionHandle
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
@@ -88,8 +89,53 @@ class TorrentEngine(
     fun start(item: DownloadItem): TorrentSnapshot? {
         val hash = ensureSession(item)
         val handle = findHandle(hash) ?: return null
+        // Applied after the handle exists, not before: libtorrent needs the piece layout
+        // to know which pieces a file covers, and only has that once the torrent is in
+        // the session.
+        applyFileSelection(item, handle)
         handles[item.id] = handle
         return snapshot(item, handle)
+    }
+
+    /**
+     * Applies the dialog's file selection to a started torrent.
+     *
+     * A deselected file is set to priority IGNORE, which is how libtorrent is told to
+     * leave its pieces alone. This is the empty path for every magnet and every torrent
+     * added without the dialog.
+     */
+    private fun applyFileSelection(item: DownloadItem, handle: TorrentHandle) {
+        val selection = item.torrentSelectedFiles
+        if (selection.isEmpty()) return
+        val info = runCatching { handle.torrentFile() }.getOrNull() ?: return
+        val fileCount = runCatching { info.numFiles() }.getOrDefault(0)
+        if (fileCount <= 0) return
+        repeat(fileCount) { index ->
+            val wanted = selection.contains(index)
+            runCatching {
+                handle.filePriority(
+                    index,
+                    if (wanted) Priority.DEFAULT else Priority.IGNORE
+                )
+            }
+        }
+        if (item.torrentSequential) {
+            runCatching { handle.setFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD) }
+        }
+        if (item.torrentFirstLastPiecesFirst) {
+            // The first and last pieces are what a player needs before it can start, so
+            // asking for them turns a video from "nothing plays for an hour" into
+            // "playable almost immediately".
+            runCatching {
+                val pieceCount = runCatching { info.numPieces() }.getOrDefault(0)
+                if (pieceCount > 0) {
+                    val priorities = Priority.array(Priority.DEFAULT, pieceCount)
+                    priorities[0] = Priority.TOP_PRIORITY
+                    priorities[pieceCount - 1] = Priority.TOP_PRIORITY
+                    handle.prioritizePieces(priorities)
+                }
+            }
+        }
     }
 
     fun poll(item: DownloadItem): TorrentSnapshot? {
@@ -144,7 +190,15 @@ class TorrentEngine(
         }
 
         val torrentFile = item.torrentFilePath?.let(::File)?.takeIf { it.exists() }
-        val saveDirectory = item.outputPath?.let(::File) ?: defaultSaveDirectory(item)
+        // The folder the user chose in the dialog sits under the save directory. Without
+        // it the files land loose beside everything else already downloaded, which is
+        // what made multi-file torrents hard to find afterwards.
+        val base = item.outputPath?.let(::File) ?: defaultSaveDirectory(item)
+        val saveDirectory = if (item.torrentContentFolder.isNotBlank()) {
+            File(base, item.torrentContentFolder)
+        } else {
+            base
+        }
         saveDirectory.mkdirs()
         val flags = TorrentFlags.SEQUENTIAL_DOWNLOAD
             .or_(TorrentFlags.UPDATE_SUBSCRIBE)

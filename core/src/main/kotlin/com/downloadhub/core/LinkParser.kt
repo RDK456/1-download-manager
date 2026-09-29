@@ -1,5 +1,6 @@
 package com.downloadhub.core
 
+import java.io.File
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -29,11 +30,77 @@ object LinkParser {
     fun isYouTube(link: String): Boolean {
         val host = runCatching { URI(link.trim()).host?.lowercase(Locale.US) }.getOrNull()
             ?: return link.trim().lowercase(Locale.US).startsWith("youtu.be/")
-        return host == "youtu.be" ||
-            host == "youtube.com" ||
-            host.endsWith(".youtube.com") ||
-            host == "youtube-nocookie.com"
+        return matchesHost(host, "youtu.be") || matchesHost(host, "youtube.com") ||
+            matchesHost(host, "youtube-nocookie.com")
     }
+
+    /**
+     * Does this host *are* that one, or a subdomain of it?
+     *
+     * Comparing the host exactly misses `www.`, which is how `youtube-nocookie.com` was
+     * being missed and every embed URL came through as ordinary HTTP. Comparing only by
+     * suffix is not enough either: `notyoutube.com` ends with the same letters but is
+     * somebody else's domain.
+     */
+    private fun matchesHost(host: String, domain: String): Boolean =
+        host == domain || host.endsWith(".$domain")
+
+    /**
+     * Can this link actually be downloaded?
+     *
+     * http and https, a magnet, or a `.torrent` that is on disk. Anything else - a bare
+     * file name, a title, a sentence someone pasted - has nothing behind it, and queued
+     * it produces a row that can only fail. Catching that at the point of adding is the
+     * difference between "that is not a link" and a download that sits in the list
+     * reporting `no protocol: <the text>`.
+     *
+     * [localFile] is supplied when the caller already has a file in hand, so a `.torrent`
+     * does not have to be re-resolved from its path.
+     */
+    fun isFetchable(link: String, localFile: File? = null): Boolean {
+        val trimmed = link.trim()
+        if (trimmed.isEmpty()) return false
+        if (trimmed.startsWith("magnet:", ignoreCase = true)) return true
+        if (trimmed.startsWith("http://", ignoreCase = true)) return true
+        if (trimmed.startsWith("https://", ignoreCase = true)) return true
+        // A file the caller already has in hand counts whatever the link text says, so a
+        // `.torrent` handed over by a drop or a picker does not have to round-trip
+        // through its own path.
+        if (localFile?.isFile == true) return true
+        if (sourceFor(trimmed) == DownloadSource.TORRENT) {
+            return runCatching { File(trimmed).isFile }.getOrDefault(false)
+        }
+        return false
+    }
+
+    /**
+     * Is this link a video, or a site that serves video?
+     *
+     * This is what decides whether the quality and audio choices mean anything. They are
+     * read by yt-dlp, so they were being offered for every link - a zip, a torrent, a
+     * plain file - where selecting "1080p" does nothing at all and only makes the dialog
+     * look like it is offering a choice it cannot honour.
+     */
+    fun isVideo(link: String): Boolean {
+        val trimmed = link.trim()
+        if (trimmed.isEmpty()) return false
+        val normalized = trimmed.lowercase(Locale.US)
+        if (sourceFor(normalized) == DownloadSource.TORRENT) return false
+        if (isYouTube(normalized)) return true
+        val host = runCatching { URI(trimmed).host?.lowercase(Locale.US) }.getOrNull()
+        if (host != null && videoHosts.any { matchesHost(host, it) }) return true
+        val path = normalized.substringBefore('?').substringBefore('#')
+        return videoExtensions.contains(path.substringAfterLast('.').substringAfterLast('/'))
+    }
+
+    private val videoHosts = setOf(
+        "vimeo.com", "dailymotion.com", "twitch.tv", "streamable.com", "rumble.com",
+        "odysee.com", "bilibili.com", "nicovideo.jp", "coub.com", "peertube.fr",
+        "facebook.com", "instagram.com", "tiktok.com", "t.me", "vk.com", "rutube.ru",
+        "bbc.co.uk", "bbc.com", "cnn.com", "pbs.org", "arte.tv"
+    )
+
+
 
     /**
      * File providers are inconsistent about the MIME type they report for
@@ -72,7 +139,7 @@ object LinkParser {
 
     private val videoExtensions = setOf(
         "mp4", "mkv", "webm", "mov", "avi", "m4v", "flv", "wmv", "mpg", "mpeg", "ts", "3gp",
-        "3g2", "mts", "m2ts", "ogv", "vob", "rm", "rmvb", "asf", "divx", "f4v", "mxf", "y4m",
+        "3g2", "mts", "m2ts", "ogv", "vob", "rm", "rmvb", "asf", "divx", "f4v", "mxf", "y4m", "m3u8",
         "dv", "mpe", "qt", "swf"
     )
 
