@@ -98,27 +98,35 @@ class TorrentEngine(
     }
 
     /**
-     * Applies the dialog's file selection to a started torrent.
+     * Applies the dialog's file selection and the per-file priorities to a started torrent.
      *
-     * A deselected file is set to priority IGNORE, which is how libtorrent is told to
-     * leave its pieces alone. This is the empty path for every magnet and every torrent
-     * added without the dialog.
+     * A file set to [FilePriority.SKIP] is given libtorrent's `IGNORE`, which is how it is
+     * told to leave that file's pieces alone - the difference between "I want three of
+     * these forty files" and "I want all of them slowly". This is the empty path for every
+     * magnet and every torrent added without the dialog.
+     *
+     * It goes through [planFilePriorities] rather than setting ranks one file at a time,
+     * because a file at Maximum also needs its *pieces* raised and the piece arithmetic
+     * needs every file's offset, and doing it per file is how you end up raising only the
+     * pieces of the first file.
      */
     private fun applyFileSelection(item: DownloadItem, handle: TorrentHandle) {
-        val selection = item.torrentSelectedFiles
-        if (selection.isEmpty()) return
         val info = runCatching { handle.torrentFile() }.getOrNull() ?: return
         val fileCount = runCatching { info.numFiles() }.getOrDefault(0)
         if (fileCount <= 0) return
-        repeat(fileCount) { index ->
-            val wanted = selection.contains(index)
-            runCatching {
-                handle.filePriority(
-                    index,
-                    if (wanted) Priority.DEFAULT else Priority.IGNORE
-                )
-            }
+        val pieceCount = runCatching { info.numPieces() }.getOrDefault(0)
+        val pieceLength = runCatching { info.pieceLength().toLong() }.getOrDefault(0L)
+
+        val sizes = fileSizesOf(item, fileCount)
+        val perFile = item.torrentFilePriorities
+            .mapValues { (_, ordinal) -> FilePriority.fromOrdinal(ordinal) }
+        val selected = item.torrentSelectedFiles.toSet()
+        val chosen = (0 until fileCount).associateWith { index ->
+            effectiveFilePriority(selected, perFile, index)
         }
+        val plan = planFilePriorities(sizes, pieceCount, pieceLength, chosen)
+        applyPlan(plan, handle)
+
         if (item.torrentSequential) {
             runCatching { handle.setFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD) }
         }
@@ -127,7 +135,6 @@ class TorrentEngine(
             // asking for them turns a video from "nothing plays for an hour" into
             // "playable almost immediately".
             runCatching {
-                val pieceCount = runCatching { info.numPieces() }.getOrDefault(0)
                 if (pieceCount > 0) {
                     val priorities = Priority.array(Priority.DEFAULT, pieceCount)
                     priorities[0] = Priority.TOP_PRIORITY
@@ -136,6 +143,70 @@ class TorrentEngine(
                 }
             }
         }
+    }
+
+    /**
+     * Sends a priority plan to libtorrent.
+     *
+     * One call for the whole file array rather than one per file: `prioritize_files` is a
+     * single swap, and a per-file loop on a thousand-file torrent is a thousand JNI calls
+     * to set values that are already the default.
+     *
+     * The array is one entry per file, which is not the same length as `Priority.values()`:
+     * libtorrent's enum is eight long because it has eight ranks, and a torrent has as many
+     * files as its author put in it. Passing the enum itself would set eight files.
+     */
+    private fun applyPlan(plan: FilePriorityPlan, handle: TorrentHandle) {
+        if (plan.filePriorities.isEmpty()) return
+        val ranks = Priority.values()
+        val files = Array(plan.filePriorities.size) { index ->
+            ranks[plan.filePriorities[index].coerceIn(ranks.first().ordinal, ranks.last().ordinal)]
+        }
+        runCatching { handle.prioritizeFiles(files) }
+        // Only when something asked for its pieces to be raised. Sending an all-default
+        // array would clear a piece order somebody set elsewhere, such as first-and-last.
+        plan.piecePriorities?.let { pieces ->
+            val raised = Array(pieces.size) { index ->
+                ranks[pieces[index].coerceIn(ranks.first().ordinal, ranks.last().ordinal)]
+            }
+            runCatching { handle.prioritizePieces(raised) }
+        }
+    }
+
+    /**
+     * Each file's size, which is what the piece arithmetic needs.
+     *
+     * Read from the metainfo rather than from the queue, because the queue does not carry
+     * forty file sizes and would have to for every poll. The torrent file is on disk - it is
+     * copied there when the torrent is added, and a magnet that went through the
+     * pre-download dialog had its fetched metainfo written there too.
+     *
+     * Empty when it cannot be found. That is not a failure: the per-file ranks still go out,
+     * which is what "skip this file" and "raise this file" need. Only "Maximum" loses
+     * something, because raising a file's pieces is what needs the sizes, and so it falls
+     * back to competing like High does. Saying so is better than guessing offsets.
+     */
+    private fun fileSizesOf(item: DownloadItem, fileCount: Int): List<Long> {
+        val cached = item.torrentFilePath?.let(::File)?.takeIf { it.isFile }
+            ?.let { runCatching { TorrentParser.parse(it) }.getOrNull() }
+        if (cached != null && cached.files.size == fileCount) {
+            return cached.files.sortedBy { it.index }.map { it.size }
+        }
+        return emptyList()
+    }
+
+    /**
+     * Re-applies per-file priorities to an already-running torrent.
+     *
+     * This is what a priority control in the file list calls. It does not restart the
+     * torrent and it does not touch the piece queue unless something asked for Maximum, so
+     * "stop this one file" takes effect on the next piece request rather than after a
+     * recheck.
+     */
+    fun setFilePriorities(item: DownloadItem): Boolean {
+        val handle = handles[item.id] ?: start(item)?.let { handles[item.id] } ?: return false
+        applyFileSelection(item, handle)
+        return true
     }
 
     fun poll(item: DownloadItem): TorrentSnapshot? {

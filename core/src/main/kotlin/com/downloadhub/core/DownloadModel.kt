@@ -96,6 +96,20 @@ data class DownloadItem(
      * restart or the torrent quietly reverts to downloading everything.
      */
     val torrentSelectedFiles: List<Int> = emptyList(),
+    /**
+     * Per-file download priority, keyed by file index, storing a [FilePriority] ordinal.
+     *
+     * Separate from [torrentSelectedFiles] because the two answer different questions and
+     * both are wanted at once: the selection is "which of these do I want", the priority
+     * is "in what order among the ones I do want". A user who wants forty files at once
+     * cannot say that with a tick box, and a user who wants three files does not care
+     * which of the three arrives first.
+     *
+     * An absent index means [FilePriority.NORMAL]. Stored as ordinals rather than names so
+     * the queue stays a small JSON map, and so a name change cannot silently orphan a
+     * saved choice.
+     */
+    val torrentFilePriorities: Map<Int, Int> = emptyMap(),
     /** Fetch files in order. Helps where earlier parts are needed to open the rest. */
     val torrentSequential: Boolean = false,
     /** Fetch the first and last pieces first, which is what video needs to start. */
