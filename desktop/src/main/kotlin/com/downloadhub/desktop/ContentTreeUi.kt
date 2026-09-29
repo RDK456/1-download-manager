@@ -63,7 +63,15 @@ fun ContentTreeList(
     onSelectAll: () -> Unit,
     onSelectNone: () -> Unit,
     /** Used by the detail pane, which reports the selection rather than editing it. */
-    readOnly: Boolean = false
+    readOnly: Boolean = false,
+    /**
+     * Whether to draw the toolbar above the headings.
+     *
+     * False where the caller has put a filter on screen of its own. It was drawn either
+     * way, so the detail pane ended up with two filter boxes and two counts: the one that
+     * worked and the one that had nothing to filter.
+     */
+    chrome: Boolean = true
 ) {
     // Which folders are open. Nothing starts open, because a release with four hundred
     // files is not readable all at once - but the folders are one click away and each
@@ -92,6 +100,7 @@ fun ContentTreeList(
     val shown = remember(nodes, expanded) { visibleContentNodes(nodes, expanded) }
 
     Column(modifier.fillMaxWidth()) {
+        if (chrome) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -113,15 +122,9 @@ fun ContentTreeList(
                     .weight(1f, fill = false)
                     .widthIn(min = 90.dp, max = 170.dp)
             )
-            if (readOnly) {
-                Text(
-                    "as chosen when it was added",
-                    fontSize = 10.sp,
-                    color = TREE_SECONDARY
-                )
-            }
         }
         Spacer(Modifier.height(6.dp))
+        }
         // Measured, so the headings can be fitted to the same widths the rows use. A header
         // that is a fixed set of widths and rows that are not is a header over the wrong
         // columns.
@@ -436,7 +439,8 @@ fun ContentFileList(
     onSelectionChange: (Set<Int>) -> Unit,
     onSelectAll: () -> Unit,
     onSelectNone: () -> Unit,
-    readOnly: Boolean = false
+    readOnly: Boolean = false,
+    chrome: Boolean = true
 ) {
     ContentTreeList(
         rows = rows,
@@ -446,7 +450,8 @@ fun ContentFileList(
         onFilter = onFilter,
         onSelectAll = onSelectAll,
         onSelectNone = onSelectNone,
-        readOnly = readOnly
+        readOnly = readOnly,
+        chrome = chrome
     )
 }
 

@@ -73,6 +73,7 @@ import com.downloadhub.core.LibraryQuery
 import com.downloadhub.core.LibrarySort
 import com.downloadhub.core.SortDirection
 import java.io.File
+import androidx.compose.runtime.saveable.rememberSaveable
 import kotlin.math.abs
 
 /**
@@ -112,6 +113,15 @@ fun LibraryScreen(
     var relocating by remember { mutableStateOf<String?>(null) }
     /** Which bottom pane is open on the torrents tab. */
     var detailTab by remember { mutableStateOf(TorrentTab.GENERAL) }
+    /**
+     * How tall the detail pane is, and who changed it.
+     *
+     * Saved rather than merely remembered, so a file list made tall enough to read is
+     * still tall enough next time. A pane that resets to its default on every launch is a
+     * pane that has to be resized on every launch, which is the same as not being
+     * resizable.
+     */
+    var detailPaneHeight by rememberSaveable { mutableStateOf(PANE_DEFAULT_DP) }
     /**
      * The column widths, kept for as long as the window is open.
      *
@@ -264,7 +274,9 @@ fun LibraryScreen(
                             item = all.firstOrNull { it.id in selected }
                                 ?: all.firstOrNull { it.source == com.downloadhub.core.DownloadSource.TORRENT },
                             tab = detailTab,
-                            onTab = { detailTab = it }
+                            onTab = { detailTab = it },
+                            paneHeight = detailPaneHeight,
+                            onPaneHeightChange = { detailPaneHeight = it }
                         )
                         TorrentStatusBar(all)
                     }
