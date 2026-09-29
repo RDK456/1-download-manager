@@ -20,6 +20,52 @@ import org.junit.Test
  */
 class AddDownloadDialogTest {
 
+    /**
+     * A torrent may list the same path twice.
+     *
+     * The file list was keyed on the path, and a repeated key throws while the list is
+     * being laid out - "Key ... was already used" - which is a hard crash that only ever
+     * happens for the user whose torrent has that shape. Found by opening the dialog on a
+     * real 13-file release whose paths all shared one name.
+     */
+    @Test
+    fun aTorrentWithRepeatedPathsDoesNotBreakTheFileList() {
+        val duplicate = com.downloadhub.core.TorrentMetainfo(
+            name = "pack",
+            files = listOf(
+                com.downloadhub.core.TorrentFile(0, "same name.mkv", 10L),
+                com.downloadhub.core.TorrentFile(1, "same name.mkv", 20L),
+                com.downloadhub.core.TorrentFile(2, "other.mkv", 30L)
+            ),
+            comment = "",
+            createdAtEpochMillis = 0L,
+            createdBy = "",
+            infoHashV1 = "a",
+            infoHashV2 = "b",
+            isSingleFile = false
+        )
+        val rows = contentRowsFor(duplicate, "")
+
+        assertEquals(3, rows.size)
+        // The key the list uses. A path is not unique here; the index is.
+        assertEquals(
+            "the file list must be keyed on the file index, not its path, because a " +
+                "torrent can list the same path twice and a repeated key is a hard crash",
+            3,
+            rows.map { it.index }.toSet().size
+        )
+        // And the selection still distinguishes them, which a path-keyed list would not.
+        val request = com.downloadhub.core.TorrentSelection.validated(
+            meta = duplicate,
+            link = "magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f651b4c8d5e9c9a1a4a3",
+            saveDirectory = File("C:/downloads"),
+            selected = setOf(0, 2)
+        )
+        assertNotNull(request)
+        assertEquals(setOf(0, 2), request!!.selectedFiles)
+        assertEquals(40L, com.downloadhub.core.TorrentSelection.selectedSize(duplicate, setOf(0, 2)))
+    }
+
     private fun torrentFile(): File {
         val file = File.createTempFile("dlm-pre", ".torrent")
         file.writeBytes(
@@ -33,6 +79,51 @@ class AddDownloadDialogTest {
                 "e").toByteArray(Charsets.ISO_8859_1)
         )
         return file
+    }
+
+    /**
+     * A release torrent names every file the same way and differs only at the end.
+     *
+     * Truncated at the end, all thirteen rows read "[Judas] Chainsaw Man (Season..." and
+     * the list cannot tell its own rows apart. Found by opening the dialog on a real
+     * thirteen-file release.
+     */
+    @Test
+    fun longFileNamesAreShortenedFromTheFrontSoRowsCanBeToldApart() {
+        val stem = "[Judas] Chainsaw Man (Season 1) [1080p][HEVC x265 10bit][Multi-Subs] - "
+        val meta = com.downloadhub.core.TorrentMetainfo(
+            name = "Example Release 2.1",
+            files = listOf(
+                com.downloadhub.core.TorrentFile(0, stem + "01 [1080p].mkv", 100L),
+                com.downloadhub.core.TorrentFile(1, stem + "02 [1080p].mkv", 200L),
+                com.downloadhub.core.TorrentFile(2, stem + "03 [1080p].mkv", 300L)
+            ),
+            comment = "",
+            createdAtEpochMillis = 0L,
+            createdBy = "",
+            infoHashV1 = "a",
+            infoHashV2 = "b",
+            isSingleFile = false
+        )
+        val shown = contentRowsFor(meta, "").map { it.displayName }
+
+        assertEquals("each row must be as wide as the budget, not wider",
+            3, shown.count { it.length == ContentRow.NAME_BUDGET })
+        // The tail is what differs, and it has to survive.
+        assertTrue("01 [1080p].mkv must be visible: $shown", shown[0].endsWith("01 [1080p].mkv"))
+        assertTrue("02 [1080p].mkv must be visible: $shown", shown[1].endsWith("02 [1080p].mkv"))
+        assertTrue("03 [1080p].mkv must be visible: $shown", shown[2].endsWith("03 [1080p].mkv"))
+        // And they must actually be distinguishable from one another.
+        assertEquals("three rows that read the same are not a list", 3, shown.toSet().size)
+        assertTrue("the cut is marked", shown.all { it.startsWith("...") })
+    }
+
+    @Test
+    fun aShortFileNameIsShownWhole() {
+        val row = ContentRow("docs/readme.txt", 0, 10L)
+        assertEquals("readme.txt", row.displayName)
+        // Nothing is added to a name that fits.
+        assertEquals("readme.txt", row.name)
     }
 
     @Test

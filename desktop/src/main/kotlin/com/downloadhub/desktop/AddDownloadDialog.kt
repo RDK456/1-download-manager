@@ -340,6 +340,38 @@ fun AddDownloadDialog(
 data class ContentRow(val path: String, val index: Int, val size: Long) {
     /** The last segment: a path column 90 characters wide shows one file and no context. */
     val name: String get() = path.substringAfterLast('/')
+
+    /**
+     * What the list actually shows, shortened from the *front*.
+     *
+     * A release torrent names every one of its files the same 60-character way and tells
+     * them apart only in the last few characters - "[Judas] Chainsaw Man (Season 1)
+     * [1080p][HEVC x265 10bit] - 01.mkv" against the same for 02. Truncating that the
+     * usual way, at the end, makes all of them read "[Judas] Chainsaw Man (Season..." so
+     * the list cannot tell its own rows apart. Keeping the tail and dropping the head
+     * shows the part that differs, which is the part being looked for.
+     */
+    val displayName: String
+        get() {
+            val whole = name
+            return if (whole.length <= NAME_BUDGET) {
+                whole
+            } else {
+                "..." + whole.takeLast(NAME_BUDGET - 3)
+            }
+        }
+
+    companion object {
+        /**
+         * How many characters of a name the list shows.
+         *
+         * A count rather than a measurement because the column is sized in `dp` and the
+         * characters are not a fixed width; this is close enough that a long name is cut
+         * rather than silently wrapped onto two lines, which is what a name column that
+         * grows does to a list of thirteen.
+         */
+        const val NAME_BUDGET = 44
+    }
 }
 
 /**
@@ -416,7 +448,15 @@ fun ContentFileList(
                 )
             } else {
                 LazyColumn {
-                    items(rows, key = { it.path }) { row ->
+                    // Keyed on the file's index, not its path.
+                    //
+                    // A path is not guaranteed to be unique - a torrent can list the
+                    // same name twice, and several real encoders produce torrents like
+                    // that - and a duplicated key throws while the list is being laid out:
+                    // "Key ... was already used", which is a hard crash that only happens
+                    // for the user whose torrent has that shape. The index is unique by
+                    // construction, so it is the only safe key here.
+                    items(rows, key = { it.index }) { row ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -430,7 +470,7 @@ fun ContentFileList(
                                 size = 12.dp
                             )
                             Text(
-                                row.name,
+                                row.displayName,
                                 fontSize = 11.sp,
                                 maxLines = 1,
                                 modifier = Modifier.weight(1f).padding(start = 4.dp)
