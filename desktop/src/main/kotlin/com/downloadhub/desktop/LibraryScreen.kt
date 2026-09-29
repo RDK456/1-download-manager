@@ -740,8 +740,13 @@ private fun ColumnHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // A fixed height, and the reason is in LibraryLayout: the resize handles
+            // inside this row fill its height, and a row with no height constraint hands
+            // them the incoming maximum - the whole table. The header then swallowed the
+            // list and every row and the status bar went off the bottom of the window.
+            .height(HEADER_HEIGHT_DP.dp)
             .background(Color(0xFF161C1F))
-            .padding(start = 8.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
+            .padding(start = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.width(18.dp))

@@ -24,6 +24,17 @@ import androidx.compose.ui.unit.dp
  * and clipped the row at 620 dp.
  */
 
+/**
+ * The header's fixed height, in dp.
+ *
+ * It has to be fixed because a resize handle inside it fills the header's height, and
+ * `fillMaxHeight` inside a row with no height constraint resolves against the incoming
+ * *maximum* - which is the whole table. The header then became as tall as the list, the
+ * dividers ran the full height of the window, and every row and the status bar were
+ * pushed off the bottom with no error anywhere.
+ */
+const val HEADER_HEIGHT_DP = 30f
+
 /** A row's checkbox and the padding down both sides of it. */
 const val ROW_CHROME_DP = 26f + 16f
 
