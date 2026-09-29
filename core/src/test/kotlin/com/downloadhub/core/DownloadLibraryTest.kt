@@ -55,24 +55,40 @@ class DownloadLibraryTest {
     }
 
     @Test
-    fun finishedHoldsOnlyCompletedItems() {
-        val finished = DownloadLibrary.visible(sample, LibraryQuery(group = LibraryGroup.FINISHED))
-        assertEquals(2, finished.size)
-        assertTrue(finished.all { it.status == DownloadStatus.COMPLETED })
+    fun completedHoldsOnlyCompletedItems() {
+        val done = DownloadLibrary.visible(sample, LibraryQuery(group = LibraryGroup.COMPLETED))
+        assertEquals(2, done.size)
+        assertTrue(done.all { it.status == DownloadStatus.COMPLETED })
+    }
+
+    /**
+     * The states partition the list.
+     *
+     * There is no "Unfinished" any more. It was every item that is not completed, which is
+     * the whole list minus one entry - so it read as though the rail were listing things
+     * twice, and it put the four failed and paused downloads in with the running ones
+     * where nothing could reach them.
+     */
+    @Test
+    fun theFourStatesPartitionTheList() {
+        val states = listOf(
+            LibraryGroup.DOWNLOADING,
+            LibraryGroup.PAUSED,
+            LibraryGroup.FAILED,
+            LibraryGroup.COMPLETED
+        )
+        val total = states.sumOf { DownloadLibrary.visible(sample, LibraryQuery(group = it)).size }
+        assertEquals(sample.size, total)
+        assertEquals(sample.size, DownloadLibrary.visible(sample, LibraryQuery(group = LibraryGroup.ALL)).size)
     }
 
     @Test
-    fun unfinishedIsEverythingElse() {
-        val unfinished = DownloadLibrary.visible(sample, LibraryQuery(group = LibraryGroup.UNFINISHED))
-        assertEquals(4, unfinished.size)
-        assertTrue(unfinished.none { it.status == DownloadStatus.COMPLETED })
-    }
-
-    @Test
-    fun aFailedItemCountsAsUnfinished() {
-        // It is not finished, and the user still has to deal with it.
-        val unfinished = DownloadLibrary.visible(sample, LibraryQuery(group = LibraryGroup.UNFINISHED))
-        assertTrue(unfinished.any { it.status == DownloadStatus.FAILED })
+    fun aFailedItemIsReachableRatherThanBuriedWithTheRest() {
+        // It used to sit in "Unfinished" with everything else, where the only way to see it
+        // was to sort the table.
+        val failed = DownloadLibrary.visible(sample, LibraryQuery(group = LibraryGroup.FAILED))
+        assertTrue(failed.any { it.status == DownloadStatus.FAILED })
+        assertTrue(failed.all { it.status == DownloadStatus.FAILED })
     }
 
     @Test
@@ -84,8 +100,8 @@ class DownloadLibraryTest {
         assertEquals(1, DownloadLibrary.countFor(sample, LibraryCategory.DOCUMENTS))
         assertEquals(1, DownloadLibrary.countFor(sample, LibraryCategory.COMPRESSED))
         assertEquals(6, DownloadLibrary.countFor(sample, LibraryCategory.ALL))
-        assertEquals(2, DownloadLibrary.countFor(sample, LibraryGroup.FINISHED))
-        assertEquals(4, DownloadLibrary.countFor(sample, LibraryGroup.UNFINISHED))
+        assertEquals(2, DownloadLibrary.countFor(sample, LibraryGroup.COMPLETED))
+        assertEquals(1, DownloadLibrary.countFor(sample, LibraryGroup.FAILED))
     }
 
     @Test

@@ -44,20 +44,88 @@ fun DownloadCategory.destinationFolder(): String = when (this) {
     else -> "Other"
 }
 
-/** The collapsible groups under the categories, plus the queue entry. */
+/**
+ * What the download list can be narrowed to.
+ *
+ * These are the questions a person actually asks of a download manager: what is coming,
+ * what is done, what did I stop, what broke. The previous set was Finished and Unfinished
+ * plus a "Queues" heading, which answered none of those - there was no way to reach the
+ * failed downloads, or everything that is actively running, except by sorting.
+ *
+ * Unfinished is deliberately gone rather than renamed. "Everything that is not finished"
+ * is the whole list minus one entry, so it is All Downloads again with a different word
+ * on it, and having both made the rail read as if it were listing things twice.
+ */
 enum class LibraryGroup(val label: String) {
-    ALL("All"),
-    FINISHED("Finished"),
-    UNFINISHED("Unfinished"),
-    QUEUES("Queues"),
-    MAIN("Main");
+    ALL("All Downloads"),
+    DOWNLOADING("Downloading"),
+    COMPLETED("Completed"),
+    PAUSED("Paused"),
+    FAILED("Failed");
 
     fun matches(item: DownloadItem): Boolean = when (this) {
-        FINISHED -> item.status == DownloadStatus.COMPLETED
-        UNFINISHED -> item.status != DownloadStatus.COMPLETED
-        // ALL, QUEUES and MAIN do not narrow by state; MAIN is the one queue.
-        else -> true
+        // Anything that will move without being asked to: running, resolving a link, or
+        // sitting in the queue waiting for a slot. All three are "in progress" to the
+        // person looking at it.
+        DOWNLOADING -> item.status == DownloadStatus.RUNNING ||
+            item.status == DownloadStatus.RESOLVING ||
+            item.status == DownloadStatus.QUEUED
+
+        COMPLETED -> item.status == DownloadStatus.COMPLETED
+        PAUSED -> item.status == DownloadStatus.PAUSED
+        FAILED -> item.status == DownloadStatus.FAILED
+        ALL -> true
     }
+}
+
+/**
+ * One entry in the sidebar.
+ *
+ * The rail is built from this rather than assembled inside each platform's composable, so
+ * the order, the headings and the wording cannot drift between the two apps - which is
+ * what happened when the Windows rail grew its own headings.
+ */
+sealed interface RailEntry {
+    /** A status filter. */
+    data class Status(val group: LibraryGroup) : RailEntry
+
+    /** A file category. */
+    data class Category(val category: LibraryCategory) : RailEntry
+
+    /** Torrents only. A filter rather than a status, so it is its own kind. */
+    data object Torrents : RailEntry
+
+    /** A heading with nothing selectable under it. */
+    data class Heading(val label: String) : RailEntry
+}
+
+/**
+ * The sidebar, in order.
+ *
+ * The order is deliberate: the states first, because they are what gets looked at daily,
+ * then the categories, which are for tidying up afterwards, then torrents, which is a
+ * different kind of transfer rather than a kind of file.
+ */
+fun sidebarEntries(): List<RailEntry> = buildList {
+    LibraryGroup.entries.forEach { add(RailEntry.Status(it)) }
+    add(RailEntry.Heading("Categories"))
+    // ALL is already up above as "All Downloads"; repeating it here under Categories
+    // would be the same entry twice with two different counts.
+    LibraryCategory.entries
+        .filter { it != LibraryCategory.ALL }
+        .forEach { add(RailEntry.Category(it)) }
+    // No heading above Torrents. A heading reading "Torrents" above a row reading
+    // "Torrents" is the same duplication the rail is being fixed for, and it is the one
+    // the list itself would have let back in.
+    add(RailEntry.Torrents)
+}
+
+/** How many downloads an entry holds, out of what the current tab is showing. */
+fun railCount(entry: RailEntry, items: List<DownloadItem>): Int = when (entry) {
+    is RailEntry.Status -> items.count(entry.group::matches)
+    is RailEntry.Category -> items.count(entry.category::matches)
+    RailEntry.Torrents -> items.count { it.isTorrent }
+    is RailEntry.Heading -> 0
 }
 
 /** Sortable columns, in the order they appear. */
@@ -95,7 +163,7 @@ data class LibraryQuery(
     fun matches(item: DownloadItem): Boolean {
         if (torrentsOnly != item.isTorrent) return false
         if (!category.matches(item)) return false
-        if (group != LibraryGroup.ALL && group != LibraryGroup.MAIN && !group.matches(item)) return false
+        if (!group.matches(item)) return false
         if (search.isNotBlank()) {
             val needle = search.trim()
             if (!item.fileName.contains(needle, ignoreCase = true) &&
@@ -155,11 +223,8 @@ fun visible(items: List<DownloadItem>, query: LibraryQuery): List<DownloadItem> 
     fun countFor(items: List<DownloadItem>, category: LibraryCategory): Int =
         items.count { it.category in category.categories }
 
-    fun countFor(items: List<DownloadItem>, group: LibraryGroup): Int = when (group) {
-        LibraryGroup.FINISHED -> items.count { it.status == DownloadStatus.COMPLETED }
-        LibraryGroup.UNFINISHED -> items.count { it.status != DownloadStatus.COMPLETED }
-        else -> items.size
-    }
+    fun countFor(items: List<DownloadItem>, group: LibraryGroup): Int =
+        items.count(group::matches)
 
     /** Seconds remaining, or null when it cannot be known yet. */
     fun estimateSecondsLeft(item: DownloadItem): Long? {

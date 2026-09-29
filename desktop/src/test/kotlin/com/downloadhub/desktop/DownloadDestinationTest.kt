@@ -304,9 +304,15 @@ class DownloadDestinationTest {
     @Test
     fun theRailPassesTheIconThrough() {
         val screen = File("src/main/kotlin/com/downloadhub/desktop/LibraryScreen.kt").readText()
+        // Both kinds of row are drawn, and both have to be recognisable at a glance
+        // rather than read: a status and a category are told apart by their glyph.
         assertTrue(
             "the rail is not asking for the category icon",
-            screen.contains("icon = LibraryCategoryIcons.of(entry)")
+            screen.contains("icon = LibraryCategoryIcons.of(entry.category)")
+        )
+        assertTrue(
+            "and not for a status icon, so the five states are all the same shape",
+            screen.contains("icon = StatusIcons.of(entry.group)")
         )
     }
 

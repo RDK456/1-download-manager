@@ -3,6 +3,12 @@ package com.downloadhub.desktop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,9 +27,11 @@ import androidx.compose.ui.unit.dp
  * Drawn directly there is nothing to animate, and a flat square tick is the look the rest
  * of the app is going for anyway.
  *
- * The hit area is larger than the box. A control that has to be aimed at is a control
- * people skip, and the same argument applies to the row buttons that were too small to
- * hit.
+ * It lays out at exactly [size]. An earlier version added 8 dp to make a larger target,
+ * and that is what put every label in the settings a few pixels below its own tick box: a
+ * row that centres its text against a 21 dp control centres it against the padding, not
+ * against the box. The larger target is the row's job - see [TickRow] - not the box's,
+ * because a control that grows its own height cannot sit in a row beside text.
  */
 @Composable
 fun TickBox(
@@ -34,9 +42,8 @@ fun TickBox(
 ) {
     val shape = RoundedCornerShape(2.dp)
     Box(
-        // A 21 dp target around a 13 dp box.
         Modifier
-            .size(size + 8.dp)
+            .size(size)
             .clickable(enabled = enabled && onChange != null) { onChange?.invoke(!checked) },
         contentAlignment = Alignment.Center
     ) {
@@ -59,6 +66,60 @@ fun TickBox(
             contentAlignment = Alignment.Center
         ) {
             if (checked && enabled) TickMark(Color(0xFF07110D))
+        }
+    }
+}
+
+/**
+ * A labelled tick box, with the label on the same line as the box.
+ *
+ * Every tick box in the app goes through here rather than through a bare `Row`, because
+ * the alignment is the thing that is easy to get wrong: the row centres the text against
+ * whatever height the box occupies, so a box that is taller than it looks - because it is
+ * padding itself out to be easier to hit - drags the text down with it.
+ *
+ * The whole row is the target, which is the reason a 13 dp box is still easy to tick.
+ */
+@Composable
+fun TickRow(
+    label: String,
+    checked: Boolean,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    fontSize: androidx.compose.ui.unit.TextUnit = 12.sp,
+    detail: String? = null,
+    /**
+     * Last, so the usual call is `TickRow("Label", checked) { ... }`. A handler in the
+     * middle of a parameter list with optional parameters after it cannot be passed as a
+     * trailing lambda, which is the only way anybody writes this.
+     */
+    onChange: (Boolean) -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onChange(!checked) }
+            .padding(vertical = 3.dp)
+    ) {
+        TickBox(checked = checked, onChange = if (enabled) onChange else null, enabled = enabled)
+        Column(Modifier.padding(start = 8.dp)) {
+            Text(
+                label,
+                fontSize = fontSize,
+                color = if (enabled) {
+                    androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+                } else {
+                    androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+            if (detail != null) {
+                Text(
+                    detail,
+                    fontSize = 10.sp,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

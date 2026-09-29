@@ -204,7 +204,7 @@ private fun TorrentTabContent(item: DownloadItem, tab: TorrentTab) {
             } else {
                 val selected = meta.files
                     .filter { item.torrentSelectedFiles.isEmpty() || it.index in item.torrentSelectedFiles }
-                    .map { it.path }
+                    .map { it.index }
                     .toSet()
                 Column(Modifier.padding(6.dp)) {
                     Text(
@@ -218,12 +218,13 @@ private fun TorrentTabContent(item: DownloadItem, tab: TorrentTab) {
                         filter = "",
                         onFilter = {},
                         selected = selected,
+                        onSelectionChange = { },
                         onSelectAll = {},
                         onSelectNone = {},
-                        // Read-only here: this is a report of what was chosen in the
-                        // pre-download dialog, not an editor. A checkbox that unticks
-                        // itself and changes nothing is worse than a plain tick.
-                        onToggle = {}
+                        // Read-only: this reports what was chosen in the pre-download
+                        // dialog, it is not an editor. A tick box that unticks itself and
+                        // changes nothing is worse than a plain tick.
+                        readOnly = true
                     )
                 }
             }

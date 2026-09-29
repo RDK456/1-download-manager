@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -90,112 +92,74 @@ fun SettingsDialog(
             properties = APP_DIALOG_PROPERTIES,
         title = { Text("Settings") },
         text = {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = folder,
-                        onValueChange = { folder = it },
-                        label = { Text("Download folder") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = { onChooseFolder()?.let { folder = it.absolutePath } }) {
-                        Icon(DlmIcons.Folder, contentDescription = "Choose a folder")
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
+            // A fixed width and a scrollbar, rather than whatever height the content
+            // happens to be. The old layout grew with its content, so a long path pushed
+            // the last setting off the bottom of the dialog with no way to reach it.
+            Column(Modifier.width(440.dp).verticalScroll(rememberScrollState())) {
+                SectionHeading("Downloads")
+                FolderRow(
+                    label = "Download folder",
+                    value = folder,
+                    onValueChange = { folder = it },
+                    onBrowse = { onChooseFolder()?.let { folder = it.absolutePath } }
+                )
+                NumberRow(
+                    label = "Downloads at once (1-8)",
                     value = concurrent,
-                    onValueChange = { concurrent = it.filter(Char::isDigit) },
-                    label = { Text("Downloads at once (1-8)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { concurrent = it.filter(Char::isDigit) }
                 )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                NumberRow(
+                    label = "Speed limit in KB/s (0 = unlimited)",
                     value = speed,
-                    onValueChange = { speed = it.filter(Char::isDigit) },
-                    label = { Text("Speed limit in KB/s (0 = unlimited)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { speed = it.filter(Char::isDigit) }
                 )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                NumberRow(
+                    label = "Automatic retries (0-5)",
                     value = retries,
-                    onValueChange = { retries = it.filter(Char::isDigit) },
-                    label = { Text("Automatic retries (0-5)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { retries = it.filter(Char::isDigit) }
                 )
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    "Temporary files",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
+                TickRow("Close to the system tray", closeToTray) { closeToTray = it }
+
+                SectionHeading("Temporary files")
                 Text(
                     "A download is written here first and moved to the download folder " +
                         "only when it is whole, so this is the folder that fills up during " +
                         "a transfer. Leave it empty to use the app's own folder.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = cache,
-                        onValueChange = { cache = it },
-                        label = { Text("Cache folder") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = { onChooseCacheFolder()?.let { cache = it.absolutePath } }) {
-                        Icon(DlmIcons.Folder, contentDescription = "Choose a cache folder")
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TickBox(checked = deleteCache, onChange = { deleteCache = it })
-                    Text(
-                        "Delete the cache when an unfinished download is removed",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+                FolderRow(
+                    label = "Cache folder",
+                    value = cache,
+                    onValueChange = { cache = it },
+                    onBrowse = { onChooseCacheFolder()?.let { cache = it.absolutePath } }
+                )
+                TickRow(
+                    "Delete the cache when an unfinished download is removed",
+                    deleteCache
+                ) { deleteCache = it }
 
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TickBox(checked = closeToTray, onChange = { closeToTray = it })
-                    Text("Close to the system tray", style = MaterialTheme.typography.bodySmall)
-                }
+                SectionHeading("Status")
                 Text(
                     ytDlp,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    "Browser downloads",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.Checkbox(
-                        checked = settings.browserCaptureEnabled,
-                        onCheckedChange = onToggleCapture
-                    )
-                    Text(
-                        "Catch downloads from the browser",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                Text(
-                    if (captureActive) {
-                        "Listening on 127.0.0.1:$capturePort. Install the browser extension " +
-                            "and paste the code below to pair it."
+                SectionHeading("Browser downloads")
+                // The explanatory line moved under the tick, where it belongs to the
+                // setting rather than floating between it and the next section.
+                TickRow(
+                    "Catch downloads from the browser",
+                    settings.browserCaptureEnabled,
+                    detail = if (captureActive) {
+                        "Listening on 127.0.0.1:$capturePort. Install the extension and " +
+                            "paste the code below to pair it."
                     } else {
                         "Turn this on, then install the browser extension."
                     },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    onChange = onToggleCapture
                 )
                 if (settings.browserCaptureEnabled && settings.captureToken.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
@@ -207,11 +171,11 @@ fun SettingsDialog(
                     SelectionContainerCompat(settings.captureToken)
                 }
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     "1. Install the extension",
                     style = MaterialTheme.typography.bodySmall,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
@@ -220,21 +184,23 @@ fun SettingsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(Modifier.height(4.dp))
                 SelectionContainerCompat(extensionPath)
                 OutlinedButton(
                     onClick = onOpenExtensionFolder,
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(if (extensionReady) "Open extension folder" else "Extract and open folder")
                 }
 
+                Spacer(Modifier.height(12.dp))
                 Text(
                     "2. Paste the pairing code above into the extension",
                     style = MaterialTheme.typography.bodySmall,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(top = 10.dp)
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+                Spacer(Modifier.height(12.dp))
             }
         },
         confirmButton = {
@@ -255,6 +221,90 @@ fun SettingsDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+// --- settings layout helpers ------------------------------------------------
+
+/**
+ * A section heading in the settings.
+ *
+ * Fixed spacing above and below rather than a `Spacer` on either side of the heading. The
+ * headings used to be separated by loose `Spacer(10.dp)`s and a `Spacer(16.dp)`, which is
+ * why the gap above one heading was a different size from the gap below it and the
+ * sections did not read as sections.
+ */
+@Composable
+private fun SectionHeading(label: String) {
+    Text(
+        label,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(top = 16.dp, bottom = 6.dp)
+    )
+}
+
+/**
+ * A folder path with a browse button beside it.
+ *
+ * The button is a fixed 36 dp and the icon inside it a fixed 18 dp. `IconButton` sizes
+ * itself to its own default and the icon to whatever vector it was handed, so the two
+ * together came out taller than the text field beside them and the row sat unevenly.
+ */
+@Composable
+private fun FolderRow(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    onBrowse: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label) },
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(6.dp))
+        OutlinedButton(
+            onClick = onBrowse,
+            modifier = Modifier.height(36.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 12.dp,
+                vertical = 0.dp
+            )
+        ) {
+            Icon(DlmIcons.Folder, contentDescription = "Choose a folder", modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Browse", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/** A numeric setting, in one line with the rest rather than on a row of its own. */
+@Composable
+private fun NumberRow(label: String, value: String, onValueChange: (String) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(10.dp))
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            modifier = Modifier.width(84.dp)
+        )
+    }
 }
 
 // --- helpers ----------------------------------------------------------------

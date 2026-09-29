@@ -48,6 +48,95 @@ import com.downloadhub.core.TorrentStopCondition
 import java.io.File
 import java.util.Locale
 
+/**
+ * Where a new download starts from.
+ *
+ * The `+` button and New Download used to set a flag that nothing read, because the only
+ * dialog they used to open was replaced by [AddDownloadDialog] and the call site went
+ * with it. The button looked live and did nothing, which is the worst kind of broken:
+ * there is no error, just a dialog that never arrives.
+ *
+ * So the entry point is here and it always leads to the pre-download dialog. There is no
+ * path into the queue that skips it, which is also what makes the dialog reliable: it
+ * cannot be reached with a `.torrent` queued unseen, because the queue is only ever
+ * written from a request this dialog produced.
+ */
+@Composable
+fun NewDownloadDialog(
+    onPickTorrent: () -> File?,
+    onSubmit: (PendingDownload) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var link by remember { mutableStateOf("") }
+    // Set when a picked file turns out not to be a torrent, so the reason sits under the
+    // box rather than replacing the whole dialog.
+    var problem by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = APP_DIALOG_PROPERTIES,
+        title = { Text("New download") },
+        text = {
+            Column {
+                Text(
+                    "Paste a link, or pick a .torrent file. Either way you get to look at " +
+                        "it before it is queued.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = link,
+                    onValueChange = { link = it; problem = null },
+                    label = { Text("Link or magnet") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        val file = onPickTorrent()
+                        if (file == null) {
+                            // Cancelling the file chooser is not a problem, so the message
+                            // is only for a file that was chosen and could not be used.
+                            return@OutlinedButton
+                        }
+                        val pending = PendingDownload.forLink(file.absolutePath)
+                        if (pending == null) {
+                            problem = "${file.name} could not be read as a torrent."
+                        } else {
+                            onSubmit(pending)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Choose a .torrent file...") }
+                problem?.let { reason ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        reason,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val pending = PendingDownload.forLink(link)
+                    if (pending == null) {
+                        problem = "That is not a link, a magnet or a file on this computer."
+                    } else {
+                        onSubmit(pending)
+                    }
+                },
+                enabled = link.isNotBlank()
+            ) { Text("Next") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
 /** The dialog shown before anything is queued - a link, a magnet or a `.torrent`. */
 data class PendingDownload(
     /** The link to queue. */
@@ -217,17 +306,15 @@ fun AddDownloadDialog(
                         rows = rows,
                         filter = filter,
                         onFilter = { filter = it },
-                        selected = selected.value.map { it.toString() }.toSet(),
-                        onSelectAll = { selected.value = TorrentSelection.allSelected(pending.metainfo) },
-                        onSelectNone = { selected.value = emptySet() },
-                        onToggle = { path ->
-                            val index = rows.firstOrNull { it.path == path }?.index ?: return@ContentFileList
-                            selected.value = if (index in selected.value) {
-                                selected.value - index
-                            } else {
-                                selected.value + index
-                            }
-                        }
+                        // The selection is the dialog's own state, because the Add button
+                        // builds the request out of it. A list that kept a private copy
+                        // would draw ticks the Add button then ignored.
+                        selected = selected.value,
+                        onSelectionChange = { chosen -> selected.value = chosen },
+                        onSelectAll = {
+                            selected.value = TorrentSelection.allSelected(pending.metainfo)
+                        },
+                        onSelectNone = { selected.value = emptySet() }
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
@@ -388,129 +475,35 @@ fun contentRowsFor(meta: TorrentMetainfo, filter: String): List<ContentRow> {
 }
 
 /**
- * The file list: name, total size, progress, download priority, remaining.
+ * The torrent's file list.
  *
- * Priority is shown as a fixed "Normal" rather than as an editable column. Choosing a
- * priority per file is a real feature and it is not in this build; an editable column that
- * quietly does nothing would be worse than showing the one thing that is true, which is
- * that everything selected is being fetched normally.
+ * A thin wrapper over [ContentTreeList], kept because two callers want the same list with
+ * different amounts of editing: the pre-download dialog edits it, and the detail pane's
+ * Content tab reports it. The tree itself lives in one place, so the two cannot drift into
+ * showing the same torrent differently.
  */
 @Composable
 fun ContentFileList(
     rows: List<ContentRow>,
     filter: String,
     onFilter: (String) -> Unit,
-    selected: Set<String>,
+    selected: Set<Int>,
+    onSelectionChange: (Set<Int>) -> Unit,
     onSelectAll: () -> Unit,
     onSelectNone: () -> Unit,
-    onToggle: (String) -> Unit
+    readOnly: Boolean = false
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            SmallButton("Select All", onSelectAll)
-            SmallButton("Select None", onSelectNone)
-            OutlinedTextField(
-                value = filter,
-                onValueChange = onFilter,
-                label = { Text("Filter files", fontSize = 11.sp) },
-                singleLine = true,
-                modifier = Modifier.width(150.dp)
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))
-                .padding(horizontal = 6.dp, vertical = 4.dp)
-        ) {
-            HeaderCell("Name", Modifier.weight(1f))
-            HeaderCell("Total Size", Modifier.width(80.dp))
-            HeaderCell("Progress", Modifier.width(62.dp))
-            HeaderCell("Priority", Modifier.width(72.dp))
-            HeaderCell("Remaining", Modifier.width(104.dp))
-        }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(190.dp)
-                .background(MaterialTheme.colorScheme.surface)
-        ) {
-            if (rows.isEmpty()) {
-                Text(
-                    "No files match that filter.",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(10.dp)
-                )
-            } else {
-                LazyColumn {
-                    // Keyed on the file's index, not its path.
-                    //
-                    // A path is not guaranteed to be unique - a torrent can list the
-                    // same name twice, and several real encoders produce torrents like
-                    // that - and a duplicated key throws while the list is being laid out:
-                    // "Key ... was already used", which is a hard crash that only happens
-                    // for the user whose torrent has that shape. The index is unique by
-                    // construction, so it is the only safe key here.
-                    items(rows, key = { it.index }) { row ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable { onToggle(row.path) }
-                                .padding(horizontal = 6.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TickBox(
-                                checked = row.path in selected,
-                                onChange = { onToggle(row.path) },
-                                size = 12.dp
-                            )
-                            Text(
-                                row.displayName,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                modifier = Modifier.weight(1f).padding(start = 4.dp)
-                            )
-                            Text(
-                                if (row.size > 0) DisplayFormat.bytes(row.size) else "-",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(80.dp)
-                            )
-                            Text(
-                                "0%",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(62.dp)
-                            )
-                            Text(
-                                "Normal",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(72.dp)
-                            )
-                            Text(
-                                if (row.size > 0) {
-                                    DisplayFormat.bytes(row.size) + " 100%"
-                                } else {
-                                    "-"
-                                },
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(104.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+    ContentTreeList(
+        rows = rows,
+        selected = selected,
+        onSelectionChange = onSelectionChange,
+        filter = filter,
+        onFilter = onFilter,
+        onSelectAll = onSelectAll,
+        onSelectNone = onSelectNone,
+        readOnly = readOnly
+    )
 }
-
 @Composable
 private fun HeaderCell(label: String, modifier: Modifier = Modifier) {
     Text(
@@ -583,20 +576,6 @@ private fun InfoRow(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(value, fontSize = 11.sp, modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun TickRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onChange(!checked) }
-            .padding(vertical = 1.dp)
-    ) {
-        TickBox(checked = checked, onChange = onChange, size = 13.dp)
-        Text(label, fontSize = 12.sp, modifier = Modifier.padding(start = 2.dp))
     }
 }
 

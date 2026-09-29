@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -51,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DisplayFormat
@@ -62,6 +65,9 @@ import com.downloadhub.core.DownloadPriority
 import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.DownloadStatus
 import com.downloadhub.core.LibraryCategory
+import com.downloadhub.core.RailEntry
+import com.downloadhub.core.railCount
+import com.downloadhub.core.sidebarEntries
 import com.downloadhub.core.LibraryGroup
 import com.downloadhub.core.LibraryQuery
 import com.downloadhub.core.LibrarySort
@@ -106,6 +112,15 @@ fun LibraryScreen(
     var relocating by remember { mutableStateOf<String?>(null) }
     /** Which bottom pane is open on the torrents tab. */
     var detailTab by remember { mutableStateOf(TorrentTab.GENERAL) }
+    /**
+     * The column widths, kept for as long as the window is open.
+     *
+     * Deliberately not in settings. Widths are a property of how this particular window is
+     * being used on this particular screen; persisting them means a resized column on a
+     * large monitor silently narrows the same table on a laptop, and there is then no way
+     * back to the default without editing a file.
+     */
+    var columnWidths by remember { mutableStateOf(ColumnWidths.DEFAULT) }
 
     val all = state.items.map { it.toCoreItem() }
     val query = LibraryQuery(
@@ -175,7 +190,26 @@ fun LibraryScreen(
                             search = search,
                             onSearch = { search = it; selected = emptySet() }
                         )
-                        ColumnHeader(sort, onSort = { sort = it }, layout = table)
+                        ColumnHeader(
+                            sort = sort,
+                            onSort = { sort = it },
+                            layout = table,
+                            widths = columnWidths,
+                            tableDp = contentDp,
+                            onDrag = { column, toX ->
+                                columnWidths = ColumnDividers.dragged(
+                                    widths = columnWidths,
+                                    column = column,
+                                    // AWT reports the pointer's x from the left of the
+                                    // window, but the columns start after the sidebar. The
+                                    // sidebar's width comes off here; without it every
+                                    // drag jumped right by the width of the sidebar.
+                                    toX = toX - sidebar.value,
+                                    tableDp = contentDp,
+                                    layout = table
+                                )
+                            }
+                        )
                         HorizontalDivider(color = state.palette.outline.copy(alpha = 0.5f))
                         if (visible.isEmpty()) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -192,6 +226,8 @@ fun LibraryScreen(
                                         item = item,
                                         palette = state.palette,
                                         layout = table,
+                                        widths = columnWidths,
+                                        tableDp = contentDp,
                                         checked = item.id in selected,
                                         onToggle = {
                                             // Selecting a row is what the bottom pane
@@ -457,45 +493,58 @@ private fun CategoryRail(
             .width(width)
             .fillMaxHeight()
             .background(Color(0xFF161C1F))
+            .verticalScroll(rememberScrollState())
             .padding(vertical = 6.dp)
     ) {
-        RailRow("All", scoped.size, category == LibraryCategory.ALL && group == LibraryGroup.ALL && !torrentsOnly, compact = compact) {
-            onCategory(LibraryCategory.ALL)
-        }
-        LibraryCategory.entries.filter { it != LibraryCategory.ALL }.forEach { entry ->
-            RailRow(
-                entry.label,
-                DownloadLibrary.countFor(scoped, entry),
-                category == entry,
-                icon = LibraryCategoryIcons.of(entry),
-                compact = compact
-            ) {
-                onCategory(entry)
+        // Built from the shared list rather than assembled here. The rail used to print
+        // "Finished" as a heading and again as a row underneath it, and "Unfinished" the
+        // same way, because the two halves were written separately. One list cannot
+        // produce a heading and a row with the same word, because a heading is a
+        // RailEntry.Heading and a row is a RailEntry.Status, and the list has each
+        // exactly once.
+        sidebarEntries().forEach { entry ->
+            when (entry) {
+                is RailEntry.Heading -> GroupHeader(entry.label)
+
+                is RailEntry.Status -> RailRow(
+                    label = entry.group.label,
+                    count = railCount(entry, scoped),
+                    // A status row is only selected when nothing else is narrowing: the
+                    // category and the group are both part of the same query, and two
+                    // highlighted rows read as two choices when there is one.
+                    selected = group == entry.group && category == LibraryCategory.ALL && !torrentsOnly,
+                    icon = StatusIcons.of(entry.group),
+                    compact = compact
+                ) { onGroup(entry.group) }
+
+                is RailEntry.Category -> RailRow(
+                    label = entry.category.label,
+                    count = railCount(entry, scoped),
+                    selected = category == entry.category && group == LibraryGroup.ALL && !torrentsOnly,
+                    icon = LibraryCategoryIcons.of(entry.category),
+                    compact = compact
+                ) { onCategory(entry.category) }
+
+                RailEntry.Torrents -> RailRow(
+                    label = "Torrents",
+                    count = railCount(entry, items),
+                    selected = torrentsOnly,
+                    icon = DlmIcons.Folder,
+                    compact = compact
+                ) { onToggleTorrents() }
             }
         }
-        Spacer(Modifier.height(10.dp))
-        GroupHeader("Finished")
-        RailRow(
-            LibraryGroup.FINISHED.label,
-            DownloadLibrary.countFor(scoped, LibraryGroup.FINISHED),
-            group == LibraryGroup.FINISHED,
-            compact = compact
-        ) { onGroup(LibraryGroup.FINISHED) }
-        GroupHeader("Unfinished")
-        RailRow(
-            LibraryGroup.UNFINISHED.label,
-            DownloadLibrary.countFor(scoped, LibraryGroup.UNFINISHED),
-            group == LibraryGroup.UNFINISHED,
-            compact = compact
-        ) { onGroup(LibraryGroup.UNFINISHED) }
-        Spacer(Modifier.height(10.dp))
-        GroupHeader("Queues")
-        RailRow("Main", scoped.size, !torrentsOnly && group == LibraryGroup.QUEUES, compact = compact) {
-            onGroup(LibraryGroup.QUEUES)
-        }
-        RailRow("Torrents", DownloadLibrary.torrentCount(items), torrentsOnly, compact = compact) {
-            onToggleTorrents()
-        }
+    }
+}
+
+/** An icon for each status filter, so the rail can be read rather than deciphered. */
+private object StatusIcons {
+    fun of(group: LibraryGroup): androidx.compose.ui.graphics.vector.ImageVector? = when (group) {
+        LibraryGroup.ALL -> null
+        LibraryGroup.DOWNLOADING -> Icons.Default.PlayArrow
+        LibraryGroup.COMPLETED -> Icons.Default.Check
+        LibraryGroup.PAUSED -> DlmIcons.Pause
+        LibraryGroup.FAILED -> DlmIcons.Stop
     }
 }
 
@@ -680,42 +729,105 @@ private fun ToolbarButton(
 }
 
 @Composable
-private fun ColumnHeader(sort: LibrarySort, onSort: (LibrarySort) -> Unit, layout: TableLayout) {
+private fun ColumnHeader(
+    sort: LibrarySort,
+    onSort: (LibrarySort) -> Unit,
+    layout: TableLayout,
+    widths: ColumnWidths,
+    tableDp: Float,
+    onDrag: (DownloadColumn, Float) -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color(0xFF161C1F))
-            .padding(horizontal = 8.dp, vertical = 7.dp),
+            .padding(start = 8.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.width(26.dp))
-        // The name is the one column that takes the space the others leave, so it is a
-        // weight rather than a width. Everything else has a fixed width and is dropped
-        // from the right, in the order of how much a person needs it: a countdown
-        // nobody can read is worth less than a status, and both less than the size.
-        ColumnHeaderCell("Name", Dp.Unspecified, Modifier.weight(1f), sort, DownloadColumn.NAME, onSort)
-        if (layout.size > 0.dp) {
-            ColumnHeaderCell("Size", layout.size, Modifier, sort, DownloadColumn.SIZE, onSort)
+        Box(Modifier.width(18.dp))
+        // Every visible column, in order, at the width the user has set. The header and
+        // the rows read the same numbers out of [ColumnWidths], which is the only way they
+        // can stay lined up: a version that laid the two out independently had them
+        // disagreeing by a few pixels, so the headers sat over the wrong columns.
+        DownloadColumn.entries.forEach { column ->
+            if (!ColumnDividers.isShown(column, layout)) return@forEach
+            val width = widths.widthOf(column, tableDp)
+            Box(Modifier.width(width.dp)) {
+                ColumnHeaderCell(
+                    label = column.label,
+                    modifier = Modifier.fillMaxWidth(),
+                    sort = sort,
+                    column = column,
+                    onSort = onSort
+                )
+                // The handle sits on the column's right edge, in the padding, so it does
+                // not eat any of the caption's own width.
+                ResizeHandle(
+                    onDrag = { toX -> onDrag(column, toX) },
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                )
+            }
         }
-        if (layout.showStatus) {
-            ColumnHeaderCell("Status", layout.status, Modifier, sort, DownloadColumn.STATUS, onSort)
-        }
-        if (layout.showSpeed) {
-            ColumnHeaderCell("Speed", layout.speed, Modifier, sort, DownloadColumn.SPEED, onSort)
-        }
-        if (layout.showTimeLeft) {
-            ColumnHeaderCell("Time Left", layout.timeLeft, Modifier, sort, DownloadColumn.TIME_LEFT, onSort)
-        }
-        if (layout.showDateAdded) {
-            ColumnHeaderCell("Date Added", layout.dateAdded, Modifier, sort, DownloadColumn.DATE_ADDED, onSort)
-        }
+    }
+}
+
+/**
+ * The grab area on a column's right edge.
+ *
+ * Its hit area is wider than the line it draws - 14 dp against 1 dp - because a one-pixel
+ * drag target is a drag target nobody finds. A raw pointer handler rather than
+ * `draggable`, because a drag is not a drag-and-drop here and `draggable` would fight the
+ * header's own click-to-sort.
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun ResizeHandle(onDrag: (Float) -> Unit, modifier: Modifier = Modifier) {
+    var dragging by remember { mutableStateOf(false) }
+    // AWT reports pointer positions in pixels; the columns are in dp.
+    val density = LocalDensity.current.density
+    Box(
+        modifier
+            .width(14.dp)
+            // The full height of the header, so the target does not depend on where in
+            // the 1 dp line the pointer happens to be.
+            .fillMaxHeight()
+            .onPointerEvent(PointerEventType.Press) { event ->
+                val mouse = event.nativeEvent as? java.awt.event.MouseEvent
+                if (mouse != null && mouse.button == java.awt.event.MouseEvent.BUTTON1) {
+                    dragging = true
+                    // The press must not also reach the header cell, or every attempt to
+                    // resize sorts the table instead.
+                    event.changes.forEach { it.consume() }
+                }
+            }
+            .onPointerEvent(PointerEventType.Move) { event ->
+                if (!dragging) return@onPointerEvent
+                val x = (event.nativeEvent as? java.awt.event.MouseEvent)?.x
+                if (x != null) {
+                    onDrag(x / density)
+                    event.changes.forEach { it.consume() }
+                }
+            }
+            .onPointerEvent(PointerEventType.Release) { event ->
+                if (dragging) {
+                    dragging = false
+                    event.changes.forEach { it.consume() }
+                }
+            },
+        contentAlignment = Alignment.CenterEnd
+    ) {
+        Box(
+            Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(Color(0xFF3A4749))
+        )
     }
 }
 
 @Composable
 private fun ColumnHeaderCell(
     label: String,
-    width: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
     sort: LibrarySort,
     column: DownloadColumn,
@@ -724,13 +836,13 @@ private fun ColumnHeaderCell(
     val active = sort.column == column
     Row(
         modifier = modifier
-            .width(width)
             .clickable {
                 onSort(
                     if (active) sort.toggled() else LibrarySort(column, SortDirection.ASCENDING)
                 )
             }
-            .padding(horizontal = 4.dp),
+            // Room on the right for the handle that overlaps this cell's edge.
+            .padding(start = 4.dp, end = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -757,6 +869,13 @@ private fun DownloadRow(
     item: DownloadItem,
     palette: androidx.compose.material3.ColorScheme,
     layout: TableLayout,
+    /**
+     * The widths the user has dragged the columns to, and the table's width to work them
+     * out against. Read from the same [ColumnWidths] the header uses, which is the only
+     * reason a caption stays over its own column after a drag.
+     */
+    widths: ColumnWidths,
+    tableDp: Float,
     checked: Boolean,
     onToggle: () -> Unit,
     onPause: () -> Unit,
@@ -808,9 +927,10 @@ private fun DownloadRow(
             if (checked) Icon(Icons.Default.Check, null, Modifier.size(11.dp), tint = Color(0xFF0B1A14))
         }
 
-        // A weight, not a width: the name is the column that has to absorb whatever the
-        // window has left over. It matches the header, which is weighted the same way.
-        Column(Modifier.weight(1f).padding(end = 6.dp)) {
+        // The dragged width, not a weight. A weight cannot be dragged - the user has no
+        // way to say "I want the name to be a third of this" and get it - and a weighted
+        // name also cannot be lined up with a header cell that *is* a fixed width.
+        Column(Modifier.width(widths.widthOf(DownloadColumn.NAME, tableDp).dp).padding(end = 6.dp)) {
             Text(
                 item.fileName,
                 fontSize = 12.sp,
@@ -835,24 +955,43 @@ private fun DownloadRow(
             }
         }
 
+        // The same numbers the header used, from the same object. That is what keeps a
+        // column's caption over its own contents after it has been dragged.
         if (layout.size > 0.dp) {
-            Cell(DisplayFormat.bytes(item.totalBytes), layout.size, palette)
+            Cell(
+                DisplayFormat.bytes(item.totalBytes),
+                widths.widthOf(DownloadColumn.SIZE, tableDp).dp,
+                palette
+            )
         }
         if (layout.showStatus) {
-            Cell(DisplayFormat.status(item), layout.status, palette, colour = statusColour(item.status, palette))
+            Cell(
+                DisplayFormat.status(item),
+                widths.widthOf(DownloadColumn.STATUS, tableDp).dp,
+                palette,
+                colour = statusColour(item.status, palette)
+            )
         }
         if (layout.showSpeed) {
-            Cell(DisplayFormat.speed(item.speedBytesPerSecond), layout.speed, palette)
+            Cell(
+                DisplayFormat.speed(item.speedBytesPerSecond),
+                widths.widthOf(DownloadColumn.SPEED, tableDp).dp,
+                palette
+            )
         }
         if (layout.showTimeLeft) {
             Cell(
                 DisplayFormat.timeLeft(DownloadLibrary.estimateSecondsLeft(item)),
-                layout.timeLeft,
+                widths.widthOf(DownloadColumn.TIME_LEFT, tableDp).dp,
                 palette
             )
         }
         if (layout.showDateAdded) {
-            Cell(DisplayFormat.timeAgo(item.createdAt), layout.dateAdded, palette)
+            Cell(
+                DisplayFormat.timeAgo(item.createdAt),
+                widths.widthOf(DownloadColumn.DATE_ADDED, tableDp).dp,
+                palette
+            )
         }
 
         if (layout.showRowActions) {

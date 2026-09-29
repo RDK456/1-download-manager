@@ -100,7 +100,11 @@ fun main(args: Array<String>) {
             val state by controller.ui.collectAsState()
             val windowState = rememberWindowState(size = DpSize(1180.dp, 720.dp))
             var visible by remember { mutableStateOf(true) }
-            var showAdd by remember { mutableStateOf(false) }
+            // The link-entry step, which only exists to collect a link before the
+            // pre-download dialog. It used to be the only step, and when that dialog was
+            // replaced this flag was left setting a piece of state nothing read, so `+`
+            // did nothing at all.
+            var showNew by remember { mutableStateOf(false) }
             var showSettings by remember { mutableStateOf(false) }
             var closing by remember { mutableStateOf(false) }
             // The download waiting to be looked at before it is queued, whatever kind
@@ -195,7 +199,7 @@ fun main(args: Array<String>) {
                     LibraryScreen(
                         state = state,
                         actions = controller.actions,
-                        onOpenAdd = { showAdd = true },
+                        onOpenAdd = { showNew = true },
                         onOpenSettings = { showSettings = true },
                         onQuit = { closing = true }
                     )
@@ -255,6 +259,19 @@ fun main(args: Array<String>) {
                                     state.settings.copy(setupComplete = true)
                                 )
                             }
+                        )
+                    }
+
+                    // The link-entry step. Always leads to the pre-download dialog, so
+                    // there is no way to queue anything that has not been looked at.
+                    if (showNew) {
+                        NewDownloadDialog(
+                            onPickTorrent = { chooseTorrentFile(window) },
+                            onSubmit = { pending ->
+                                showNew = false
+                                pendingAdd = pending
+                            },
+                            onDismiss = { showNew = false }
                         )
                     }
 
