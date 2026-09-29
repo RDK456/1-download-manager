@@ -66,8 +66,30 @@ data class DownloadItem(
     /** Hex info hash, learned once libtorrent has resolved the magnet. */
     val torrentInfoHash: String? = null,
     /** Where a finished torrent is published. */
-    val outputPath: String? = null
+    val outputPath: String? = null,
+    // --- per-download settings; the rules live in TransferRules ---------------
+
+    /** How urgently this item is given a slot. Orders the queue. */
+    val priority: DownloadPriority = DownloadPriority.NORMAL,
+    /**
+     * This item's own cap, in bytes per second. Zero means "whatever the app-wide
+     * limit says". It can lower the global limit but never raise past it.
+     */
+    val speedLimitBytesPerSecond: Long = 0L,
+    /** Do not start before this time. Zero means start whenever there is a slot. */
+    val startAfterEpochMillis: Long = 0L,
+    /** Stop seeding once this much has been uploaded per byte downloaded. Zero is off. */
+    val shareRatioLimit: Double = 0.0,
+    /** Stop seeding this many minutes after finishing. Zero is off. */
+    val seedTimeLimitMinutes: Int = 0,
+    /** When a finished torrent began seeding, so a time limit has something to count. */
+    val seedingSinceEpochMillis: Long = 0L,
+    /** When sharing stopped, if it did. Zero means it has not. */
+    val seedingStoppedAtEpochMillis: Long = 0L
 ) {
+    /** The sharing limits for this item, taken from its two limit fields. */
+    val shareLimits: ShareLimits
+        get() = ShareLimits(ratioLimit = shareRatioLimit, seedTimeLimitMinutes = seedTimeLimitMinutes)
     val progressPercent: Int
         get() = if (totalBytes > 0) {
             ((bytesDownloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)

@@ -6,6 +6,7 @@ import com.downloadhub.app.data.model.DownloadSource as AppSource
 import com.downloadhub.app.data.model.DownloadStatus as AppStatus
 import com.downloadhub.core.DownloadCategory
 import com.downloadhub.core.DownloadItem
+import com.downloadhub.core.DownloadPriority
 import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.DownloadStatus
 
@@ -58,7 +59,16 @@ internal fun DownloadEntity.toCoreItem(): DownloadItem = DownloadItem(
     createdAt = createdAt,
     torrentFilePath = torrentFilePath,
     torrentInfoHash = torrentInfoHash,
-    outputPath = outputPath
+    outputPath = outputPath,
+    // Per-download settings, so the phone honours the same rules as the desktop rather
+    // than silently ignoring the fields :core now carries.
+    priority = DownloadPriority.fromRank(priorityRank),
+    speedLimitBytesPerSecond = speedLimitBytesPerSecond,
+    startAfterEpochMillis = startAfterEpochMillis,
+    shareRatioLimit = shareRatioLimit,
+    seedTimeLimitMinutes = seedTimeLimitMinutes,
+    seedingSinceEpochMillis = seedingSinceEpochMillis,
+    seedingStoppedAtEpochMillis = seedingStoppedAtEpochMillis
 )
 
 /**

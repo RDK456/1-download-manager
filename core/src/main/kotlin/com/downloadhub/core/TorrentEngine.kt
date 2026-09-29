@@ -33,7 +33,24 @@ data class TorrentSnapshot(
     val isFinished: Boolean,
     val hasMetadata: Boolean,
     val name: String?,
-    val error: String?
+    val error: String?,
+    /**
+     * Bytes uploaded since the torrent was added, ever.
+     *
+     * What a share ratio is measured against. [uploadRate] is bytes per second and
+     * forgets everything the moment seeding pauses, which is no use for "stop at 2.0".
+     */
+    val uploadedBytes: Long = 0L,
+    /** Finished: it has everything and is willing to upload to peers. */
+    val isSeeding: Boolean = false,
+    /**
+     * When it was first seen finished, or zero when it has not finished.
+     *
+     * A share limit like "stop seeding after 30 minutes" needs somewhere for the clock
+     * to start, and libtorrent has no timestamp for it, so the first poll that sees the
+     * torrent complete sets it.
+     */
+    val seedingSinceEpochMillis: Long = 0L
 )
 
 /**
@@ -56,6 +73,9 @@ class TorrentEngine(
     private val sessionManager: SessionManager
     private val handles = ConcurrentHashMap<String, TorrentHandle>()
     private val lock = Any()
+
+    /** When each torrent was first seen complete, keyed by info hash. */
+    private val seedingStarted = HashMap<String, Long>()
 
     init {
         // Must happen before SessionManager is constructed, because that class's
@@ -166,6 +186,7 @@ class TorrentEngine(
         val done = status.totalDone()
         val metadataName = runCatching { handle.torrentFile()?.name() }.getOrNull()
         val error = status.errorCode().takeIf { it.isError }?.message
+        val finished = status.isFinished
         return TorrentSnapshot(
             infoHash = infoHash,
             bytesDownloaded = done,
@@ -180,13 +201,38 @@ class TorrentEngine(
             peers = status.numSeeds(),
             seeds = status.listSeeds(),
             isPaused = false,
-            isFinished = status.isFinished,
+            isFinished = finished,
             hasMetadata = status.hasMetadata(),
             name = metadataName,
-            error = error
+            error = error,
+            // Cumulative, unlike uploadRate. A share ratio is measured against
+            // everything uploaded over the whole life of the torrent, and a rate cannot
+            // answer that: it forgets everything the moment seeding pauses.
+            uploadedBytes = status.allTimeUpload().coerceAtLeast(0),
+            isSeeding = finished,
+            // When it started seeding, recorded the first time it was seen finished. A
+            // share-limit clock needs a start, and libtorrent exposes no timestamp for
+            // one - so it is kept here rather than guessed at on the UI side.
+            seedingSinceEpochMillis = seedingSince(infoHash, finished)
         )
     }
 
     private fun sanitise(name: String): String =
         name.replace(Regex("""[\\/:*?"<>|]"""), "_").ifBlank { "torrent" }
+
+    /**
+     * When a torrent started seeding, recorded once and then kept.
+     *
+     * Kept per info hash rather than per item id so the clock survives the app being
+     * closed and reopened: a torrent that finished at 3am and is re-checked at 9am has
+     * been seeding for six hours, not zero.
+     */
+    private fun seedingSince(infoHash: String, finished: Boolean): Long = synchronized(lock) {
+        if (!finished || infoHash.isBlank()) {
+            seedingStarted.remove(infoHash)
+            0L
+        } else {
+            seedingStarted.getOrPut(infoHash) { System.currentTimeMillis() }
+        }
+    }
 }

@@ -27,8 +27,15 @@ import androidx.compose.ui.unit.dp
 /** A row's checkbox and the padding down both sides of it. */
 const val ROW_CHROME_DP = 26f + 16f
 
-/** The row action at the right-hand end: a 30 dp slot for a 16 dp button. */
-const val ROW_ACTION_DP = 30f
+/**
+ * The row action at the right-hand end.
+ *
+ * Two 16 dp buttons with a gap between them: the status action - pause, resume, retry
+ * or show in folder - and the per-download options. The options button is always shown
+ * rather than only on running rows, because share limits are wanted on a finished
+ * download and everything else on a paused one.
+ */
+const val ROW_ACTION_DP = 40f
 
 /**
  * The name ellipsises rather than the row wrapping to two lines, which is what keeps

@@ -38,6 +38,18 @@ class DownloadEngine(
     private val slots = Mutex()
     private val running = LinkedHashMap<String, Job>()
 
+    /**
+     * The app-wide speed cap, and the per-file ones.
+     *
+     * A single limiter for the whole app, held here and applied from the settings.
+     * Previously a fresh `SpeedLimiter()` was constructed inside every download, so each
+     * transfer had a private bucket that nothing ever set a limit on - the "speed limit"
+     * setting did nothing on Windows, and the one in Settings was a control that looked
+     * live and was not.
+     */
+    private val globalLimiter = com.downloadhub.core.SpeedLimiter()
+    private val itemLimiters = java.util.concurrent.ConcurrentHashMap<String, com.downloadhub.core.SpeedLimiter>()
+
     /** Set while the user has asked for everything to stop. */
     @Volatile
     private var paused = false
@@ -112,10 +124,12 @@ class DownloadEngine(
     private val policies = object : TransferPolicyProvider {
         override suspend fun policyFor(id: String): TransferPolicy {
             val current = settingsState.value
+            val own = store.get(id)?.speedLimitBytesPerSecond ?: 0L
+            val effective = com.downloadhub.core.TransferRules.effectiveSpeedLimit(own, current.speedLimitBytesPerSecond)
             return TransferPolicy(
                 maxRetries = current.maxRetries,
-                speedLimitBytesPerSecond = current.speedLimitBytesPerSecond,
-                useSpeedLimit = current.speedLimitEnabled
+                speedLimitBytesPerSecond = effective,
+                useSpeedLimit = current.speedLimitEnabled || own > 0L
             )
         }
     }
@@ -128,9 +142,13 @@ class DownloadEngine(
         scope.launch {
             val limit = settingsState.value.maxConcurrent.coerceIn(1, 16)
             while (isActive) {
+                // Re-read every pass, so changing the limit in Settings takes effect on
+                // the next chunk rather than at the next restart.
+                scope.launch { globalLimiter.setLimit(settingsState.value.speedLimitBytesPerSecond) }
                 slots.withLock {
                     val free = limit - running.size
                     if (free <= 0) return@withLock
+                    val now = System.currentTimeMillis()
                     val next = store.snapshot()
                           // Only plain HTTP belongs to this engine. A YouTube link is
                           // a web page, not a file: letting the HTTP downloader claim
@@ -142,6 +160,17 @@ class DownloadEngine(
                               it.source == DownloadSource.HTTP &&
                                   (it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.RESOLVING)
                           }
+                          // A download told to start later keeps its place in the list
+                          // and simply is not started yet. It comes back on its own when
+                          // the time arrives, because this loop keeps running.
+                          .filter { com.downloadhub.core.TransferRules.isStartable(it.startAfterEpochMillis, now) }
+                          // Mapped before sorting so the queue order comes from the one
+                          // rule in :core rather than a second copy of it here. Higher
+                          // priority first, then the order they were added - before
+                          // this the queue was insertion order only, so one large file
+                          // added first held the slots while everything behind it waited.
+                          .map { it.toCoreItem() }
+                          .sortedWith(com.downloadhub.core.TransferRules.queueOrder())
                         .take(free)
                     for (item in next) start(item.id)
                 }
@@ -157,11 +186,24 @@ class DownloadEngine(
         onChange()
         val job = scope.launch {
             try {
+                val own = item.speedLimitBytesPerSecond
+                // Only build a limiter when the file has a limit of its own; otherwise
+                // there is nothing for it to do.
+                val itemLimiter = if (own > 0L) {
+                    com.downloadhub.core.SpeedLimiter().also {
+                        scope.launch { it.setLimit(own) }
+                        itemLimiters[id] = it
+                    }
+                } else {
+                    null
+                }
                 val downloader = com.downloadhub.core.HttpDownloader(
                     store = storeAdapter,
                     area = area,
                     policies = policies,
-                    speedLimiter = com.downloadhub.core.SpeedLimiter(),
+                    // The shared one, not a new bucket per download.
+                    speedLimiter = globalLimiter,
+                    itemSpeedLimiter = itemLimiter,
                     destinationTreeUri = { null }
                 )
                 downloader.download(item.toCoreItem())
@@ -176,6 +218,7 @@ class DownloadEngine(
                 }
             } finally {
                 running.remove(id)
+                itemLimiters.remove(id)
                 _busy.value = running.size
                 store.persist()
                 onChange()

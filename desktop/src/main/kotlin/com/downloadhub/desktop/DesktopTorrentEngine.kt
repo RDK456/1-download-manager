@@ -115,9 +115,17 @@ class DesktopTorrentEngine(
                             applySnapshot(item.id, snapshot)
                             if (snapshot.isFinished) {
                                 publish(item.id, snapshot)
-                                return
+                                // Keep watching only while there is a limit to enforce.
+                                // The old behaviour stopped here, which meant a finished
+                                // torrent kept seeding for ever and the app never heard
+                                // about it again - so "stop at ratio 2" had nothing to
+                                // act on. With no limits set there is nothing to watch
+                                // for, so this ends as it used to.
+                                if (!enforceShareLimits(item.id, snapshot)) return
+                                delay(SEEDING_POLL_MILLIS)
+                            } else {
+                                delay(POLL_MILLIS)
                             }
-                            delay(POLL_MILLIS)
                         }
                     }
                 }
@@ -125,6 +133,50 @@ class DesktopTorrentEngine(
         } finally {
             running.remove(item.id)
         }
+    }
+
+    /**
+     * Applies this torrent's share limits, and says whether to keep watching it.
+     *
+     * Returns false once the torrent has been stopped, or when there are no limits to
+     * apply, which ends this torrent's polling loop.
+     */
+    private fun enforceShareLimits(id: String, snapshot: TorrentSnapshot): Boolean {
+        val item = store.get(id) ?: return false
+        val limits = item.toCoreItem().shareLimits
+        if (!limits.enabled) return false
+
+        val now = System.currentTimeMillis()
+        val since = snapshot.seedingSinceEpochMillis
+        if (since > 0L && item.seedingSinceEpochMillis != since) {
+            store.update(id) { it.copy(seedingSinceEpochMillis = since) }
+        }
+
+        val shouldStop = com.downloadhub.core.TransferRules.shouldStopSeeding(
+            downloadedBytes = snapshot.bytesDownloaded,
+            uploadedBytes = snapshot.uploadedBytes,
+            seedingSinceEpochMillis = since,
+            nowEpochMillis = now,
+            limits = limits
+        )
+        if (!shouldStop) return true
+
+        runCatching { engine.pause(item.toCoreItem()) }
+        val reason = com.downloadhub.core.TransferRules.stopReason(
+            snapshot.bytesDownloaded, snapshot.uploadedBytes, since, now, limits
+        )
+        store.update(id) {
+            it.copy(
+                status = com.downloadhub.core.DownloadStatus.PAUSED,
+                speedBytesPerSecond = 0L,
+                seedingStoppedAtEpochMillis = now,
+                // Said out loud rather than the row just going quiet, which is what a
+                // torrent that stops on its own looks like otherwise.
+                errorMessage = reason
+            )
+        }
+        store.persist()
+        return false
     }
 
     private fun applySnapshot(id: String, snapshot: TorrentSnapshot) {
@@ -237,6 +289,15 @@ class DesktopTorrentEngine(
 
     private companion object {
         const val POLL_MILLIS = 1000L
+
+/**
+ * How often a finished torrent is checked while it is still sharing.
+ *
+ * Slower than a downloading one: the only thing being decided is whether a share limit
+ * has been reached, and that does not change second by second. A minute is also the
+ * resolution a "stop seeding after N minutes" limit is really worth.
+ */
+const val SEEDING_POLL_MILLIS = 30_000L
         val MEDIA_EXTENSIONS = listOf(
             ".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".flv",
             ".mp3", ".m4a", ".flac", ".wav", ".opus", ".aac"

@@ -111,7 +111,20 @@ data class LibraryQuery(
 /** The whole library view: filter, sort, and the counts the sidebar shows. */
 object DownloadLibrary {
 
-    fun visible(items: List<DownloadItem>, query: LibraryQuery): List<DownloadItem> =
+        /**
+     * The items the current torrent tab is looking at.
+     *
+     * The tab is a filter, not a second list: a torrent is hidden entirely while the
+     * main tab is showing, and a non-torrent is hidden while the Torrents tab is. The
+     * sidebar counts have to come from the same set, or they describe rows that cannot
+     * be seen - "Programs 2" above an empty list, which is exactly what was happening.
+     */
+    fun scopedFor(items: List<DownloadItem>, torrentsOnly: Boolean): List<DownloadItem> =
+        items.filter { it.isTorrent == torrentsOnly }
+
+    /** How many torrents there are, which is what the Torrents entry exists to say. */
+    fun torrentCount(items: List<DownloadItem>): Int = items.count { it.isTorrent }
+fun visible(items: List<DownloadItem>, query: LibraryQuery): List<DownloadItem> =
         items.filter(query::matches).sortedWith(comparator(query.sort))
 
     private fun comparator(sort: LibrarySort): Comparator<DownloadItem> {

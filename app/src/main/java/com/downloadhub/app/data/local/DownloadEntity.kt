@@ -38,5 +38,21 @@ data class DownloadEntity(
     val thumbnailUrl: String? = null,
     val thumbnailPath: String? = null,
     val durationSeconds: Long? = null,
-    val retryCount: Int = 0
+    val retryCount: Int = 0,
+    // --- per-download settings; the rules live in core's TransferRules -------
+
+    /** Queue order. Higher goes first. */
+    val priorityRank: Int = 2,
+    /** This item's own speed cap in bytes per second. Zero means use the global one. */
+    val speedLimitBytesPerSecond: Long = 0L,
+    /** Do not start before this time, in epoch milliseconds. */
+    val startAfterEpochMillis: Long = 0L,
+    /** Stop seeding once this much has been uploaded per byte downloaded. Zero is off. */
+    val shareRatioLimit: Double = 0.0,
+    /** Stop seeding this many minutes after finishing. Zero is off. */
+    val seedTimeLimitMinutes: Int = 0,
+    /** When it began seeding, so a time limit has something to count from. */
+    val seedingSinceEpochMillis: Long = 0L,
+    /** When sharing stopped, if it did. Zero means it has not. */
+    val seedingStoppedAtEpochMillis: Long = 0L
 )

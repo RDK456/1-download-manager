@@ -26,6 +26,23 @@ object AppPaths {
     val settingsFile: File get() = File(home, "settings.json")
     val queueFile: File get() = File(home, "queue.json")
 
+    /**
+     * The lock that keeps one copy of the app running.
+     *
+     * Kept in the profile rather than beside the executable, so it is the same file
+     * whether the app was installed or unzipped - two copies started from different
+     * folders are still two copies of one app.
+     */
+    val instanceLockFile: File get() = File(home, "instance.lock")
+
+    /**
+     * Where a second copy leaves what Windows asked it to open.
+     *
+     * The copy that already owns the lock collects from here, so a magnet link or a
+     * .torrent opened while it was running is queued rather than lost.
+     */
+    val pendingIntakeFile: File get() = File(home, "pending-intake.txt")
+
     /** Scratch space for in-flight transfers, kept off the destination folder. */
     val workDir: File by lazy { File(home, "work").apply { mkdirs() } }
 
@@ -142,7 +159,23 @@ data class QueuedDownload(
     val torrentInfoHash: String? = null,
     val outputPath: String? = null,
     /** When the item was queued; drives Date Added and the default sort. */
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    // --- per-download settings; the rules live in core's TransferRules -------
+
+    /** Queue order. Higher goes first. */
+    val priorityRank: Int = 2,
+    /** This item's own speed cap in bytes per second. Zero means use the global one. */
+    val speedLimitBytesPerSecond: Long = 0L,
+    /** Do not start before this time, in epoch milliseconds. */
+    val startAfterEpochMillis: Long = 0L,
+    /** Stop seeding once this much has been uploaded per byte downloaded. Zero is off. */
+    val shareRatioLimit: Double = 0.0,
+    /** Stop seeding this many minutes after finishing. Zero is off. */
+    val seedTimeLimitMinutes: Int = 0,
+    /** When it began seeding, so a time limit has something to count from. */
+    val seedingSinceEpochMillis: Long = 0L,
+    /** When sharing stopped, if it did. Zero means it has not. */
+    val seedingStoppedAtEpochMillis: Long = 0L
 )
 
 /** JSON-backed queue, loaded once and written on change (debounced by the caller). */

@@ -14,7 +14,22 @@ class HttpDownloader(
     private val store: DownloadStore,
     private val area: WorkArea,
     private val policies: TransferPolicyProvider,
+    /**
+     * The app-wide cap, shared by every transfer.
+     *
+     * Must be a single instance held by the caller. One was being created per download
+     * inside the engine, which meant each transfer had a private bucket with no limit
+     * ever set on it - so the "speed limit" setting did nothing on the desktop at all,
+     * while looking like it worked on the phone.
+     */
     private val speedLimiter: SpeedLimiter,
+    /**
+     * This one file's own cap, if it has one.
+     *
+     * Separate from [speedLimiter] because they answer different questions: the global
+     * one stops every download together, this stops one file crowding out the rest.
+     */
+    private val itemSpeedLimiter: SpeedLimiter? = null,
     /** Resolved destination folder; null means the platform default. */
     private val destinationTreeUri: () -> String? = { null }
 ) {
@@ -110,8 +125,10 @@ class HttpDownloader(
                             ensureActive()
                             val count = input.read(buffer)
                             if (count < 0) break
-                            // Shared bucket: caps the whole app's download rate.
+                            // Two gates in series: the app-wide cap, then this file's
+                            // own if it has one.
                             speedLimiter.acquire(count)
+                            itemSpeedLimiter?.acquire(count)
                             output.write(buffer, 0, count)
                             downloaded += count
                             windowBytes += count

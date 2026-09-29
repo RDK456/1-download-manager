@@ -21,6 +21,7 @@ import com.downloadhub.app.ui.largestFileIn
 import com.downloadhub.app.data.local.DownloadDao
 import com.downloadhub.app.data.local.DownloadEntity
 import com.downloadhub.core.TorrentEngine
+import com.downloadhub.core.TransferRules
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -49,6 +50,13 @@ import kotlinx.coroutines.withContext
  * queued or running rows, honours the Wi-Fi-only and concurrency settings, and
  * retries transient failures automatically.
  */
+/**
+ * How long a deferred download waits before looking at the clock again.
+ *
+ * A minute is deliberate: "start later" options are hours away, so checking more often
+ * only costs wake-ups, and the row's own countdown is drawn from the same stored time.
+ */
+private const val SCHEDULED_RECHECK_MILLIS = 60_000L
 class DownloadService : Service() {
     private val serviceJob = SupervisorJob()
     private val scope = CoroutineScope(serviceJob + Dispatchers.IO)
@@ -89,7 +97,7 @@ class DownloadService : Service() {
             val maxConcurrent = settings.currentDownloadSettings().maxConcurrent
             startWorkers(maxConcurrent)
             dao.recoverInterrupted(System.currentTimeMillis())
-            dao.getByStatuses(ACTIVE_STATUSES).forEach { enqueue(it.id) }
+            enqueueAll(dao.getByStatuses(ACTIVE_STATUSES))
             queueReady = true
             stopIfIdle()
         }
@@ -104,8 +112,8 @@ class DownloadService : Service() {
             ACTION_RETRY -> intent.getStringExtra(EXTRA_ID)?.let { scope.launch { retry(it) } }
             ACTION_CANCEL -> intent.getStringExtra(EXTRA_ID)?.let { scope.launch { cancel(it) } }
             ACTION_START -> intent.getStringArrayListExtra(EXTRA_IDS)?.forEach(::enqueue)
-            ACTION_RECOVER -> scope.launch { dao.getByStatuses(ACTIVE_STATUSES).forEach { enqueue(it.id) } }
-            else -> scope.launch { dao.getByStatuses(ACTIVE_STATUSES).forEach { enqueue(it.id) } }
+            ACTION_RECOVER -> scope.launch { enqueueAll(dao.getByStatuses(ACTIVE_STATUSES)) }
+            else -> scope.launch { enqueueAll(dao.getByStatuses(ACTIVE_STATUSES)) }
         }
         return START_STICKY
     }
@@ -186,6 +194,14 @@ class DownloadService : Service() {
         val item = dao.getById(id) ?: return
         if (item.status != DownloadStatus.QUEUED) return
 
+        // A download told to start later waits here rather than disappearing from the
+        // list, so it keeps its place and shows as pending. Re-queued a minute out so it
+        // starts itself when its time arrives, with nothing for the user to touch.
+        if (!TransferRules.isStartable(item.startAfterEpochMillis, System.currentTimeMillis())) {
+            delay(SCHEDULED_RECHECK_MILLIS)
+            enqueue(id)
+            return
+        }
         val settings = app.container.settings.currentDownloadSettings()
         if (settings.wifiOnly && !networkMonitor.isWifiOnly()) {
             // Hold the item until a Wi-Fi network is available again.
@@ -482,6 +498,23 @@ class DownloadService : Service() {
             dao.setStatus(item.id, DownloadStatus.QUEUED, null, System.currentTimeMillis())
             enqueue(item.id)
         }
+    }
+
+    /**
+     * Puts pending items into the queue in the order they should be started.
+     *
+     * Higher priority first, then the order they were added - both decided by :core's
+     * TransferRules rather than by whatever the database happened to return, so the
+     * phone and the desktop agree. Before this it was insertion order only, so one
+     * large download added first took a slot and everything behind it waited.
+     */
+
+    private fun enqueueAll(items: List<DownloadEntity>) {
+        items.sortedWith(TransferRules.queueOrderBy(
+            priorityRank = { it.priorityRank },
+            createdAt = { it.createdAt },
+            id = { it.id }
+        )).forEach { enqueue(it.id) }
     }
 
     private fun enqueue(id: String) {

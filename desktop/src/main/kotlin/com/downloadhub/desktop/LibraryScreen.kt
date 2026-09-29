@@ -53,6 +53,7 @@ import com.downloadhub.core.DisplayFormat
 import com.downloadhub.core.DownloadColumn
 import com.downloadhub.core.DownloadItem
 import com.downloadhub.core.DownloadLibrary
+import com.downloadhub.core.DownloadPriority
 import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.DownloadStatus
 import com.downloadhub.core.LibraryCategory
@@ -90,6 +91,8 @@ fun LibraryScreen(
     // Set when Delete is pressed, so the dialog can ask what should happen to the
     // files rather than the app assuming.
     var deleting by remember { mutableStateOf(emptySet<String>()) }
+    /** Which download has its options dialog open, if any. */
+    var optionsFor by remember { mutableStateOf<String?>(null) }
 
     val all = state.items.map { it.toCoreItem() }
     val query = LibraryQuery(
@@ -187,7 +190,8 @@ fun LibraryScreen(
                                         onPause = { actions.pause(item.id) },
                                         onResume = { actions.resume(item.id) },
                                         onRetry = { actions.retry(item.id) },
-                                        onOpen = { actions.revealDownload(item.location) }
+                                        onOpen = { actions.revealDownload(item.location) },
+                                    onOptions = { optionsFor = item.id }
                                     )
                                     HorizontalDivider(
                                         color = state.palette.outline.copy(alpha = 0.25f),
@@ -205,6 +209,22 @@ fun LibraryScreen(
         // Asking is the point. "Remove from the list" and "delete the file" are both
         // things people mean, and the second is not undoable, so the app does not
         // choose on the user's behalf.
+        // One download's own settings. Kept inside the window like every other dialog:
+        // a dialog composed outside it is what produced "Failed to launch JVM" on the
+        // first button press.
+        val optionsItem = optionsFor?.let { id -> all.firstOrNull { it.id == id } }
+        if (optionsItem != null) {
+            DownloadOptionsDialog(
+                item = optionsItem,
+                globalSpeedLimitBytesPerSecond = state.settings.speedLimitBytesPerSecond,
+                onSave = { rank, speed, startAfter, ratio, minutes ->
+                    actions.setItemOptions(optionsItem.id, rank, speed, startAfter, ratio, minutes)
+                    optionsFor = null
+                },
+                onDismiss = { optionsFor = null }
+            )
+        }
+
         if (deleting.isNotEmpty()) {
             DeleteChoiceDialog(
                 count = deleting.size,
@@ -300,6 +320,8 @@ private fun CategoryRail(
     onGroup: (LibraryGroup) -> Unit,
     onToggleTorrents: () -> Unit
 ) {
+    // What the table is actually showing, so every number beside it is reachable.
+    val scoped = DownloadLibrary.scopedFor(items, torrentsOnly)
     Column(
         modifier = Modifier
             .width(width)
@@ -307,13 +329,13 @@ private fun CategoryRail(
             .background(Color(0xFF161C1F))
             .padding(vertical = 6.dp)
     ) {
-        RailRow("All", if (torrentsOnly) 0 else items.size, category == LibraryCategory.ALL && group == LibraryGroup.ALL && !torrentsOnly, compact = compact) {
+        RailRow("All", scoped.size, category == LibraryCategory.ALL && group == LibraryGroup.ALL && !torrentsOnly, compact = compact) {
             onCategory(LibraryCategory.ALL)
         }
         LibraryCategory.entries.filter { it != LibraryCategory.ALL }.forEach { entry ->
             RailRow(
                 entry.label,
-                DownloadLibrary.countFor(items, entry),
+                DownloadLibrary.countFor(scoped, entry),
                 category == entry,
                 icon = LibraryCategoryIcons.of(entry),
                 compact = compact
@@ -325,23 +347,23 @@ private fun CategoryRail(
         GroupHeader("Finished")
         RailRow(
             LibraryGroup.FINISHED.label,
-            DownloadLibrary.countFor(items, LibraryGroup.FINISHED),
+            DownloadLibrary.countFor(scoped, LibraryGroup.FINISHED),
             group == LibraryGroup.FINISHED,
             compact = compact
         ) { onGroup(LibraryGroup.FINISHED) }
         GroupHeader("Unfinished")
         RailRow(
             LibraryGroup.UNFINISHED.label,
-            DownloadLibrary.countFor(items, LibraryGroup.UNFINISHED),
+            DownloadLibrary.countFor(scoped, LibraryGroup.UNFINISHED),
             group == LibraryGroup.UNFINISHED,
             compact = compact
         ) { onGroup(LibraryGroup.UNFINISHED) }
         Spacer(Modifier.height(10.dp))
         GroupHeader("Queues")
-        RailRow("Main", if (torrentsOnly) 0 else items.size, !torrentsOnly && group == LibraryGroup.QUEUES, compact = compact) {
+        RailRow("Main", scoped.size, !torrentsOnly && group == LibraryGroup.QUEUES, compact = compact) {
             onGroup(LibraryGroup.QUEUES)
         }
-        RailRow("Torrents", if (torrentsOnly) items.size else 0, torrentsOnly, compact = compact) {
+        RailRow("Torrents", DownloadLibrary.torrentCount(items), torrentsOnly, compact = compact) {
             onToggleTorrents()
         }
     }
@@ -609,7 +631,9 @@ private fun DownloadRow(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onRetry: () -> Unit,
-    onOpen: () -> Unit
+    onOpen: () -> Unit,
+    /** Opens this download's own settings. */
+    onOptions: () -> Unit
 ) {
     val running = item.status == DownloadStatus.RUNNING
     Row(
@@ -681,7 +705,11 @@ private fun DownloadRow(
         }
 
         if (layout.showRowActions) {
-            Box(Modifier.width(30.dp), contentAlignment = Alignment.CenterEnd) {
+            Row(
+                Modifier.width(ROW_ACTION_DP.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 when (item.status) {
                     DownloadStatus.RUNNING, DownloadStatus.QUEUED, DownloadStatus.RESOLVING ->
                         IconButton(16.dp, DlmIcons.Pause, "Pause", onPause)
@@ -690,6 +718,10 @@ private fun DownloadRow(
                     DownloadStatus.FAILED -> IconButton(16.dp, Icons.Default.Refresh, "Retry", onRetry)
                     DownloadStatus.COMPLETED -> IconButton(16.dp, DlmIcons.FolderOpen, "Show in folder", onOpen)
                 }
+                // Always present, unlike the status button above, because these settings
+                // are wanted on a finished download (to set a share limit) as much as on
+                // a running one - and on a paused one more than anything else.
+                IconButton(16.dp, Icons.Default.Settings, "Download options", onOptions)
             }
         }
     }
@@ -781,5 +813,12 @@ internal fun QueuedDownload.toCoreItem() = DownloadItem(
     createdAt = createdAt,
     torrentFilePath = torrentFilePath,
     torrentInfoHash = torrentInfoHash,
-    outputPath = outputPath
+    outputPath = outputPath,
+    priority = DownloadPriority.fromRank(priorityRank),
+    speedLimitBytesPerSecond = speedLimitBytesPerSecond,
+    startAfterEpochMillis = startAfterEpochMillis,
+    shareRatioLimit = shareRatioLimit,
+    seedTimeLimitMinutes = seedTimeLimitMinutes,
+    seedingSinceEpochMillis = seedingSinceEpochMillis,
+    seedingStoppedAtEpochMillis = seedingStoppedAtEpochMillis
 )

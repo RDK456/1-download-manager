@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import com.downloadhub.core.DownloadCategory
 import com.downloadhub.core.DownloadSource
+import com.downloadhub.core.LinkParser
 import com.downloadhub.core.DownloadStatus
 import java.io.File
 import java.util.UUID
@@ -87,6 +88,14 @@ data class DesktopActions(
     val launchInstaller: () -> Unit,
     /** Shows where a downloaded update was saved, to run it by hand. */
     val revealDownloadedInstaller: () -> Unit,
+    /**
+     * Sets one download's own settings: priority, its own speed cap, when it may start,
+     * and how long a finished torrent keeps seeding.
+     *
+     * Takes the id first, so the dialog knows which row it is for beyond that and a
+     * stale dialog cannot write to whatever took its place.
+     */
+    val setItemOptions: (String, Int, Long, Long, Double, Int) -> Unit,
     /**
      * Unpacks the portable build and starts it, then closes this copy.
      *
@@ -415,6 +424,42 @@ class DesktopController(
         }
     }
 
+    /**
+     * Sets one download's own settings.
+     *
+     * Per-item controls from AB Download Manager and qBittorrent, in one action so the
+     * dialog does not have to know how they are stored or what they interact with.
+     * Every argument is nullable-by-convention only in the sense that zero means "off":
+     * [speedLimit] of 0 means "use the app-wide limit", not "download at full speed".
+     */
+    fun setItemOptions(
+        id: String,
+        priorityRank: Int,
+        speedLimitBytesPerSecond: Long,
+        startAfterEpochMillis: Long,
+        shareRatioLimit: Double,
+        seedTimeLimitMinutes: Int
+    ) {
+        if (store.get(id) == null) return
+        store.update(id) {
+            it.copy(
+                priorityRank = priorityRank.coerceIn(0, 4),
+                speedLimitBytesPerSecond = speedLimitBytesPerSecond.coerceAtLeast(0L),
+                startAfterEpochMillis = startAfterEpochMillis.coerceAtLeast(0L),
+                shareRatioLimit = shareRatioLimit.coerceAtLeast(0.0),
+                seedTimeLimitMinutes = seedTimeLimitMinutes.coerceAtLeast(0)
+            )
+        }
+        store.persist()
+        refresh()
+
+        // A download whose time has just arrived, or that has been raised to the top of
+        // the queue, should not sit idle until the next user action: the queue loop
+        // notices on its own, but only once it next runs, and only if something is free.
+        engine.pump()
+        torrents.startLoop()
+    }
+
     /** Shows where the download was saved, for running it by hand. */
     fun revealDownloadedInstaller() {
         val downloaded = _downloadedUpdate.value
@@ -585,6 +630,7 @@ class DesktopController(
         checkForUpdates = ::checkForUpdates,
         downloadUpdate = { portable -> downloadUpdate(portable) },
         revealDownloadedInstaller = ::revealDownloadedInstaller,
+        setItemOptions = ::setItemOptions,
         switchToDownloadedVersion = ::switchToDownloadedVersion,
         launchInstaller = ::launchInstaller,
         dismissUpdate = ::dismissUpdate,
@@ -606,15 +652,29 @@ class DesktopController(
         format: String,
         height: Int?,
         playlist: Boolean,
-        preferredName: String? = null
+        preferredName: String? = null,
+        /**
+         * Set when the link is a path to a .torrent file on this machine.
+         *
+         * A torrent is read from disk rather than fetched, so the engine has to be told
+         * which of the two it is. Nothing set this before, which is why a .torrent
+         * picked from the machine could sit in the list for ever without starting.
+         */
+        torrentFile: File? = null
     ) {
         val trimmed = link.trim()
         if (trimmed.isEmpty()) return
-        val source = com.downloadhub.core.LinkParser.sourceFor(trimmed)
+        // A local .torrent given as a bare path, with no explicit hint, still counts.
+        val localTorrent = torrentFile?.takeIf { it.isFile }
+            ?: trimmed.takeIf { LinkParser.sourceFor(it) == DownloadSource.TORRENT }
+                ?.let { File(it) }
+                ?.takeIf { it.isFile }
+        val source = LinkParser.sourceFor(trimmed)
         val id = UUID.randomUUID().toString()
         val name = preferredName?.takeIf { it.isNotBlank() }
-            ?.let { com.downloadhub.core.LinkParser.sanitizeFileName(it) }
-            ?: com.downloadhub.core.LinkParser.fileNameFrom(trimmed)
+            ?.let { LinkParser.sanitizeFileName(it) }
+            ?: localTorrent?.name
+            ?: LinkParser.fileNameFrom(trimmed)
 
         store.add(
             QueuedDownload(
@@ -622,11 +682,12 @@ class DesktopController(
                 url = trimmed,
                 fileName = name,
                 source = source,
-                category = com.downloadhub.core.LinkParser.categoryFor(source, name),
+                category = LinkParser.categoryFor(source, name),
                 status = DownloadStatus.QUEUED,
                 quality = height?.toString(),
                 audioFormat = if (audioOnly) format else null,
-                playlist = playlist
+                playlist = playlist,
+                torrentFilePath = localTorrent?.absolutePath
             )
         )
         store.persist()
@@ -640,6 +701,33 @@ class DesktopController(
         } else {
             engine.pump()
         }
+    }
+
+    /**
+     * Queues what Windows asked this copy to open.
+     *
+     * Used both at startup and for the arguments a second copy hands over, so a magnet
+     * link or a .torrent opened while the app was already running behaves exactly like
+     * one opened while it was closed.
+     */
+    fun queueTargets(targets: List<QueueTarget>) {
+        if (targets.isEmpty()) return
+        targets.forEach { target ->
+            addDownload(
+                link = target.link,
+                audioOnly = false,
+                format = "m4a",
+                height = null,
+                playlist = false,
+                preferredName = target.name,
+                torrentFile = target.torrentFile?.let(::File)
+            )
+        }
+        _messages.value = when (targets.size) {
+            1 -> "Added 1 download from the link you opened."
+            else -> "Added ${targets.size} downloads from the links you opened."
+        }
+        refresh()
     }
 
     private suspend fun runYtDlp(id: String) {
