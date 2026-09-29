@@ -45,6 +45,7 @@ import java.util.Locale
  */
 @Composable
 fun ContentTreeList(
+    modifier: Modifier = Modifier,
     rows: List<ContentRow>,
     /**
      * Hoisted, not local. The dialog turns this into the request's file selection, so it
@@ -79,7 +80,7 @@ fun ContentTreeList(
     }
     val shown = remember(nodes, expanded) { visibleContentNodes(nodes, expanded) }
 
-    Column(Modifier.fillMaxWidth()) {
+    Column(modifier.fillMaxWidth()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -111,15 +112,17 @@ fun ContentTreeList(
                 .padding(horizontal = 6.dp, vertical = 4.dp)
         ) {
             TreeHeader("Name", Modifier.weight(1f))
-            TreeHeader("Total Size", Modifier.width(84.dp))
-            TreeHeader("Progress", Modifier.width(58.dp))
-            TreeHeader("Priority", Modifier.width(62.dp))
-            TreeHeader("Remaining", Modifier.width(96.dp))
+            TreeHeader("Size", Modifier.width(78.dp))
+            TreeHeader("Prog", Modifier.width(50.dp))
+            TreeHeader("Pri", Modifier.width(48.dp))
+            TreeHeader("Remaining", Modifier.width(84.dp))
         }
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(200.dp)
+                // Weight rather than a fixed height: the dialog is resizable now, and a
+                // fixed 200 dp list left a taller dialog half empty.
+                .weight(1f)
                 .background(MaterialTheme.colorScheme.surface)
         ) {
             if (shown.isEmpty()) {
@@ -237,15 +240,15 @@ private fun TreeFolderRow(
             "${node.fileIndices.size}",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(84.dp)
+            modifier = Modifier.width(78.dp)
         )
-        Text("", fontSize = 11.sp, modifier = Modifier.width(58.dp))
-        Text("", fontSize = 11.sp, modifier = Modifier.width(62.dp))
+        Text("", fontSize = 11.sp, modifier = Modifier.width(50.dp))
+        Text("", fontSize = 11.sp, modifier = Modifier.width(48.dp))
         Text(
             DisplayFormat.bytes(node.totalSize),
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(96.dp)
+            modifier = Modifier.width(84.dp)
         )
     }
 }
@@ -282,25 +285,25 @@ private fun TreeFileRow(
             if (node.size > 0) DisplayFormat.bytes(node.size) else "-",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(84.dp)
+            modifier = Modifier.width(78.dp)
         )
         Text(
             "0%",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(58.dp)
+            modifier = Modifier.width(50.dp)
         )
         Text(
             "Normal",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(62.dp)
+            modifier = Modifier.width(48.dp)
         )
         Text(
             if (node.size > 0) "${DisplayFormat.bytes(node.size)}  100%" else "-",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(96.dp)
+            modifier = Modifier.width(84.dp)
         )
     }
 }
