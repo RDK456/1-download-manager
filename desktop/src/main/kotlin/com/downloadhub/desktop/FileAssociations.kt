@@ -38,6 +38,14 @@ object FileAssociations {
     private const val TORRENT_PROG_ID = "1DownloadManager.Torrent"
 
     /**
+     * How `reg query` marks the start of a value's type.
+     *
+     * Everything from here on is `REG_SZ` (or whatever) followed by the value itself,
+     * separated by spaces. Used because the output has no tab to split on.
+     */
+    private const val REG_TYPE_MARKER = "REG_"
+
+    /**
      * The packaged launcher this copy is running as.
      *
      * Null unless the running program really is the installed app. Run from Gradle, or
@@ -121,10 +129,20 @@ object FileAssociations {
     private fun commandFor(handler: String): String? =
         regQuery("$CLASSES\\$handler\\shell\\open\\command", null)
 
+    /**
+     * Writes one registry value.
+     *
+     * Quotes inside [data] are escaped on the way out. `reg.exe` parses its own `/d`
+     * argument, so a value that begins with a quote - which every Windows open command
+     * does, because it has to be `"app.exe" "%1"` - makes it fail with "Invalid
+     * syntax". The result was not a slightly wrong command: the key was never written
+     * at all, so Windows had nothing to launch. Clicking a magnet did nothing while the
+     * app looked like it had registered itself, which is exactly what was reported.
+     */
     private fun regSet(key: String, name: String?, data: String, type: String = "REG_SZ"): Boolean {
         val args = mutableListOf("reg.exe", "add", key)
         if (name == null) args += "/ve" else args += listOf("/v", name)
-        args += listOf("/t", type, "/d", data, "/f")
+        args += listOf("/t", type, "/d", data.replace("\"", "\\\""), "/f")
         return runCommand(args)
     }
 
@@ -132,11 +150,16 @@ object FileAssociations {
         runCommand(mutableListOf("reg.exe", "delete", key, "/f"))
 
     /**
-     * Reads a value.
+     * Reads one value, exactly as stored.
      *
-     * `reg query` prints the value name as well as its data, so the data is everything
-     * after the first tab. Comparing the whole output would never match, which is how
-     * this could have looked like it worked while registering nothing.
+     * `reg query` prints `    <name>    REG_SZ    <value>` - separated by runs of
+     * spaces, **not** by tabs. Splitting on a tab, which this used to do, finds no data
+     * line at all and returns null for every key: so [isRegistered] was always false, the
+     * app rewrote its own registration on every launch, and the comparison meant to
+     * confirm the work never ran.
+     *
+     * The value is then taken from after the type token and kept verbatim, quotes and
+     * all, because a Windows open command legitimately begins and ends with one.
      */
     private fun regQuery(key: String, name: String?): String? {
         val args = mutableListOf("reg.exe", "query", key)
@@ -149,9 +172,11 @@ object FileAssociations {
         }.getOrNull() ?: return null
         if (output.contains("ERROR", ignoreCase = true)) return null
 
-        val dataLine = output.lineSequence().firstOrNull { it.contains('\t') } ?: return null
-        // reg writes REG_SZ values in quotes; REG_DWORD has no type prefix.
-        return dataLine.substringAfter('\t').trim().removeSurrounding("\"")
+        val marker = output.indexOf(REG_TYPE_MARKER)
+        if (marker < 0) return null
+        return output.substring(marker)
+            .replaceFirst(Regex("""^$REG_TYPE_MARKER\w+\s*"""), "")
+            .trimEnd()
     }
 
     private fun runCommand(args: List<String>): Boolean = runCatching {

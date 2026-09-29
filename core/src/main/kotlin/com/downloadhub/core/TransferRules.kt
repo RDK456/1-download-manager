@@ -180,3 +180,84 @@ object TransferRules {
 
     private const val MILLIS_PER_MINUTE = 60_000L
 }
+
+/**
+ * Whether a download is already in the list.
+ *
+ * Both apps this was modelled on suppress a duplicate rather than adding it - qBittorrent
+ * reports "already in queue" and AB Download Manager filters them - and neither is being
+ * shy about it. Every other download manager having this does not make it a nicety: the
+ * same torrent can be handed over three times in a row by a browser, a double-click and
+ * an extension, and each copy then seeds separately. That is not a list that looks
+ * untidy, it is three times the upload.
+ *
+ * Torrents are matched on their info hash where there is one, so the same torrent added
+ * as a magnet and then as a .torrent file is recognised as the same thing. Everything
+ * else is matched on its normalised link.
+ */
+object DuplicateRules {
+
+    private val infoHash = Regex("""xt=urn:btih:([A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
+
+    /**
+     * The torrent's info hash from whatever it was added as.
+     *
+     * Read from a magnet's `xt` parameter, from a hash already learned, or from the name
+     * of a .torrent file - which is conventionally the hash plus `.torrent`. Null when
+     * none of those apply, in which case nothing is compared rather than something being
+     * guessed at.
+     *
+     * Written with explicit returns rather than one elvis chain: the chain version
+     * returned null for a perfectly good `C:\Downloads\<hash>.torrent`, and a silent
+     * null here means every duplicate check quietly passes.
+     */
+    fun infoHashOf(item: DownloadItem): String? {
+        item.torrentInfoHash?.trim()?.takeIf { it.isNotBlank() }?.let { return it.lowercase() }
+
+        val fromMagnet = infoHash.find(item.url)?.groupValues?.getOrNull(1)
+        if (!fromMagnet.isNullOrBlank()) return fromMagnet.lowercase()
+
+        val fileName = item.torrentFilePath?.replace('/', '\\')?.substringAfterLast('\\')
+        if (fileName.isNullOrBlank()) return null
+        val candidate = fileName.removeSuffix(".torrent").lowercase()
+        if (candidate.length < MIN_HASH_LENGTH) return null
+        if (!candidate.all { it.isLetterOrDigit() }) return null
+        return candidate
+    }
+
+    /** A BitTorrent v1 info hash is 40 hex characters; v2 is 64. */
+    private const val MIN_HASH_LENGTH = 32
+
+    /**
+     * Whether [candidate] is the same download as something already in [existing].
+     *
+     * A finished copy still counts as already having it: queueing the same file again
+     * means downloading it again, which is what the person was trying to avoid.
+     */
+    fun isDuplicate(existing: List<DownloadItem>, candidate: DownloadItem): Boolean {
+        if (existing.isEmpty()) return false
+
+        if (candidate.source == DownloadSource.TORRENT) {
+            val candidateHash = infoHashOf(candidate) ?: return false
+            // Only compare against other torrents. An HTTP link to the same .torrent is
+            // the same torrent, but a magnet and a web page are not comparable.
+            return existing.any { other ->
+                other.id != candidate.id &&
+                    other.source == DownloadSource.TORRENT &&
+                    infoHashOf(other)?.equals(candidateHash, ignoreCase = true) == true
+            }
+        }
+
+        val candidateLink = normaliseLink(candidate.url)
+        if (candidateLink.isBlank()) return false
+        return existing.any { other ->
+            other.id != candidate.id &&
+                other.source != DownloadSource.TORRENT &&
+                normaliseLink(other.url).equals(candidateLink, ignoreCase = true)
+        }
+    }
+
+    /** Links compared by what they name, not by how they are spelled. */
+    private fun normaliseLink(url: String): String =
+        url.trim().lowercase().substringBefore('#')
+}

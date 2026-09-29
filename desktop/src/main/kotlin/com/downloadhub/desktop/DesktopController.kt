@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import com.downloadhub.core.DownloadCategory
+import com.downloadhub.core.DownloadItem
 import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.LinkParser
 import com.downloadhub.core.DownloadStatus
@@ -709,10 +710,28 @@ class DesktopController(
      * Used both at startup and for the arguments a second copy hands over, so a magnet
      * link or a .torrent opened while the app was already running behaves exactly like
      * one opened while it was closed.
+     *
+     * Duplicates are dropped rather than queued. The same torrent arrives from a browser,
+     * a double-click and an extension in the space of a few seconds, and three copies of
+     * one torrent means three times the seeding - which is exactly what happened: the
+     * queue had three identical entries of one file.
      */
     fun queueTargets(targets: List<QueueTarget>) {
         if (targets.isEmpty()) return
+        var added = 0
+        var skipped = 0
         targets.forEach { target ->
+            val candidate = DownloadItem(
+                id = "candidate",
+                url = target.link,
+                fileName = target.name.orEmpty(),
+                source = com.downloadhub.core.LinkParser.sourceFor(target.link),
+                torrentFilePath = target.torrentFile
+            )
+            if (com.downloadhub.core.DuplicateRules.isDuplicate(store.snapshot().map { it.toCoreItem() }, candidate)) {
+                skipped++
+                return@forEach
+            }
             addDownload(
                 link = target.link,
                 audioOnly = false,
@@ -722,10 +741,14 @@ class DesktopController(
                 preferredName = target.name,
                 torrentFile = target.torrentFile?.let(::File)
             )
+            added++
         }
-        _messages.value = when (targets.size) {
-            1 -> "Added 1 download from the link you opened."
-            else -> "Added ${targets.size} downloads from the links you opened."
+        _messages.value = when {
+            added == 0 -> "That is already in the list."
+            skipped == 0 -> if (added == 1) "Added 1 download from the link you opened."
+            else "Added $added downloads from the links you opened."
+
+            else -> "Added $added; ${if (skipped == 1) "1 was already" else "$skipped were already"} in the list."
         }
         refresh()
     }

@@ -20,11 +20,12 @@ class AppContainer(context: Context) {
         DownloadDatabase::class.java,
         "download-hub.db"
     )
-        .addMigrations(
-            DownloadDatabase.MIGRATION_1_2,
-            DownloadDatabase.MIGRATION_2_3,
-            DownloadDatabase.MIGRATION_3_4
-        )
+        // Taken from the database's own list rather than spelled out again here: a
+        // migration written in one place and forgotten in the other is a crash on
+        // launch, because Room finds no path and throws instead of falling back.
+        .addMigrations(*DownloadDatabase.ALL)
+        // Last resort only. With no path available, starting empty beats refusing to
+        // open - but it must never be the reason a path is missing.
         .fallbackToDestructiveMigration()
         .build()
 
