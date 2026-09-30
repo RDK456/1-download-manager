@@ -326,13 +326,29 @@ fun LibraryScreen(
                     // Only on the Torrents tab: on the main list this would be two
                     // thirds of the window given over to one download.
                     if (state.torrentsTab) {
+                        // The selected download, as a store item rather than as the core
+                        // model the list is drawn from. The file list's per-file progress
+                        // and the id both actions need are on this one.
+                        val detailId = all.firstOrNull { it.id in selected }?.id
+                            ?: all.firstOrNull { it.source == com.downloadhub.core.DownloadSource.TORRENT }?.id
+                        val detailItem = state.items.firstOrNull { it.id == detailId }
                         TorrentDetailPanel(
                             item = all.firstOrNull { it.id in selected }
                                 ?: all.firstOrNull { it.source == com.downloadhub.core.DownloadSource.TORRENT },
+
                             tab = detailTab,
                             onTab = { detailTab = it },
                             paneHeight = detailPaneHeight,
-                            onPaneHeightChange = { detailPaneHeight = it }
+                            onPaneHeightChange = { detailPaneHeight = it },
+                            // A reading, not a setting: it changes every second and is
+                            // worth nothing after a restart, so it is held on the store
+                            // item rather than persisted in the queue file.
+                            fileProgress = detailItem?.torrentFileProgress ?: emptyMap(),
+                            onFilePriority = { index, priority ->
+                                detailItem?.let { row ->
+                                    actions.setFilePriority(row.id, index, priority)
+                                }
+                            }
                         )
                         TorrentStatusBar(all)
                     }

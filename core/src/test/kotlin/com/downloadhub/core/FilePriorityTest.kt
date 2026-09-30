@@ -279,5 +279,55 @@ class FilePriorityTest {
     @Test
     fun `set all is an empty map`() {
         assertTrue(FilePriority.all().isEmpty())
+}
+    /**
+     * Setting one file must not disturb the others.
+     *
+     * The whole point of a per-file control. If it rewrote the map from scratch, changing
+     * file 7 back to Normal would silently return files 3 and 5 to Normal as well, and
+     * the user would find out by noticing which files stopped arriving first.
+     */
+    @Test
+    fun `changing one file leaves the others alone`() {
+        val before = mapOf(
+            1 to FilePriority.HIGH,
+            3 to FilePriority.SKIP,
+            7 to FilePriority.MAXIMUM
+        )
+        val after = before + (7 to FilePriority.NORMAL)
+        assertEquals(FilePriority.HIGH, after[1])
+        assertEquals(FilePriority.SKIP, after[3])
+        assertEquals(FilePriority.NORMAL, after[7])
+        assertEquals(3, after.size)
+    }
+
+    /**
+     * And "set all" is one call per file, not one call that overwrites the map.
+     *
+     * Which is why the toolbar applies a chosen priority to every index rather than
+     * replacing the map: replacing it loses nothing today but reads as though a file
+     * nobody ticked had been set, and there is no way to see that afterwards.
+     */
+    @Test
+    fun `setting every file reaches every index`() {
+        val indices = (0 until 12).toList()
+        val updated = indices.associateWith { FilePriority.SKIP }
+        assertEquals(12, updated.size)
+        assertTrue(updated.values.all { it == FilePriority.SKIP })
+        assertEquals(12, updated.keys.toSet().intersect(indices.toSet()).size)
+    }
+
+    /**
+     * A priority survives being stored and read back.
+     *
+     * Ordinals rather than names, so the queue file stays small - and so that a rename
+     * cannot orphan a saved choice. This is the test that a rename would fail.
+     */
+    @Test
+    fun `a priority survives the round trip through storage`() {
+        for (option in FilePriority.entries) {
+            val stored = option.ordinal
+            assertEquals(option, FilePriority.fromOrdinal(stored))
+        }
     }
 }

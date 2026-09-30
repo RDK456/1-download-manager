@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -32,6 +34,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DisplayFormat
+import androidx.compose.foundation.border
+import com.downloadhub.core.FilePriority
 import java.util.Locale
 
 /**
@@ -64,6 +68,25 @@ fun ContentTreeList(
     onSelectNone: () -> Unit,
     /** Used by the detail pane, which reports the selection rather than editing it. */
     readOnly: Boolean = false,
+    /**
+     * Bytes fetched per file, keyed by index.
+     *
+     * Read from the engine on every poll and held on the item, so the bar beside a file's
+     * size is the same second as the speed in the row above rather than a second reading
+     * that can disagree with it.
+     */
+    downloadedBytes: Map<Int, Long> = emptyMap(),
+    /**
+     * Sets one file's priority, or null where the list cannot change it.
+     *
+     * Null rather than a no-op callback, so read-only really is read-only: the control
+     * disappears instead of accepting the click and doing nothing.
+     */
+    onFilePriority: ((Int, FilePriority) -> Unit)? = null,
+
+    /** A file's current priority, keyed by index. Absent means Normal. */
+    filePriorities: Map<Int, FilePriority> = emptyMap(),
+
     /**
      * Whether to draw the toolbar above the headings.
      *
@@ -99,6 +122,19 @@ fun ContentTreeList(
     }
     val shown = remember(nodes, expanded) { visibleContentNodes(nodes, expanded) }
 
+    /**
+     * Every file in the list, whether or not a row is showing.
+     *
+     * "Set priority" with nothing ticked means every file, and it has to mean every file
+     * rather than every visible row - otherwise it sets twelve files when the filter has
+     * narrowed the list to one and the other eleven keep downloading.
+     */
+    val allFileIndices = remember(rows) {
+        visibleContentNodes(contentTree(rows), emptySet()).mapNotNull { node ->
+            (node.first as? ContentNode.File)?.index
+        }.toSet()
+    }
+
     Column(modifier.fillMaxWidth()) {
         if (chrome) {
         Row(
@@ -108,6 +144,30 @@ fun ContentTreeList(
             if (!readOnly) {
                 TreeButton("Select All", onSelectAll)
                 TreeButton("Select None", onSelectNone)
+            }
+            // "Set priority", as qBittorrent has it: one control that applies to whatever
+            // is ticked, or to every file when nothing is.
+            if (onFilePriority != null) {
+                var priorityMenu by remember { mutableStateOf(false) }
+                Box {
+                    TreeButton(
+                        if (selected.isEmpty()) "Set priority" else "Set priority on ${selected.size}",
+                        { priorityMenu = true }
+                    )
+                    if (priorityMenu) {
+                        Box(Modifier.fillMaxSize().background(AppTheme.Palette.surface)) {
+                            PriorityMenu(onPick = { chosen ->
+                                priorityMenu = false
+                                // The ticked files if there are any, and every file if
+                                // none are - which is what the control says when nothing
+                                // is ticked, so an empty selection cannot quietly become
+                                // "set nothing".
+                                val targets = if (selected.isEmpty()) allFileIndices else selected
+                                for (index in targets) onFilePriority.invoke(index, chosen)
+                            })
+                        }
+                    }
+                }
             }
             // Weighted with a cap rather than a fixed width. It was 170 dp unconditionally,
             // so in a narrow window the three things on this line asked for more than the
@@ -219,6 +279,11 @@ fun ContentTreeList(
                                 depth = depth,
                                 cols = cols,
                                 selected = node.index in selected,
+                                downloadedBytes = downloadedBytes,
+                                priority = filePriorities[node.index] ?: FilePriority.NORMAL,
+                                onPriority = onFilePriority?.let { change ->
+                                    { chosen -> change(node.index, chosen) }
+                                },
                                 readOnly = readOnly,
                                 onToggle = {
                                     onSelectionChange(
@@ -333,7 +398,11 @@ private fun TreeFileRow(
     cols: TreeColumns,
     selected: Boolean,
     readOnly: Boolean,
-    onToggle: () -> Unit
+    /** Bytes fetched for this file, keyed by index, or empty when nothing is known yet. */
+    downloadedBytes: Map<Int, Long>,
+    priority: FilePriority,
+    onToggle: () -> Unit,
+    onPriority: ((FilePriority) -> Unit)? = null
 ) {
     Row(
         Modifier
@@ -353,6 +422,7 @@ private fun TreeFileRow(
             fontSize = 11.sp,
             color = TREE_PRIMARY,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f).padding(end = 4.dp)
         )
         Text(
@@ -364,22 +434,49 @@ private fun TreeFileRow(
             modifier = Modifier.width(cols.size.dp).padding(end = 5.dp)
         )
         if (cols.showsProgress) {
-            Text(
-                "0%",
-                fontSize = 11.sp,
-                color = TREE_SECONDARY,
-                maxLines = 1,
-                modifier = Modifier.width(cols.progress.dp).padding(end = 5.dp)
-            )
+            // A bar and a number, because a percentage with no bar does not say whether
+            // it is nearly done or barely started - both read as "12%".
+            val done = downloadedBytes[node.index] ?: 0L
+            val fraction = if (node.size > 0) {
+                (done.toDouble() / node.size).coerceIn(0.0, 1.0)
+            } else {
+                0.0
+            }
+            Row(
+                Modifier.width(cols.progress.dp).padding(end = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(5.dp)
+                        .background(TREE_BAND, RoundedCornerShape(3.dp))
+                ) {
+                    if (fraction > 0.0) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth(fraction.toFloat())
+                                .fillMaxHeight()
+                                .background(AppTheme.Palette.accent, RoundedCornerShape(3.dp))
+                        )
+                    }
+                }
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "${(fraction * 100).toInt()}%",
+                    fontSize = 9.sp,
+                    color = TREE_SECONDARY,
+                    maxLines = 1,
+                    modifier = Modifier.width(30.dp)
+                )
+            }
         }
         if (cols.showsPriority) {
-            Text(
-                "Normal",
-                fontSize = 11.sp,
-                color = TREE_SECONDARY,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.width(cols.priority.dp).padding(end = 5.dp)
+            PriorityCell(
+                priority = priority,
+                width = cols.priority.dp,
+                enabled = !readOnly && onPriority != null,
+                onChange = onPriority
             )
         }
         if (cols.showsRemaining) {
@@ -395,6 +492,115 @@ private fun TreeFileRow(
     }
 }
 
+/**
+ * One file's priority, as a control rather than a word.
+ *
+ * qBittorrent's own five, in its own order, and it opens on click rather than needing a
+ * long press or a right-click - because a list of twelve files is exactly the case where
+ * right-clicking each in turn to find one setting is the tedious path.
+ *
+ * Read-only it is plain text. A control that looks live and does nothing is worse than a
+ * word that says what it is.
+ */
+@Composable
+private fun PriorityCell(
+    priority: FilePriority,
+    width: androidx.compose.ui.unit.Dp,
+    enabled: Boolean,
+    onChange: ((FilePriority) -> Unit)?
+) {
+    var open by remember { mutableStateOf(false) }
+    val tint = when (priority) {
+        FilePriority.SKIP -> AppTheme.Palette.faint
+        FilePriority.HIGH, FilePriority.MAXIMUM -> AppTheme.Palette.accent
+        else -> TREE_SECONDARY
+    }
+    Box(Modifier.width(width).padding(end = 5.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .then(
+                    if (enabled) {
+                        Modifier
+                            .clickable { open = true }
+                            .background(AppTheme.Palette.raised, RoundedCornerShape(3.dp))
+                            .padding(horizontal = 3.dp, vertical = 1.dp)
+                    } else {
+                        Modifier
+                    }
+                ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                priority.label,
+                fontSize = 10.sp,
+                color = tint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            if (enabled) Text("v", fontSize = 8.sp, color = TREE_SECONDARY)
+        }
+        if (open) {
+            // Anchored inside the list's own box, like the context menu: it cannot land
+            // outside the window, and it needs nothing from the window manager to know
+            // where to be.
+            Box(Modifier.fillMaxSize().background(AppTheme.Palette.surface)) {
+                Box(Modifier.padding(2.dp)) {
+                    Column(
+                        Modifier
+                            .width(width + 30.dp)
+                            .background(AppTheme.Palette.menuPanel, RoundedCornerShape(4.dp))
+                            .border(1.dp, AppTheme.Palette.menuEdge, RoundedCornerShape(4.dp))
+                            .padding(vertical = 2.dp)
+                    ) {
+                        FilePriority.entries.forEach { option ->
+                            Text(
+                                option.label,
+                                fontSize = 10.sp,
+                                color = if (option == priority) AppTheme.Palette.accent else TREE_PRIMARY,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        open = false
+                                        onChange?.invoke(option)
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+/** The five priorities, as a list. The one control the toolbar opens. */
+@Composable
+private fun PriorityMenu(onPick: (FilePriority) -> Unit) {
+    Column(
+        Modifier
+            .width(112.dp)
+            .background(AppTheme.Palette.menuPanel, RoundedCornerShape(4.dp))
+            .border(1.dp, AppTheme.Palette.menuEdge, RoundedCornerShape(4.dp))
+            .padding(vertical = 3.dp)
+    ) {
+        FilePriority.entries.forEach { option ->
+            Text(
+                option.label,
+                fontSize = 11.sp,
+                color = TREE_PRIMARY,
+                maxLines = 1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(option) }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+        }
+    }
+}
 @Composable
 private fun TreeHeader(label: String, modifier: Modifier = Modifier) {
     Text(
@@ -440,7 +646,10 @@ fun ContentFileList(
     onSelectAll: () -> Unit,
     onSelectNone: () -> Unit,
     readOnly: Boolean = false,
-    chrome: Boolean = true
+    chrome: Boolean = true,
+    downloadedBytes: Map<Int, Long> = emptyMap(),
+    onFilePriority: ((Int, FilePriority) -> Unit)? = null,
+    filePriorities: Map<Int, FilePriority> = emptyMap()
 ) {
     ContentTreeList(
         rows = rows,
@@ -451,7 +660,10 @@ fun ContentFileList(
         onSelectAll = onSelectAll,
         onSelectNone = onSelectNone,
         readOnly = readOnly,
-        chrome = chrome
+        chrome = chrome,
+        downloadedBytes = downloadedBytes,
+        onFilePriority = onFilePriority,
+        filePriorities = filePriorities
     )
 }
 
