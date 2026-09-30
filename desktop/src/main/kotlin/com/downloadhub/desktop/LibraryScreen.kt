@@ -206,9 +206,20 @@ fun LibraryScreen(
                         torrentsOnly = state.torrentsTab,
                         width = sidebar,
                         compact = table.narrowSidebar,
-                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL },
-                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL },
-                        onToggleTorrents = { actions.setTorrentsTab(!state.torrentsTab) },
+                        // Every row that is not Search closes the search section.
+                        //
+                        // They did not, so the rail looked broken: you could go from
+                        // Downloads to Search and then not back, because clicking All
+                        // Downloads set the group and the category - both of which the
+                        // search panel does not read - and left the panel on screen. It
+                        // read as "the rail stopped working" rather than as one flag that
+                        // was never cleared.
+                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL; searchOpen = false },
+                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL; searchOpen = false },
+                        onToggleTorrents = {
+                            searchOpen = false
+                            actions.setTorrentsTab(!state.torrentsTab)
+                        },
                         searchOpen = searchOpen,
                         onToggleSearch = { searchOpen = !searchOpen }
                     )
@@ -574,7 +585,7 @@ private fun CategoryRail(
                     // A status row is only selected when nothing else is narrowing: the
                     // category and the group are both part of the same query, and two
                     // highlighted rows read as two choices when there is one.
-                    selected = group == entry.group && category == LibraryCategory.ALL && !torrentsOnly,
+                    selected = group == entry.group && category == LibraryCategory.ALL && !torrentsOnly && !searchOpen,
                     icon = StatusIcons.of(entry.group),
                     compact = compact
                 ) { onGroup(entry.group) }
@@ -582,7 +593,7 @@ private fun CategoryRail(
                 is RailEntry.Category -> RailRow(
                     label = entry.category.label,
                     count = railCount(entry, scoped),
-                    selected = category == entry.category && group == LibraryGroup.ALL && !torrentsOnly,
+                    selected = category == entry.category && group == LibraryGroup.ALL && !torrentsOnly && !searchOpen,
                     icon = LibraryCategoryIcons.of(entry.category),
                     compact = compact
                 ) { onCategory(entry.category) }
@@ -598,7 +609,7 @@ private fun CategoryRail(
                 RailEntry.Torrents -> RailRow(
                     label = "Torrents",
                     count = railCount(entry, items),
-                    selected = torrentsOnly,
+                    selected = torrentsOnly && !searchOpen,
                     icon = DlmIcons.Folder,
                     compact = compact
                 ) { onToggleTorrents() }

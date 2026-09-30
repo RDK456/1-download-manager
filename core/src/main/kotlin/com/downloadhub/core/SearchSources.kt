@@ -260,8 +260,69 @@ class SubsPleaseSearchSource : SearchSource {
     }
 }
 
+/**
+ * FitGirl: repackaged games, from the site's own WordPress feed.
+ *
+ * Games were the one category with no source behind it, so choosing Games asked nobody
+ * anything and came back with nothing - which reads as a broken search rather than as a
+ * category nobody serves. It is a WordPress feed rather than an API: `?s=<query>&feed=rss2`
+ * is a real search, and each item carries a magnet in an `href`, so there is one request and
+ * no markup to break.
+ *
+ * The feed carries no swarm counts and no sizes, so this reports no health and every row's
+ * size is zero. That is stated rather than papered over: a size of "0 B" would look like a
+ * bug and an invented one would be a lie.
+ */
+class FitGirlSearchSource : SearchSource {
+    override val id = "fitgirl"
+    override val label = "FitGirl"
+    override val groups = setOf(SearchGroup.GAMES)
+
+    /** Its feed has no seeders, no leechers and no sizes. */
+    override val reportsHealth = false
+
+    override suspend fun search(query: String): List<SearchResult> {
+        val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+        return parseMagnetRssFeed(fetchText("$HOME/?s=$encoded&feed=rss2"), "fitgirl")
+    }
+
+    private companion object {
+        const val HOME = "https://fitgirl-repacks.site"
+    }
+}
+
+/**
+ * A WordPress RSS feed whose items carry their magnet in an `href`.
+ *
+ * Different from the other RSS reader, which pulls named tags: this one only has a magnet
+ * and a title to work with, because that is all the feed publishes.
+ */
+fun parseMagnetRssFeed(xml: String, source: String): List<SearchResult> {
+    val out = ArrayList<SearchResult>()
+    for (item in rssItems(xml)) {
+        val magnet = MAGNET_IN_HREF.find(item)?.groupValues?.get(1)
+            ?: continue
+        val hash = magnetHashFrom(magnet) ?: continue
+        val name = rssTag(item, "title").takeIf { it.isNotBlank() } ?: continue
+        out += SearchResult(
+            infoHash = hash,
+            name = name,
+            sizeBytes = 0L,
+            seeders = 0,
+            leechers = 0,
+            source = source,
+            magnet = magnetFor(hash, name),
+            addedAtEpochMillis = parseRssDate(rssTag(item, "pubDate"))
+        ).also { it.reportsHealth = false }
+    }
+    return out
+}
+
+private val MAGNET_IN_HREF = Regex("""href="(magnet:\?xt=urn:btih:[^"]+)""", RegexOption.IGNORE_CASE)
+
 /** Every source this build ships with. */
 fun defaultSearchSources(): List<SearchSource> = listOf(
+    FitGirlSearchSource(),
     EztvSearchSource(),
     YtsSearchSource(),
     NyaaSearchSource(),
