@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -107,36 +108,15 @@ fun SearchScreen(
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Four words as chips rather than a dropdown menu: a menu that hides four
-                // words behind a tap is a menu for eight.
-                SearchGroup.entries.forEach { entry ->
-                    FilterChip(
-                        selected = entry == group,
-                        onClick = {
-                            group = entry
-                            if (isSearchable(query)) run()
-                        },
-                        label = { Text(entry.label, fontSize = 11.sp) }
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
-                Button(onClick = { run() }, enabled = !busy) {
-                    if (busy) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    } else {
-                        Text("Search")
-                    }
-                }
-            }
+            CategoryAndSearchRow(
+                group = group,
+                onGroup = { entry ->
+                    group = entry
+                    if (isSearchable(query)) run()
+                },
+                busy = busy,
+                onSearch = { run() }
+            )
         }
 
         // Said out loud, above the results. A search that quietly drops a source looks like
@@ -234,6 +214,58 @@ private fun SearchResultCard(result: SearchResult, onDownload: () -> Unit) {
             }
             Spacer(Modifier.width(8.dp))
             Button(onClick = onDownload) { Text("Download") }
+        }
+    }
+}
+
+/**
+ * The categories, and the Search button, on as many lines as they need.
+ *
+ * They were one Row with no wrapping, which is four chips and a button side by side -
+ * roughly 415 dp of content on a screen with about 328 dp of width once the padding is
+ * taken off. The Search button was laid out past the right-hand edge and never seen, and
+ * the chips were squeezed against it rather than laid out evenly. A row that cannot wrap
+ * does not align; it overflows, and the overflow is invisible because it is off screen.
+ *
+ * FlowRow wraps onto a second line instead. It is also how the desktop shows its four
+ * categories - the two do not have to look identical to behave the same way.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryAndSearchRow(
+    group: SearchGroup,
+    onGroup: (SearchGroup) -> Unit,
+    busy: Boolean,
+    onSearch: () -> Unit
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        // Four words as chips rather than a dropdown: a menu that hides four words behind
+        // a tap is a menu for eight, and a phone has no room for eight.
+        SearchGroup.entries.forEach { entry ->
+            FilterChip(
+                selected = entry == group,
+                onClick = { onGroup(entry) },
+                label = { Text(entry.label, fontSize = 11.sp) }
+            )
+        }
+        Button(
+            onClick = onSearch,
+            enabled = !busy,
+            modifier = Modifier.padding(start = 2.dp)
+        ) {
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            } else {
+                Text("Search")
+            }
         }
     }
 }
