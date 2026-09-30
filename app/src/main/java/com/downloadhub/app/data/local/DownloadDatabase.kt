@@ -10,7 +10,7 @@ import com.downloadhub.app.data.model.DownloadStatus
 
 @Database(
     entities = [DownloadEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(DownloadConverters::class)
@@ -62,8 +62,24 @@ abstract class DownloadDatabase : RoomDatabase() {
             }
         }
 
+
+        /**
+         * Per-file choices for a torrent, as two text columns.
+         *
+         * Both nullable with no default: a row written before this has no choice recorded,
+         * which is the same thing as "every file" and not the same as an empty selection.
+         * That distinction is what makes a torrent added before this version keep
+         * downloading all of its files.
+         */
+        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN torrentSelectedFiles TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN torrentFilePriorities TEXT")
+            }
+        }
         /**
          * Every migration, in one list.
+
          *
          * Named here so it can be checked that a path exists between every released
          * version and the current one. Adding a column to [DownloadEntity] with no
@@ -77,7 +93,8 @@ abstract class DownloadDatabase : RoomDatabase() {
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,
-            MIGRATION_4_5
+            MIGRATION_4_5,
+            MIGRATION_5_6
         )
     }
 }

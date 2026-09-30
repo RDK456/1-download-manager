@@ -1,5 +1,6 @@
 package com.downloadhub.app.download
 
+import com.downloadhub.core.FileChoiceCodec
 import com.downloadhub.app.data.local.DownloadEntity
 import com.downloadhub.app.data.model.DownloadCategory as AppCategory
 import com.downloadhub.app.data.model.DownloadSource as AppSource
@@ -59,6 +60,12 @@ internal fun DownloadEntity.toCoreItem(): DownloadItem = DownloadItem(
     createdAt = createdAt,
     torrentFilePath = torrentFilePath,
     torrentInfoHash = torrentInfoHash,
+    // Decoded here rather than carried as text, because everything downstream of this
+    // works on the indices: the engine's planner, and the file list the details sheet
+    // draws. A priority that stayed a string would have to be parsed again in each.
+    torrentSelectedFiles = FileChoiceCodec.decodeSelected(torrentSelectedFiles).toList(),
+    torrentFilePriorities = FileChoiceCodec.decodePriorities(torrentFilePriorities)
+        .mapValues { (_, priority) -> priority.ordinal },
     outputPath = outputPath,
     // Per-download settings, so the phone honours the same rules as the desktop rather
     // than silently ignoring the fields :core now carries.

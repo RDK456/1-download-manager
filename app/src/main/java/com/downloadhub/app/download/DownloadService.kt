@@ -20,6 +20,7 @@ import com.downloadhub.app.ui.classifyTorrent
 import com.downloadhub.app.ui.largestFileIn
 import com.downloadhub.app.data.local.DownloadDao
 import com.downloadhub.app.data.local.DownloadEntity
+import com.downloadhub.core.FileChoiceCodec
 import com.downloadhub.core.TorrentEngine
 import com.downloadhub.core.TransferRules
 import java.io.File
@@ -111,6 +112,15 @@ class DownloadService : Service() {
             ACTION_RESUME -> intent.getStringExtra(EXTRA_ID)?.let { scope.launch { resume(it) } }
             ACTION_RETRY -> intent.getStringExtra(EXTRA_ID)?.let { scope.launch { retry(it) } }
             ACTION_CANCEL -> intent.getStringExtra(EXTRA_ID)?.let { scope.launch { cancel(it) } }
+        // One file of one torrent, by index. An index below zero arrives from a control
+        // that was not wired up, and is refused rather than clamped: clamping would set a
+        // priority on a file that does not exist.
+        ACTION_SET_FILE_PRIORITY -> intent.getStringExtra(EXTRA_ID)?.let { id ->
+            val fileIndex = intent.getIntExtra(EXTRA_FILE_INDEX, -1)
+            val priority = com.downloadhub.core.FilePriority
+                .fromOrdinal(intent.getIntExtra(EXTRA_PRIORITY, -1))
+            scope.launch { setFilePriority(id, fileIndex, priority) }
+        }
             ACTION_START -> intent.getStringArrayListExtra(EXTRA_IDS)?.forEach(::enqueue)
             ACTION_RECOVER -> scope.launch { enqueueAll(dao.getByStatuses(ACTIVE_STATUSES)) }
             else -> scope.launch { enqueueAll(dao.getByStatuses(ACTIVE_STATUSES)) }
@@ -322,6 +332,11 @@ class DownloadService : Service() {
                 },
                 System.currentTimeMillis()
             )
+            // Per file, for the file list. Published rather than stored; see [fileProgress].
+            if (snapshot.fileProgress.isNotEmpty()) {
+                fileProgress.value = fileProgress.value + (current.id to
+                    snapshot.fileProgress.mapIndexed { index, bytes -> index to bytes }.toMap())
+            }
             snapshot.name?.takeIf { it.isNotBlank() && it != current.fileName }?.let { name ->
                 val safeName = LinkParser.sanitizeFileName(name)
                 dao.updateMetadata(
@@ -452,6 +467,37 @@ class DownloadService : Service() {
         }
         if (item.source == DownloadSource.TORRENT) torrentEngine.pause(item.toCoreItem())
         activeJobs[id]?.cancel()
+    }
+
+    /**
+     * Sets one file's priority: stored first, then applied to the engine.
+     *
+     * Stored before applied, not the other way round. The reverse order leaves the row
+     * claiming something the engine has not done yet, and if the apply then fails the row
+     * keeps a change that was never made - which is the harder of the two to notice.
+     */
+    private suspend fun setFilePriority(
+        id: String,
+        fileIndex: Int,
+        priority: com.downloadhub.core.FilePriority
+    ) {
+        val item = dao.getById(id) ?: return
+        if (item.source != DownloadSource.TORRENT) return
+        if (fileIndex < 0) return
+
+        val merged = FileChoiceCodec.decodePriorities(item.torrentFilePriorities) +
+            (fileIndex to priority)
+        dao.updateTorrentFileChoices(
+            id = id,
+            selected = item.torrentSelectedFiles,
+            priorities = FileChoiceCodec.encodePriorities(merged),
+            updatedAt = System.currentTimeMillis()
+        )
+
+        // Applied from the row as it now stands, so the engine sees the same map the
+        // database does rather than a half-updated copy.
+        val saved = dao.getById(id) ?: return
+        torrentEngine.setFilePriorities(saved.toCoreItem())
     }
 
     private suspend fun resume(id: String) {
@@ -610,11 +656,53 @@ class DownloadService : Service() {
     }
 
     companion object {
+/**
+         * Bytes fetched per file, per download.
+         *
+         * Published rather than stored, and this comment is why. It changes every second
+         * for every running torrent and is worth nothing after a restart, so putting it in
+         * the database would mean a few hundred numbers per torrent rewritten continuously,
+         * for figures that are all zero again by the time they are next read. A flow in the
+         * service's own process is where they belong.
+         *
+         * Keyed by download id, and only for torrents: an HTTP download has no files.
+         */
+        val fileProgress = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Map<Int, Long>>>(emptyMap())
+
+        /**
+         * Sets one file of one torrent's priority.
+         *
+         * A companion function because the screen cannot reach the service instance. The
+         * intent is the only channel to it, and it is the same channel pause and resume
+         * already use, so there is one way in rather than two.
+         */
+        fun requestFilePriority(
+            context: Context,
+            id: String,
+            fileIndex: Int,
+            priority: com.downloadhub.core.FilePriority
+        ) {
+            val intent = Intent(context, DownloadService::class.java).apply {
+                action = ACTION_SET_FILE_PRIORITY
+                putExtra(EXTRA_ID, id)
+                putExtra(EXTRA_FILE_INDEX, fileIndex)
+                putExtra(EXTRA_PRIORITY, priority.ordinal)
+            }
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        /** Drops a removed download's readings, so nothing is left behind for its id. */
+        fun forgetFileProgress(id: String) {
+            fileProgress.value = fileProgress.value - id
+        }
         const val ACTION_START = "com.downloadhub.app.action.START"
         const val ACTION_PAUSE = "com.downloadhub.app.action.PAUSE"
         const val ACTION_RESUME = "com.downloadhub.app.action.RESUME"
         const val ACTION_RETRY = "com.downloadhub.app.action.RETRY"
         const val ACTION_CANCEL = "com.downloadhub.app.action.CANCEL"
+        const val ACTION_SET_FILE_PRIORITY = "com.downloadhub.app.action.SET_FILE_PRIORITY"
+        const val EXTRA_FILE_INDEX = "fileIndex"
+        const val EXTRA_PRIORITY = "filePriority"
         const val ACTION_PAUSE_ALL = "com.downloadhub.app.action.PAUSE_ALL"
         const val ACTION_RESUME_ALL = "com.downloadhub.app.action.RESUME_ALL"
         const val ACTION_RECOVER = "com.downloadhub.app.action.RECOVER"
