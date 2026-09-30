@@ -51,7 +51,16 @@ data class TorrentSnapshot(
      * to start, and libtorrent has no timestamp for it, so the first poll that sees the
      * torrent complete sets it.
      */
-    val seedingSinceEpochMillis: Long = 0L
+    val seedingSinceEpochMillis: Long = 0L,
+    /**
+     * Bytes downloaded per file, indexed by file index.
+     *
+     * Empty when there is no file list yet - a magnet before the swarm has sent its
+     * metadata - and one entry per file once there is. Read on every poll, so it is the
+     * same second as the row's speed rather than a separate reading that can disagree
+     * with it.
+     */
+    val fileProgress: LongArray = LongArray(0)
 )
 
 /**
@@ -325,7 +334,16 @@ class TorrentEngine(
             uploadRate = status.uploadPayloadRate().toLong().coerceAtLeast(0),
             peers = status.numSeeds(),
             seeds = status.listSeeds(),
-            isPaused = false,
+            // Read from the item, not from libtorrent.
+            //
+            // This was hardcoded false, so nothing downstream could tell a paused torrent
+            // from a running one that happened to be moving nothing. This binding of
+            // libtorrent exposes no paused flag at all - neither `torrent_status` nor
+            // `torrent_handle` has one - so the answer has to come from the caller's own
+            // record. A torrent that is finished is also not transferring, whether or not
+            // it is still seeding.
+            isPaused = item.status == DownloadStatus.PAUSED ||
+                item.status == DownloadStatus.COMPLETED,
             isFinished = finished,
             hasMetadata = status.hasMetadata(),
             name = metadataName,
@@ -338,7 +356,14 @@ class TorrentEngine(
             // When it started seeding, recorded the first time it was seen finished. A
             // share-limit clock needs a start, and libtorrent exposes no timestamp for
             // one - so it is kept here rather than guessed at on the UI side.
-            seedingSinceEpochMillis = seedingSince(infoHash, finished)
+            seedingSinceEpochMillis = seedingSince(infoHash, finished),
+            // One reading per file, so the file list can show what each one has rather
+            // than the same 0% on every row. Empty before there is a file list at all.
+            fileProgress = if (status.hasMetadata()) {
+                runCatching { handle.fileProgress() ?: LongArray(0) }.getOrDefault(LongArray(0))
+            } else {
+                LongArray(0)
+            }
         )
     }
 

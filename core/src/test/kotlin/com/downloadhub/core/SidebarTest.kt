@@ -79,13 +79,14 @@ class SidebarTest {
                     is RailEntry.Status -> it.group.label
                     is RailEntry.Category -> it.category.label
                     RailEntry.Torrents -> "Torrents"
+                    RailEntry.Search -> "Search"
                     is RailEntry.Heading -> null
                 }
             }
         headings.forEach { heading ->
             assertFalse(
                 "\"$heading\" is both a heading and a row, so it appears twice",
-                rows.any { it.equals(heading, ignoreCase = true) }
+                rows.any { row -> row.equals(heading, ignoreCase = true) }
             )
         }
     }
@@ -250,6 +251,7 @@ class SidebarTest {
                 is RailEntry.Status -> "state"
                 is RailEntry.Category -> "category"
                 is RailEntry.Torrents -> "torrents"
+                is RailEntry.Search -> "search"
                 is RailEntry.Heading -> "heading"
             }
         }

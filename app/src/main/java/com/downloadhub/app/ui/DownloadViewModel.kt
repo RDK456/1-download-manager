@@ -274,6 +274,24 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
+     * Opens the add sheet on a magnet the search found.
+     *
+     * The same seed a pasted magnet produces, so the sheet is the sheet: the file list, the
+     * folder picker and the stop condition are all already there and none of them had to be
+     * written a second time for search results. Returns to the list afterwards, because the
+     * sheet is a sheet over the list and a sheet over a search box would be a sheet over a
+     * screen the user came to leave.
+     */
+    fun prepareSearchResult(magnet: String) {
+        openEditor(
+            EditorSeed(
+                link = magnet,
+                source = DownloadSource.TORRENT
+            )
+        )
+    }
+
+    /**
      * Looks for video, audio and downloadable files on a pasted page. Links that
      * are already media files skip the scan and queue straight away.
      */

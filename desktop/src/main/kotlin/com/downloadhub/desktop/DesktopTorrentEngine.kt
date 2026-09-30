@@ -4,6 +4,7 @@ import com.downloadhub.core.DownloadItem
 import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.DownloadStatus
 import com.downloadhub.core.TorrentEngine
+import com.downloadhub.core.TorrentParser
 import com.downloadhub.core.TorrentSnapshot
 import java.io.File
 import java.net.HttpURLConnection
@@ -187,6 +188,31 @@ class DesktopTorrentEngine(
     private fun applySnapshot(id: String, snapshot: TorrentSnapshot) {
         store.update(id) {
             it.copy(
+                // The status, which this did not write at all.
+                //
+                // It was added to the queue as QUEUED and nothing ever changed it, so a
+                // torrent downloading at 1.1 MB/s said "Queued" in the list - the speed
+                // column and the status column disagreeing about the same row, with the
+                // speed the one that was right.
+                //
+                // Written as a promotion only: PAUSED, COMPLETED and FAILED are terminal
+                // for the poll's purposes and must not be moved back to RUNNING by a
+                // reading that arrives afterwards. A paused item does not reach here - the
+                // loop re-pauses it and delays - but the guard costs nothing and a torrent
+                // stopped by its own share limits has just ended its loop, so it depends on
+                // this.
+                status = when {
+                    it.status == DownloadStatus.PAUSED -> it.status
+                    it.status == DownloadStatus.COMPLETED -> it.status
+                    it.status == DownloadStatus.FAILED -> it.status
+                    snapshot.error != null -> DownloadStatus.FAILED
+                    // A magnet before the swarm sends its metadata is resolving, not
+                    // queued: nothing has been asked for yet, as opposed to asked for and
+                    // waiting for a slot.
+                    !snapshot.hasMetadata -> DownloadStatus.RESOLVING
+                    snapshot.isPaused -> DownloadStatus.PAUSED
+                    else -> DownloadStatus.RUNNING
+                },
                 bytesDownloaded = snapshot.bytesDownloaded,
                 totalBytes = snapshot.totalBytes,
                 speedBytesPerSecond = snapshot.downloadRate,
@@ -210,7 +236,53 @@ class DesktopTorrentEngine(
                     it.completedAt
                 }
             )
+            // Not part of the copy: it is transient, and a `copy` on a data class carries
+            // only the constructor properties. Written through the item so the file list can
+            // show what each file has rather than the same 0% on every row.
+            .also { row ->
+                if (snapshot.fileProgress.isNotEmpty()) {
+                    row.torrentFileProgress = snapshot.fileProgress
+                        .mapIndexed { index, bytes -> index to bytes }
+                        .toMap()
+                }
+            }
         }
+        onChange()
+    }
+
+    /**
+     * Sets one file's priority, and sends it to libtorrent straight away.
+     *
+     * Applied to the store first and the engine second, so the row changes at once and the
+     * piece queue follows. The reverse order leaves the list claiming something the engine
+     * has not done yet, which is the same class of bug as a status that says Queued while
+     * the speed column says otherwise.
+     */
+    fun setFilePriority(id: String, fileIndex: Int, priority: com.downloadhub.core.FilePriority) {
+        val item = store.get(id) ?: return
+        val updated = item.torrentFilePriorities +
+            (fileIndex to priority.ordinal)
+        store.update(id) { it.copy(torrentFilePriorities = updated) }
+        store.persist()
+        engine.setFilePriorities(store.get(id)!!.toCoreItem())
+        onChange()
+    }
+
+    /**
+     * Applies one priority to every file, which is what "set all" means and what the
+     * detail pane's row of buttons does.
+     */
+    fun setAllFilePriorities(id: String, priority: com.downloadhub.core.FilePriority) {
+        val item = store.get(id) ?: return
+        val meta = item.torrentFilePath?.let(::File)?.takeIf { it.isFile }
+            ?.let { runCatching { TorrentParser.parse(it) }.getOrNull() } ?: return
+        store.update(id) {
+            it.copy(
+                torrentFilePriorities = meta.files.associate { file -> file.index to priority.ordinal }
+            )
+        }
+        store.persist()
+        engine.setFilePriorities(store.get(id)!!.toCoreItem())
         onChange()
     }
 

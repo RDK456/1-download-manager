@@ -4,13 +4,21 @@ package com.downloadhub.app.ui
 enum class AppDestination {
     DOWNLOADS,
     TORRENTS,
+    /**
+     * Find something to download.
+     *
+     * A root of its own rather than a sub-page of Downloads: it does not narrow what is
+     * already downloaded, it replaces the list with a box to type in, and back from it
+     * should return to the list the user came from rather than walking a stack.
+     */
+    SEARCH,
     SETTINGS,
     DOWNLOAD_SETTINGS,
     THEMES,
     ABOUT;
 
-    /** The two list tabs are roots; everything else is a sub-page. */
-    val isRoot: Boolean get() = this == DOWNLOADS || this == TORRENTS
+    /** The list tabs and search are roots; everything else is a sub-page. */
+    val isRoot: Boolean get() = this == DOWNLOADS || this == TORRENTS || this == SEARCH
 }
 
 /** Guard against unbounded growth if a sub-page ever re-navigates to itself. */

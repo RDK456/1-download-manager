@@ -93,6 +93,15 @@ fun LibraryScreen(
     state: DesktopUiState,
     actions: DesktopActions,
     onOpenAdd: () -> Unit,
+    /**
+     * Open the pre-download window on a link the search found.
+     *
+     * Its own callback rather than going through [onOpenAdd] because the search already
+     * has a magnet and the add dialog starts by asking for one. Handing it over directly
+     * is what makes a search result get the same file list, folder picker and stop
+     * condition as a magnet pasted by hand.
+     */
+    onOpenAddForLink: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onQuit: () -> Unit
 ) {
@@ -124,6 +133,14 @@ fun LibraryScreen(
     var relocating by remember { mutableStateOf<String?>(null) }
     /** Which bottom pane is open on the torrents tab. */
     var detailTab by remember { mutableStateOf(TorrentTab.GENERAL) }
+    /**
+     * Whether the search section is open.
+     *
+     * Its own flag rather than a rail entry in the query, because search is not a filter:
+     * every other entry narrows what is already downloaded, and this replaces the list
+     * with a box to type in.
+     */
+    var searchOpen by remember { mutableStateOf(false) }
     /**
      * How tall the detail pane is, and who changed it.
      *
@@ -191,10 +208,26 @@ fun LibraryScreen(
                         compact = table.narrowSidebar,
                         onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL },
                         onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL },
-                        onToggleTorrents = { actions.setTorrentsTab(!state.torrentsTab) }
+                        onToggleTorrents = { actions.setTorrentsTab(!state.torrentsTab) },
+                        searchOpen = searchOpen,
+                        onToggleSearch = { searchOpen = !searchOpen }
                     )
                     VerticalRule()
                     Column(Modifier.weight(1f).fillMaxHeight()) {
+                     if (searchOpen) {
+                        SearchPanel(
+                            // Straight into the same pre-download window every other magnet
+                            // goes through, so a search result gets the file list, the
+                            // folder and the stop condition without any of it being written
+                            // twice.
+                            onPick = { magnet ->
+                                searchOpen = false
+                                onOpenAddForLink(magnet)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        return@Column
+                     }
                         LibraryToolbar(
                             hasSelection = selected.isNotEmpty(),
                             activeCount = DownloadLibrary.activeCount(all),
@@ -510,7 +543,10 @@ private fun CategoryRail(
     compact: Boolean,
     onCategory: (LibraryCategory) -> Unit,
     onGroup: (LibraryGroup) -> Unit,
-    onToggleTorrents: () -> Unit
+    onToggleTorrents: () -> Unit,
+    /** Search is a section rather than a filter, so it is its own boolean. */
+    searchOpen: Boolean,
+    onToggleSearch: () -> Unit
 ) {
     // What the table is actually showing, so every number beside it is reachable.
     val scoped = DownloadLibrary.scopedFor(items, torrentsOnly)
@@ -550,6 +586,14 @@ private fun CategoryRail(
                     icon = LibraryCategoryIcons.of(entry.category),
                     compact = compact
                 ) { onCategory(entry.category) }
+
+                RailEntry.Search -> RailRow(
+                    label = "Search",
+                    count = 0,
+                    selected = searchOpen,
+                    icon = Icons.Default.Search,
+                    compact = compact
+                ) { onToggleSearch() }
 
                 RailEntry.Torrents -> RailRow(
                     label = "Torrents",
@@ -1185,6 +1229,7 @@ internal fun QueuedDownload.toCoreItem() = DownloadItem(
     seedingSinceEpochMillis = seedingSinceEpochMillis,
     seedingStoppedAtEpochMillis = seedingStoppedAtEpochMillis,
     torrentSelectedFiles = torrentSelectedFiles,
+    torrentFilePriorities = torrentFilePriorities,
     torrentSequential = torrentSequential,
     torrentFirstLastPiecesFirst = torrentFirstLastPiecesFirst,
     torrentContentFolder = torrentContentFolder,

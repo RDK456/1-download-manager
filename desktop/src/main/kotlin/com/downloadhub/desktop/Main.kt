@@ -228,6 +228,17 @@ fun main(args: Array<String>) {
                         state = state,
                         actions = controller.actions,
                         onOpenAdd = { showNew = true },
+            // A search result goes straight into the pre-download window, through the
+            // same PendingDownload.forLink every other magnet takes - so a magnet found by
+            // searching gets the file list fetched, the folder picker and the stop
+            // condition exactly as a pasted one does.
+            onOpenAddForLink = { link ->
+                pendingAdd = PendingDownload.forLink(link)
+                    ?: run {
+                        problem = "That link could not be read."
+                        null
+                    }
+            },
                         onOpenSettings = { showSettings = true },
                         onQuit = { closing = true }
                     )

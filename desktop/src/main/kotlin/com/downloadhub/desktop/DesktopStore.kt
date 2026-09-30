@@ -273,7 +273,25 @@ data class QueuedDownload(
     /** Bytes uploaded over the torrent's whole life. */
     val uploadedBytes: Long = 0L,
     /** When it finished downloading. */
-    val completedAt: Long = 0L
+    val completedAt: Long = 0L,
+
+    /**
+     * Bytes downloaded per file, keyed by file index.
+     *
+     * Transient, and deliberately so. It is a reading rather than a setting: it changes
+     * every second and is worth nothing after a restart, whereas the queue file is read
+     * once at launch and written on every change. Persisting it would put a few hundred
+     * numbers per torrent into that file, rewritten continuously, for figures that are
+     * all zero again by the time it is next read.
+     */
+    @Transient
+    var torrentFileProgress: Map<Int, Long> = emptyMap(),
+
+    /**
+     * Per-file priority, keyed by file index, holding a [com.downloadhub.core.FilePriority]
+     * ordinal. Persisted, because it is a choice and a choice survives a restart.
+     */
+    val torrentFilePriorities: Map<Int, Int> = emptyMap()
 ) {
 
     /**

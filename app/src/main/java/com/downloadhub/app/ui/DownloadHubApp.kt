@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -241,7 +242,7 @@ fun DownloadHubApp(
                         // Adding a download is the floating action button's job, so the
                         // root tabs show the app mark instead of a second add button.
                         when (destination) {
-                            AppDestination.DOWNLOADS, AppDestination.TORRENTS -> {
+                            AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.SEARCH -> {
                                 Image(
                                     painter = painterResource(R.drawable.ic_launcher_foreground),
                                     contentDescription = null,
@@ -260,7 +261,7 @@ fun DownloadHubApp(
                         }
                     },
                     actions = {
-                        if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) {
+                        if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES) {
                             BadgedBox(
                                 badge = {
                                     if (hasActiveFilter) {
@@ -294,7 +295,7 @@ fun DownloadHubApp(
                 )
             },
             bottomBar = {
-                if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) {
+                if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES) {
                     NavigationBar(modifier = Modifier.navigationBarsPadding()) {
                         NavigationBarItem(
                             selected = destination == AppDestination.DOWNLOADS,
@@ -308,11 +309,17 @@ fun DownloadHubApp(
                             icon = { Icon(Icons.Default.Folder, contentDescription = null) },
                             label = { Text("Torrents") }
                         )
+                        NavigationBarItem(
+                            selected = destination == AppDestination.SEARCH,
+                            onClick = { navigate(AppDestination.SEARCH) },
+                            icon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            label = { Text("Search") }
+                        )
                     }
                 }
             },
             floatingActionButton = {
-                if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) {
+                if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES) {
                     FloatingActionButton(onClick = { viewModel.openEditor() }) {
                         Icon(Icons.Default.Add, contentDescription = "Add download")
                     }
@@ -368,6 +375,15 @@ fun DownloadHubApp(
                         emptyAction = "Add a magnet link or open a .torrent file",
                         showTorrentAction = true,
                         onPickTorrent = viewModel::addTorrentFile
+                    )
+                    AppDestination.SEARCH -> SearchScreen(
+                        // Straight into the add sheet, the same one a pasted magnet goes
+                        // through, so a search result gets the file list and the folder
+                        // picker without any of it being written twice.
+                        onPick = { magnet ->
+                            viewModel.prepareSearchResult(magnet)
+                            navigate(AppDestination.DOWNLOADS)
+                        }
                     )
                     AppDestination.SETTINGS -> SettingsScreen(
                         themeMode = themeMode,
@@ -851,6 +867,7 @@ private fun SettingsNavRow(
 private fun destinationTitle(destination: AppDestination): String = when (destination) {
     AppDestination.DOWNLOADS -> APP_TITLE
     AppDestination.TORRENTS -> "Torrents"
+    AppDestination.SEARCH -> "Search"
     AppDestination.SETTINGS -> "Settings"
     AppDestination.DOWNLOAD_SETTINGS -> "Download settings"
     AppDestination.THEMES -> "Themes"

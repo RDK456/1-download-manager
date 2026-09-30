@@ -95,6 +95,17 @@ sealed interface RailEntry {
     /** Torrents only. A filter rather than a status, so it is its own kind. */
     data object Torrents : RailEntry
 
+    /**
+     * Find something to download.
+     *
+     * Not a filter, which is why it is its own kind rather than a [Status] or a
+     * [Category]: everything else in the rail narrows what is already in the list, and this
+     * replaces the list with a search box. Folding it into the others would mean it either
+     * counted downloads it does not contain, or was the one row in the rail whose count was
+     * always zero for a reason nobody could see.
+     */
+    data object Search : RailEntry
+
     /** A heading with nothing selectable under it. */
     data class Heading(val label: String) : RailEntry
 }
@@ -107,7 +118,16 @@ sealed interface RailEntry {
  * different kind of transfer rather than a kind of file.
  */
 fun sidebarEntries(): List<RailEntry> = buildList {
-    LibraryGroup.entries.forEach { add(RailEntry.Status(it)) }
+    LibraryGroup.entries.forEachIndexed { index, group ->
+        add(RailEntry.Status(group))
+        // Search sits directly under All Downloads, above the states.
+        //
+        // It is where you go to find something new, and All Downloads is where you go when
+        // you already know what you have. Separating them by a heading would mean a heading
+        // reading "Search" above a row reading "Search", which is the duplication this list
+        // is arranged to avoid.
+        if (index == 0) add(RailEntry.Search)
+    }
     add(RailEntry.Heading("Categories"))
     // ALL is already up above as "All Downloads"; repeating it here under Categories
     // would be the same entry twice with two different counts.
@@ -125,6 +145,9 @@ fun railCount(entry: RailEntry, items: List<DownloadItem>): Int = when (entry) {
     is RailEntry.Status -> items.count(entry.group::matches)
     is RailEntry.Category -> items.count(entry.category::matches)
     RailEntry.Torrents -> items.count { it.isTorrent }
+    // Search holds no downloads: it is a box to type in, and a count beside it would be a
+    // count of something it does not contain.
+    RailEntry.Search -> 0
     is RailEntry.Heading -> 0
 }
 
