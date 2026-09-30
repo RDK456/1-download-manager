@@ -102,6 +102,11 @@ fun TorrentDetailPanel(
     onTab: (TorrentTab) -> Unit,
     paneHeight: Float,
     onPaneHeightChange: (Float) -> Unit,
+    /** Sets one file's priority. Null where the pane cannot change it. */
+    onFilePriority: ((Int, com.downloadhub.core.FilePriority) -> Unit)? = null,
+    /** Bytes fetched per file, from the engine's last poll. */
+    fileProgress: Map<Int, Long> = emptyMap(),
+
     modifier: Modifier = Modifier
 ) {
     Column(modifier.fillMaxWidth()) {
@@ -149,7 +154,7 @@ fun TorrentDetailPanel(
                 item == null -> PanelNote("Select a torrent to see its details.")
                 item.source != DownloadSource.TORRENT ->
                     PanelNote("That is not a torrent, so it has none of these.")
-                else -> TorrentTabContent(item, tab)
+                else -> TorrentTabContent(item, tab, onFilePriority, fileProgress)
             }
         }
     }
@@ -225,11 +230,25 @@ const val PANE_MAX_DP = 900f
 const val PANE_DEFAULT_DP = 300f
 
 @Composable
-private fun TorrentTabContent(item: DownloadItem, tab: TorrentTab) {
+private fun TorrentTabContent(
+    item: DownloadItem,
+    tab: TorrentTab,
+    onFilePriority: ((Int, com.downloadhub.core.FilePriority) -> Unit)?,
+    fileProgress: Map<Int, Long>
+) {
     // The pane's own filter, so a twelve-file list can be narrowed to the one file being
     // looked for. It was a fixed empty string, which is why the filter box beside it did
     // nothing at all.
     var filter by remember(item.id) { mutableStateOf("") }
+
+    /**
+     * Which files are ticked in the Content tab.
+     *
+     * Not the pre-download selection: that was decided before this torrent started and
+     * cannot change now. These ticks only say what a toolbar action applies to, which is
+     * why the bar says "Set priority on 3" when three are ticked.
+     */
+    var ticked by remember(item.id) { mutableStateOf<Set<Int>>(emptySet()) }
     val label = AppTheme.Palette.muted
     val value = AppTheme.Palette.onSurface
     when (tab) {
@@ -317,7 +336,13 @@ private fun TorrentTabContent(item: DownloadItem, tab: TorrentTab) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "${selected.size} of ${meta.files.size} files",
+                            buildString {
+                                append("${selected.size} of ${meta.files.size} files")
+                                // Said only while some are ticked: a user who cannot see
+                                // what a toolbar action is about to apply to has no way
+                                // of telling whether they ticked what they meant to.
+                                if (ticked.isNotEmpty()) append("  ·  ${ticked.size} ticked")
+                            },
                             fontSize = 11.sp,
                             color = AppTheme.Palette.muted,
                             maxLines = 1,
@@ -337,16 +362,23 @@ private fun TorrentTabContent(item: DownloadItem, tab: TorrentTab) {
                         rows = contentRowsFor(meta, filter),
                         filter = filter,
                         onFilter = { filter = it },
-                        selected = selected,
-                        onSelectionChange = { },
-                        onSelectAll = {},
-                        onSelectNone = {},
-                        // Read-only: this reports what was chosen in the pre-download
-                        // dialog, it is not an editor. A tick box that unticks itself and
-                        // changes nothing is worse than a plain tick.
-                        readOnly = true,
-                        // Its own toolbar is suppressed. The filter is above, on the count's
-                        // line, and a second one would be two filters that each filter.
+                        // The ticks choose which files a toolbar priority applies to.
+                        // They are not the pre-download selection and cannot change it -
+                        // that was decided before this torrent started - so they are held
+                        // here rather than written back.
+                        selected = ticked,
+                        onSelectionChange = { chosen -> ticked = chosen },
+                        onSelectAll = { ticked = meta.files.map { it.index }.toSet() },
+                        onSelectNone = { ticked = emptySet() },
+                        downloadedBytes = fileProgress,
+                        filePriorities = item.torrentFilePriorities
+                            .mapValues { (_, ordinal) ->
+                                com.downloadhub.core.FilePriority.fromOrdinal(ordinal)
+                            },
+                        onFilePriority = onFilePriority,
+                        // Its own toolbar is suppressed: the filter is above, on the
+                        // count's line, and a second one would be two filters each
+                        // filtering.
                         chrome = false
                     )
                 }

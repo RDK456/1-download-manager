@@ -5,6 +5,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
+import com.downloadhub.core.FilePriority
 import com.downloadhub.core.DownloadCategory
 import com.downloadhub.core.DownloadItem
 import com.downloadhub.core.DownloadSource
@@ -78,6 +79,16 @@ data class DesktopActions(
     val addPrepared: (com.downloadhub.core.TorrentAddRequest) -> Unit,
     val pause: (String) -> Unit,
     val resume: (String) -> Unit,
+    /**
+     * Sets one file of one torrent's priority, and tells libtorrent at once.
+     *
+     * Takes the file index and the priority rather than a whole map, because the only
+     * caller is a row's own control and building a map to change one entry is how a
+     * per-file control turns into a per-torrent one.
+     */
+    val setFilePriority: (String, Int, FilePriority) -> Unit,
+    /** Applies one priority to every file, which is the toolbar's "Set priority". */
+    val setAllFilePriorities: (String, FilePriority) -> Unit,
     val retry: (String) -> Unit,
     val remove: (String) -> Unit,
     /**
@@ -658,6 +669,14 @@ class DesktopController(
     val actions: DesktopActions = DesktopActions(
         addDownload = ::addDownload,
         addPrepared = ::addPrepared,
+        setFilePriority = { id, index, priority ->
+            // Torrents only. An HTTP download has no files to prioritise, and the file
+            // list is only ever shown for a torrent, so nothing else can reach this.
+            torrents.setFilePriority(id, index, priority)
+        },
+        setAllFilePriorities = { id, priority ->
+            torrents.setAllFilePriorities(id, priority)
+        },
         pause = { id ->
             val item = store.get(id)
             if (item?.source == DownloadSource.TORRENT) torrents.pause(id) else engine.pause(id)
