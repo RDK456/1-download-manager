@@ -140,6 +140,27 @@ interface DownloadDao {
     )
     suspend fun updateTorrentInfo(id: String, infoHash: String?, filePath: String?, updatedAt: Long)
 
+    /**
+     * Records a torrent's file selection and per-file priorities together.
+     *
+     * One writer rather than two, because the two are changed together and two statements
+     * can half-apply: a selection saved without its priorities leaves a file the user
+     * asked to skip downloading normally, and nothing would say so.
+     *
+     * Both are the encoded text forms from [com.downloadhub.core.FileChoiceCodec], so the
+     * format is written down and tested in one place rather than in a query string.
+     */
+    @Query(
+        "UPDATE downloads SET torrentSelectedFiles = :selected, " +
+                "torrentFilePriorities = :priorities, updatedAt = :updatedAt WHERE id = :id"
+    )
+    suspend fun updateTorrentFileChoices(
+        id: String,
+        selected: String?,
+        priorities: String?,
+        updatedAt: Long
+    )
+
     @Query("UPDATE downloads SET etag = :etag, lastModified = :lastModified, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateValidators(id: String, etag: String?, lastModified: String?, updatedAt: Long)
 

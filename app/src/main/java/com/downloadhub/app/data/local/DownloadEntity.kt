@@ -26,6 +26,22 @@ data class DownloadEntity(
     val outputPath: String?,
     val torrentFilePath: String?,
     val torrentInfoHash: String?,
+
+    /**
+     * This torrent's file choices, as text.
+     *
+     * Two text columns rather than a table of files: a selection is a list of indices and
+     * a priority is an index and a number, both of which fit a short string, and a
+     * four-hundred-file season is about three kilobytes. Read with [FileChoiceCodec],
+     * which is where the format is written down and tested.
+     *
+     * Null means the torrent was never given any choice, which is different from an empty
+     * selection: an empty selection means every file, and null means the same thing for a
+     * torrent added before this existed.
+     */
+    val torrentSelectedFiles: String? = null,
+    /** Per-file priority as `index:ordinal`, read with [FileChoiceCodec]. */
+    val torrentFilePriorities: String? = null,
     val userAgent: String?,
     val contentDisposition: String?,
     val etag: String?,
