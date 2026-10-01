@@ -590,7 +590,8 @@ class YtDlpEngine(private val tools: YtDlpTools) {
             bestTotalBytes = video.firstOrNull()?.let {
                 com.downloadhub.core.chooseStream(all, it.height ?: 0, audio)?.totalBytes
             } ?: 0L,
-            error = null
+            error = null,
+            allFormats = all
         )
     }
 
@@ -805,7 +806,15 @@ class YtDlpEngine(private val tools: YtDlpTools) {
         val title: String,
         /** Bytes the top video option actually costs, audio included. */
         val bestTotalBytes: Long,
-        val error: String?
+        val error: String?,
+        /**
+         * Every format the extractor offered, ungrouped.
+         *
+         * The section's single-video view lists these raw - every height, frame
+         * rate and codec - because collapsing one row per height is what once hid
+         * a 4K option behind a 1080p row.
+         */
+        val allFormats: List<com.downloadhub.core.StreamFormat> = emptyList()
     ) {
         val isEmpty: Boolean get() = videoFormats.isEmpty() && audioFormats.isEmpty()
     }

@@ -26,7 +26,15 @@ data class YouTubeFormatListing(
     val title: String,
     /** Best video plus audio, because that is what the top row will transfer. */
     val bestTotalBytes: Long,
-    val error: String?
+    val error: String?,
+    /**
+     * Every format the extractor offered, ungrouped.
+     *
+     * The section's single-video view lists these raw - every height, frame
+     * rate and codec - because collapsing one row per height is what once hid a
+     * 4K option behind a 1080p row. Empty unless built by [youTubeFormatListing].
+     */
+    val allFormats: List<StreamFormat> = emptyList()
 ) {
     val isEmpty: Boolean get() = videoFormats.isEmpty() && audioFormats.isEmpty()
 }
@@ -67,7 +75,8 @@ fun youTubeFormatListing(all: List<StreamFormat>, title: String): YouTubeFormatL
         title = title,
         bestTotalBytes = video.firstOrNull()
             ?.let { chooseStream(all, it.height ?: 0, audio)?.totalBytes } ?: 0L,
-        error = null
+        error = null,
+        allFormats = all
     )
 }
 

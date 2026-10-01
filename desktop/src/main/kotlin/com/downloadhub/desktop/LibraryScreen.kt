@@ -102,6 +102,12 @@ fun LibraryScreen(
      * condition as a magnet pasted by hand.
      */
     onOpenAddForLink: (String) -> Unit,
+    /**
+     * A YouTube link the pre-download window handed over, loaded once by the
+     * YouTube section and then forgotten via [onYouTubePrefillConsumed].
+     */
+    youTubePrefill: String? = null,
+    onYouTubePrefillConsumed: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onQuit: () -> Unit
 ) {
@@ -150,6 +156,16 @@ fun LibraryScreen(
      * time, and every rail row that is neither closes both.
      */
     var youTubeOpen by remember { mutableStateOf(false) }
+
+    // A handed-over link opens the section with the link already loading, then
+    // is forgotten: later recompositions must not re-fetch it over what was
+    // typed there since.
+    LaunchedEffect(youTubePrefill) {
+        if (!youTubePrefill.isNullOrBlank()) {
+            searchOpen = false
+            youTubeOpen = true
+        }
+    }
     /**
      * How tall the detail pane is, and who changed it.
      *
@@ -251,16 +267,27 @@ fun LibraryScreen(
                      if (youTubeOpen) {
                         YouTubePanel(
                             fetch = actions.fetchYouTubeListing,
+                            prefill = youTubePrefill,
+                            onPrefillConsumed = onYouTubePrefillConsumed,
                             knownIds = all
                                 .filter { it.source == com.downloadhub.core.DownloadSource.YOUTUBE }
                                 .mapNotNull { com.downloadhub.core.youTubeIdFromUrl(it.url) }
                                 .toSet(),
-                            onQueue = actions.queueYouTubeEntries,
-                            // One video keeps the exact chooser rather than a ceiling:
-                            // the panel lists, the dialog specifies.
-                            onSingle = { url ->
+                            onQueue = { entries, audioOnly, ceiling, format ->
+                                // Back to the Downloads list: the rows appearing
+                                // there are the confirmation.
+                                val queued = actions.queueYouTubeEntries(entries, audioOnly, ceiling, format)
+                                searchOpen = false
                                 youTubeOpen = false
-                                onOpenAddForLink(url)
+                                queued
+                            },
+                            fetchFormats = actions.listVideoFormats,
+                            // One video at its exact streams, then back to the
+                            // Downloads list the same way.
+                            onPickExact = { url, choice, audioOnly ->
+                                actions.addChosenVideo(url, choice, audioOnly, null)
+                                searchOpen = false
+                                youTubeOpen = false
                             },
                             modifier = Modifier.fillMaxSize()
                         )

@@ -391,11 +391,27 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * What a YouTube link offers, for the quality picker in the add sheet.
+     * A YouTube link the add sheet handed over, loaded once by the YouTube tab.
      *
-     * One lookup per link, run while the sheet is open: the picker shows the real
-     * rows with real sizes rather than the fixed Best-to-360p menu, so a 1080p
-     * video no longer offers 4K and 2K rows that silently download 1080p.
+     * One-shot: the tab consumes it on arrival, so later recompositions do not
+     * re-fetch it over what the user typed since.
+     */
+    private val _youTubePrefill = MutableStateFlow<String?>(null)
+    val youTubePrefill: StateFlow<String?> = _youTubePrefill.asStateFlow()
+
+    fun setYouTubePrefill(link: String) {
+        _youTubePrefill.value = link.trim().takeIf { it.isNotEmpty() }
+    }
+
+    fun consumeYouTubePrefill() {
+        _youTubePrefill.value = null
+    }
+
+    /**
+     * What one video offers, with every format ungrouped, for the YouTube tab.
+     *
+     * The raw list - every height, frame rate and codec - because collapsing
+     * one row per height is what once hid a 4K option behind a 1080p row.
      */
     suspend fun listYouTubeFormats(url: String): YouTubeFormatListing =
         app.container.youtubeDownloader.listFormats(url)

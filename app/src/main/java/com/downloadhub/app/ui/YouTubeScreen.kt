@@ -1,5 +1,6 @@
 package com.downloadhub.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,11 +32,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.downloadhub.app.data.model.AudioFormat
+import com.downloadhub.app.data.model.DownloadCategory
+import com.downloadhub.app.data.model.DownloadSource
+import com.downloadhub.app.data.model.MediaQuality
 import com.downloadhub.app.download.AppPlaylistFetch
+import com.downloadhub.app.download.YouTubeFormatListing
+import com.downloadhub.core.StreamFormat
 import com.downloadhub.core.YouTubeEntry
+import com.downloadhub.core.chooseStream
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -50,9 +60,32 @@ import kotlinx.coroutines.CancellationException
 @Composable
 fun YouTubeScreen(
     knownIds: Set<String>,
+    /** A link handed over by the add sheet, loaded once then forgotten. */
+    prefill: String?,
+    onPrefillConsumed: () -> Unit,
     onFetch: suspend (String) -> AppPlaylistFetch,
+    onFetchFormats: suspend (String) -> YouTubeFormatListing,
     onQueue: (List<YouTubeEntry>, Boolean, Int?) -> Unit,
-    onSingle: (String) -> Unit,
+    /**
+     * Queues one video at its exact streams, the ids the rows named.
+     *
+     * The same ten arguments as the add sheet's Add, because it is the same
+     * queueing: the section lists, but it must not queue by its own rules.
+     */
+    onAddExact: (
+        rawLink: String,
+        fileName: String?,
+        category: DownloadCategory?,
+        sourceOverride: DownloadSource?,
+        userAgent: String?,
+        contentDisposition: String?,
+        quality: MediaQuality,
+        audioFormat: AudioFormat,
+        streamFormatId: String?,
+        streamAudioFormatId: String?
+    ) -> Unit,
+    /** Called after anything is queued, so the app returns to the Downloads tab. */
+    onDone: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var link by remember { mutableStateOf("") }
@@ -68,6 +101,17 @@ fun YouTubeScreen(
     // The link the list belongs to. Typing after a fetch must not silently
     // reassign the rows to a link they did not come from.
     var fetchedLink by remember { mutableStateOf("") }
+
+    // A link handed over by the add sheet: loaded once, then forgotten, so a
+    // later recomposition does not re-fetch it over what the user typed since.
+    LaunchedEffect(prefill) {
+        val incoming = prefill?.trim().orEmpty()
+        if (incoming.isNotEmpty()) {
+            link = incoming
+            fetchedLink = incoming
+            onPrefillConsumed()
+        }
+    }
 
     val trimmed = link.trim()
     // Fetch is explicit: every keystroke firing an extraction is how a
@@ -194,12 +238,45 @@ fun YouTubeScreen(
         }
 
         if (single && entries.size == 1) {
-            OutlinedButton(
-                onClick = { onSingle(entries.single().url) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Choose exact quality")
-            }
+            // One video lists every quality and format the extractor offers -
+            // every height, frame rate and codec, each with its real size - so
+            // there is no row to tap that silently downloads something else.
+            val entry = entries.single()
+            YouTubeSingleQuality(
+                url = entry.url,
+                onFetchFormats = onFetchFormats,
+                onDownload = { video, audio, audioOnlyRow ->
+                    if (audioOnlyRow) {
+                        onAddExact(
+                            entry.url,
+                            entry.title,
+                            DownloadCategory.AUDIO,
+                            DownloadSource.YOUTUBE,
+                            null,
+                            null,
+                            MediaQuality.AUDIO,
+                            AudioFormat.fromValue(video.ext),
+                            video.formatId,
+                            null
+                        )
+                    } else {
+                        onAddExact(
+                            entry.url,
+                            entry.title,
+                            DownloadCategory.VIDEO,
+                            DownloadSource.YOUTUBE,
+                            null,
+                            null,
+                            MediaQuality.entries.firstOrNull { it.maxHeight == video.height }
+                                ?: MediaQuality.BEST,
+                            AudioFormat.M4A,
+                            video.formatId,
+                            audio?.formatId
+                        )
+                    }
+                    onDone()
+                }
+            )
         }
 
         if (entries.size > 1) {
@@ -344,6 +421,7 @@ fun YouTubeScreen(
                     }
                     onQueue(chosen, audioOnly, ceiling)
                     checked = emptySet()
+                    onDone()
                 },
                 enabled = checked.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth()
@@ -352,5 +430,198 @@ fun YouTubeScreen(
             }
             Spacer(Modifier.height(4.dp))
         }
+    }
+}
+
+/**
+ * Every quality and format one video offers, each with its real size.
+ *
+ * The raw format list, not one row per height: a 4K video shows its 4K rows
+ * because nothing collapsed them away, and a row's number is the video plus
+ * the best audio, because both transfer. Tapping a row downloads exactly those
+ * streams - 1080p60 and 1080p are different rows and different downloads.
+ */
+@Composable
+private fun YouTubeSingleQuality(
+    url: String,
+    onFetchFormats: suspend (String) -> YouTubeFormatListing,
+    onDownload: (video: StreamFormat, audio: StreamFormat?, audioOnly: Boolean) -> Unit
+) {
+    var listing by remember(url) { mutableStateOf<YouTubeFormatListing?>(null) }
+    var error by remember(url) { mutableStateOf<String?>(null) }
+    var busy by remember(url) { mutableStateOf(true) }
+    var attempt by remember(url) { mutableStateOf(0) }
+    var audioOnly by remember(url) { mutableStateOf(false) }
+    var chosen by remember(url) { mutableStateOf<StreamFormat?>(null) }
+
+    LaunchedEffect(url, attempt) {
+        busy = true
+        error = null
+        try {
+            val found = onFetchFormats(url)
+            if (found.error != null) {
+                error = found.error
+            } else {
+                listing = found
+                if (found.allFormats.none { it.formatId == chosen?.formatId }) {
+                    chosen = found.videoFormats.firstOrNull()
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failed: Exception) {
+            error = failed.message?.takeIf { it.isNotBlank() } ?: "Could not read that video."
+        }
+        busy = false
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Quality", style = MaterialTheme.typography.titleSmall)
+        if (busy && listing == null && error == null) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            }
+            return@Column
+        }
+        val failure = error ?: listing?.error
+        if (failure != null) {
+            Text(
+                failure,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+            OutlinedButton(onClick = { attempt++ }, modifier = Modifier.fillMaxWidth()) {
+                Text("Retry")
+            }
+            return@Column
+        }
+        val found = listing ?: return@Column
+        val videos = found.allFormats.filter { it.hasVideo }.sortedByDescending { it.height ?: 0 }
+        val audios = found.allFormats.filter { it.isAudioOnly }
+            .sortedWith(
+                compareByDescending<StreamFormat> { it.totalBitrate ?: 0 }
+                    .thenByDescending { it.sizeBytes ?: 0L }
+            )
+        val bestAudio = audios.firstOrNull()
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(
+                selected = !audioOnly,
+                onClick = { audioOnly = false },
+                label = { Text("Video") }
+            )
+            FilterChip(
+                selected = audioOnly,
+                onClick = { audioOnly = true },
+                label = { Text("Audio only") }
+            )
+        }
+        if (audioOnly) {
+            if (audios.isEmpty()) {
+                Text(
+                    "This video offers no audio-only stream.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                audios.forEach { format ->
+                    val bytes = format.sizeBytes
+                    FormatRow(
+                        title = "${format.qualityLabel} · ${format.ext}",
+                        subtitle = buildString {
+                            format.totalBitrate?.let { append(it).append(" kbps") }
+                            if (bytes != null && bytes > 0L && isNotEmpty()) append("  ·  ")
+                        },
+                        sizeBytes = bytes,
+                        selected = chosen?.formatId == format.formatId,
+                        onClick = { chosen = format }
+                    )
+                }
+            }
+        } else {
+            videos.forEach { format ->
+                val total = (format.sizeBytes ?: 0L) + (bestAudio?.sizeBytes ?: 0L)
+                FormatRow(
+                    title = format.fullLabel,
+                    subtitle = buildString {
+                        append(format.ext)
+                        format.videoCodec?.let { append("  ·  ").append(it.substringBefore('.')) }
+                        append("  ·  needs joining")
+                    },
+                    sizeBytes = total.takeIf { it > 0L },
+                    selected = chosen?.formatId == format.formatId,
+                    onClick = { chosen = format }
+                )
+            }
+        }
+        val pick = chosen
+        Button(
+            onClick = {
+                val selected = pick ?: return@Button
+                if (audioOnly) {
+                    onDownload(selected, null, true)
+                } else {
+                    val pair = chooseStream(
+                        (videos + audios).distinctBy { it.formatId },
+                        selected.height ?: 0,
+                        audios
+                    )
+                    // The tapped row, not the height's best: chooseStream answers
+                    // the height, and the tap named the stream.
+                    onDownload(
+                        pair?.video?.takeIf { it.formatId == selected.formatId } ?: selected,
+                        pair?.audio,
+                        false
+                    )
+                }
+            },
+            enabled = pick != null,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Download")
+        }
+    }
+}
+
+@Composable
+private fun FormatRow(
+    title: String,
+    subtitle: String,
+    /** Null renders as "size unknown": the extractor did not say. */
+    sizeBytes: Long?,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            if (subtitle.isNotBlank()) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Text(
+            if (sizeBytes != null && sizeBytes > 0L) formatBytes(sizeBytes) else "size unknown",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

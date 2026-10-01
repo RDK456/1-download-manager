@@ -129,6 +129,14 @@ fun main(args: Array<String>) {
             // of download it is.
             var pendingAdd by remember { mutableStateOf<PendingDownload?>(null) }
             /**
+             * A YouTube link the pre-download window handed over, loaded once by the
+             * YouTube section.
+             *
+             * One-shot: the section consumes it on arrival, so later recompositions
+             * do not re-fetch it over what was typed there since.
+             */
+            var youTubePrefill by remember { mutableStateOf<String?>(null) }
+            /**
              * The pre-download window's size and position.
              *
              * Remembered rather than recreated per open, so a window the user has made
@@ -230,6 +238,8 @@ fun main(args: Array<String>) {
                         state = state,
                         actions = controller.actions,
                         onOpenAdd = { showNew = true },
+                        youTubePrefill = youTubePrefill,
+                        onYouTubePrefillConsumed = { youTubePrefill = null },
             // A search result goes straight into the pre-download window, through the
             // same PendingDownload.forLink every other magnet takes - so a magnet found by
             // searching gets the file list fetched, the folder picker and the stop
@@ -341,29 +351,17 @@ fun main(args: Array<String>) {
                      * be seen.
                      */
                     pendingAdd?.let { pending ->
-                        // A video goes to the quality chooser instead of this window.
+                        // A video goes to the YouTube section instead of this window.
                         //
                         // Everything this window offers is about a torrent: which files out of
                         // forty, what to call the content folder, when to stop seeding. A video
                         // has no file list and no share ratio, so those options would be a pane
-                        // of disabled controls - and the one thing a video does need choosing,
-                        // which is its quality, is not here at all. The old path took a height
-                        // dropdown in a dialog and guessed at what was on offer.
+                        // of disabled controls - and everything a video does need, the
+                        // listing and every quality the extractor offers, lives in the
+                        // section. The link travels with it, already loading.
                         if (LinkParser.sourceFor(pending.link) == DownloadSource.YOUTUBE) {
-                            YouTubeQualityDialog(
-                                url = pending.link,
-                                loader = controller.actions.listVideoFormats,
-                                onPick = { choice, audioOnly ->
-                                    // Closed before the row appears, for the same reason the
-                                    // window below is: two things on screen at once reads as
-                                    // neither having been asked for.
-                                    pendingAdd = null
-                                    controller.actions.addChosenVideo(
-                                        pending.link, choice, audioOnly, null
-                                    )
-                                },
-                                onDismiss = { pendingAdd = null }
-                            )
+                            pendingAdd = null
+                            youTubePrefill = pending.link
                             return@let
                         }
                         Window(

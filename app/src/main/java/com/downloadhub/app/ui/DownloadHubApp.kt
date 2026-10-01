@@ -130,6 +130,7 @@ fun DownloadHubApp(
         val hasActiveFilter by viewModel.hasActiveFilter.collectAsStateWithLifecycle()
         val selectedItem by viewModel.selectedDownload.collectAsStateWithLifecycle()
         val editorSeed by viewModel.editorSeed.collectAsStateWithLifecycle()
+        val youTubePrefill by viewModel.youTubePrefill.collectAsStateWithLifecycle()
         val filter by viewModel.currentFilter.collectAsStateWithLifecycle()
         val category by viewModel.currentCategory.collectAsStateWithLifecycle()
         var filterSheetOpen by rememberSaveable { mutableStateOf(false) }
@@ -404,17 +405,16 @@ fun DownloadHubApp(
                     )
                     AppDestination.YOUTUBE -> YouTubeScreen(
                         knownIds = knownYouTubeIds,
+                        prefill = youTubePrefill,
+                        onPrefillConsumed = viewModel::consumeYouTubePrefill,
                         onFetch = viewModel::fetchYouTubeListing,
+                        onFetchFormats = viewModel::listYouTubeFormats,
                         onQueue = { entries, audioOnly, ceiling ->
                             viewModel.queueYouTubeEntries(entries, audioOnly, ceiling)
+                            navigate(AppDestination.DOWNLOADS)
                         },
-                        // One video keeps the exact chooser: the section lists, the
-                        // add sheet specifies.
-                        onSingle = { url ->
-                            viewModel.openEditor(
-                                EditorSeed(link = url, source = DownloadSource.YOUTUBE)
-                            )
-                        }
+                        onAddExact = viewModel::addLink,
+                        onDone = { navigate(AppDestination.DOWNLOADS) }
                     )
                     AppDestination.SETTINGS -> SettingsScreen(
                         themeMode = themeMode,
@@ -476,7 +476,13 @@ fun DownloadHubApp(
                 scanning = scanState is PageScanState.Scanning,
                 onDismiss = viewModel::closeEditor,
                 onAdd = viewModel::addLink,
-                onListFormats = viewModel::listYouTubeFormats,
+                // A YouTube link in the sheet belongs to the YouTube tab: the
+                // sheet closes, the tab opens with the link already loading.
+                onOpenYouTubeTab = { link ->
+                    viewModel.closeEditor()
+                    viewModel.setYouTubePrefill(link)
+                    navigate(AppDestination.YOUTUBE)
+                },
                 onPickTorrent = viewModel::addTorrentFile,
                 onScanPage = viewModel::scanPageForMedia
             )
