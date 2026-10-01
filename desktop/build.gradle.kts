@@ -256,10 +256,17 @@ val packageExtension by tasks.registering {
         val from = sourceDir.asFile
         val into = outputDir.get().asFile
         into.mkdirs()
-        // A zip from an earlier version is not an asset for this one, and leaving
-        // them accumulates a directory of dead files across every release.
-        into.listFiles { f -> f.name.endsWith(".zip") }?.forEach { stale ->
-            if (!stale.name.contains(extensionVersion)) stale.delete()
+        // Exactly two files should live here: this version's Chrome zip and this
+        // version's Firefox .xpi. Anything else is left over - an earlier version,
+        // or the Firefox .zip from before it became an .xpi - and is deleted by
+        // name rather than by version, because filtering on the version keeps the
+        // stale file from the *same* version.
+        val expected = setOf(
+            "1-download-manager-extension-chrome-$extensionVersion.zip",
+            "1-download-manager-extension-firefox-$extensionVersion.xpi"
+        )
+        into.listFiles()?.forEach { stale ->
+            if (!expected.contains(stale.name)) stale.delete()
         }
         listOf("chromium" to "chrome", "firefox" to "firefox").forEach { (folder, label) ->
             val dir = File(from, folder)
@@ -276,7 +283,12 @@ val packageExtension by tasks.registering {
             staged.mkdirs()
             dir.listFiles()?.forEach { file -> file.copyTo(File(staged, file.name), overwrite = true) }
             File(staged, "manifest.json").writeText(stamped)
-            val zip = File(into, "1-download-manager-extension-$label-$extensionVersion.zip")
+            // Chromium gets a .zip, Firefox gets an .xpi. The bytes are identical -
+            // an .xpi *is* a zip - but the extension matters: Firefox and Zen will
+            // not accept a .zip from "Install Add-on From File", and asking someone
+            // to rename the download is asking them to know that.
+            val suffix = if (label == "firefox") "xpi" else "zip"
+            val zip = File(into, "1-download-manager-extension-$label-$extensionVersion.$suffix")
             zip.delete()
             ZipOutputStream(zip.outputStream().buffered()).use { sink ->
                 staged.walkTopDown().filter { file -> file.isFile }.forEach { file ->

@@ -383,7 +383,7 @@ Open this app's Settings -> Check for updates to install this release.
     $extensionAssets = @()
     if ($hasDesktop) {
         $extensionDir = Join-Path $RepoRoot 'desktop\build\extensions'
-        $extensionAssets = Get-ChildItem $extensionDir -Filter '*.zip' -ErrorAction SilentlyContinue |
+        $extensionAssets = Get-ChildItem $extensionDir -Include '*.zip', '*.xpi' -Recurse -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -like "*$newVersion*" } |
             ForEach-Object {
                 $dest = Join-Path $RepoRoot $_.Name

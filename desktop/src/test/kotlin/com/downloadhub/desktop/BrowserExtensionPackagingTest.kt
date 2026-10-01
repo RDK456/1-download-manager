@@ -86,28 +86,38 @@ class BrowserExtensionPackagingTest {
         assertTrue("the Firefox build must use background scripts", firefox.contains("\"scripts\""))
     }
 
-    /** The zips exist, one per browser, with the manifest at the root as stores require. */
+    /**
+     * The zips exist, one per browser, with the manifest at the root as stores
+     * require - and Firefox's is an .xpi, because Firefox and Zen will not accept
+     * a .zip from "Install Add-on From File" and asking a user to rename the
+     * download is asking them to know that.
+     */
     @Test
-    fun bothZipsAreBuiltWithTheManifestAtTheRoot() {
+    fun bothPackagesAreBuiltWithTheManifestAtTheRoot() {
         val dir = build("build/extensions")
         org.junit.Assume.assumeTrue(
             "no packaged extension to inspect; run :desktop:packageExtension",
             dir != null
         )
-        val zips = dir!!.listFiles { f -> f.name.endsWith(".zip") }.orEmpty()
-        listOf("chrome", "firefox").forEach { label ->
-            val zip = zips.firstOrNull { it.name.contains(label) }
-            assertTrue("no extension zip for $label", zip != null)
-            val names = java.util.zip.ZipFile(zip!!).use { z ->
+        val files = dir!!.listFiles().orEmpty()
+        val chrome = files.firstOrNull { it.name.contains("chrome") && it.name.endsWith(".zip") }
+        val firefox = files.firstOrNull { it.name.contains("firefox") && it.name.endsWith(".xpi") }
+        assertTrue("no .zip for the Chrome Web Store", chrome != null)
+        assertTrue(
+            "no .xpi for Firefox and Zen, which will not take a .zip",
+            firefox != null
+        )
+        listOf("chrome" to chrome!!, "firefox" to firefox!!).forEach { (label, file) ->
+            val names = java.util.zip.ZipFile(file).use { z ->
                 z.entries().toList().map { it.name }
             }
             assertTrue(
-                "the $label zip must have manifest.json at its root, which is where " +
-                    "both stores look for it",
+                "the $label package must have manifest.json at its root, which is " +
+                    "where both stores look for it",
                 names.contains("manifest.json")
             )
             assertTrue(
-                "the $label zip is missing its icons",
+                "the $label package is missing its icons",
                 names.contains("icon128.png")
             )
         }
