@@ -221,6 +221,10 @@ try {
             # dependency itself, because the Compose distribution tasks cannot be
             # referenced by name from the build script.
             $targets += @(':desktop:createDistributable', ':desktop:prepareDistributable', ':desktop:packageMsi')
+            # The extension zips published beside the installers. Here rather than
+            # with the rest, because they carry the app version stamped into their
+            # manifests and the version was bumped a moment ago.
+            $targets += ':desktop:packageExtension'
         }
         Write-Host ("Running " + ($targets -join ' ') + "...") -ForegroundColor Cyan
         & $gradlew @targets
@@ -368,6 +372,32 @@ Open this app's Settings -> Check for updates to install this release.
     if ($apkAsset) { $assets += $apkAsset }
     if ($msiAsset) { $assets += $msiAsset }
     if ($zipAsset) { $assets += $zipAsset }
+
+    # The browser extensions, zipped per browser.
+    #
+    # They are also unpacked into the app itself, which is how a user with the app
+    # installed loads one. But that folder is a path only they have, it moves on
+    # reinstall, and neither store can be pointed at it - so without a download
+    # asset there is nothing to hand a person who wants the extension without
+    # installing the app, and nothing to upload from.
+    $extensionAssets = @()
+    if ($hasDesktop) {
+        $extensionDir = Join-Path $RepoRoot 'desktop\build\extensions'
+        $extensionAssets = Get-ChildItem $extensionDir -Filter '*.zip' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "*$newVersion*" } |
+            ForEach-Object {
+                $dest = Join-Path $RepoRoot $_.Name
+                Copy-Item $_.FullName $dest -Force
+                Write-Host ("EXT {0} bytes" -f (Get-Item $dest).Length) -ForegroundColor DarkGray
+                $dest
+            }
+        if (@($extensionAssets).Count -eq 0) {
+            # Silently publishing a release with no extension would look like the
+            # extension had been withdrawn.
+            throw "No extension zip for $newVersion was produced by :desktop:packageExtension."
+        }
+        $assets += @($extensionAssets)
+    }
     if ($assets.Count -eq 0) { throw 'Nothing to publish: no assets were produced.' }
 
     $releaseArgs = @('release', 'create', $tag) + $assets +

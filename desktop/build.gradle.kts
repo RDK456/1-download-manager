@@ -1,6 +1,8 @@
 import java.net.URI
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 
 plugins {
@@ -217,6 +219,67 @@ val stageExtension by tasks.registering(Copy::class) {
 }
 
 tasks.named("processResources") { dependsOn(stageYtBin, stageExtension) }
+
+/**
+ * The extension as a zip, one per browser, for people who would rather not dig
+ * the folder out of the installed app.
+ *
+ * Until now the only copy was unpacked into the installation and the user loaded
+ * it from there, which is a folder path only they have and which changes when
+ * they reinstall. A release asset is a URL anyone can be sent, and it is what
+ * the store submission uploads from, so the same bytes do both jobs.
+ *
+ * A zip per browser rather than one, because they are different extensions: MV3
+ * still has no Firefox service worker support, so Firefox needs background.scripts
+ * and the Chromium build needs service_worker. Loading the wrong one gives a
+ * user an extension that silently does nothing.
+ */
+val packageExtension by tasks.registering {
+    description = "Zips each browser extension for release and store upload."
+    group = "distribution"
+    val sourceDir = layout.projectDirectory.dir("browser-extension")
+    val outputDir = layout.buildDirectory.dir("extensions")
+    val appVersion: String = (project.findProperty("appVersion") as String?) ?: "1.0.0"
+    // Chrome Web Store and Firefox both reject a version with more than four
+    // dot-separated numbers, and "1.4.25" is three - but "1.4.25-beta" is not a
+    // version either, so the app version is used verbatim and only trimmed to the
+    // four-number shape if a build ever gives it more.
+    val extensionVersion = Regex("^\\d+(\\.\\d+){0,3}$")
+        .let { if (it.matches(appVersion)) appVersion else appVersion.substringBefore('-') }
+    outputs.dir(outputDir)
+    doLast {
+        val from = sourceDir.asFile
+        val into = outputDir.get().asFile
+        into.mkdirs()
+        listOf("chromium" to "chrome", "firefox" to "firefox").forEach { (folder, label) ->
+            val dir = File(from, folder)
+            require(dir.isDirectory) { "browser-extension/$folder is missing" }
+            // Read back and rewritten rather than copied, so the version in the
+            // manifest is the app's. A store update needs a *higher* version than
+            // the last upload, and a fixed 1.0.0 can never be updated once.
+            val manifest = File(dir, "manifest.json")
+            val text = manifest.readText()
+            val stamped = Regex("(\"version\"\\s*:\\s*\")[^\"]+(\")")
+                .replace(text) { "${it.groupValues[1]}$extensionVersion${it.groupValues[2]}" }
+            val staged = File(into.parentFile, "staging-$label")
+            staged.deleteRecursively()
+            staged.mkdirs()
+            dir.listFiles()?.forEach { file -> file.copyTo(File(staged, file.name), overwrite = true) }
+            File(staged, "manifest.json").writeText(stamped)
+            val zip = File(into, "1-download-manager-extension-$label-$extensionVersion.zip")
+            zip.delete()
+            ZipOutputStream(zip.outputStream().buffered()).use { sink ->
+                staged.walkTopDown().filter { file -> file.isFile }.forEach { file ->
+                    sink.putNextEntry(ZipEntry(file.relativeTo(staged).invariantSeparatorsPath))
+                    file.inputStream().use { input -> input.copyTo(sink) }
+                    sink.closeEntry()
+                }
+            }
+            staged.deleteRecursively()
+            logger.lifecycle("Extension packaged: ${zip.name}")
+        }
+    }
+}
 
 /**
  * Puts the version in the jar manifest.

@@ -3,6 +3,12 @@
   "name": "1 download manager",
   "version": "1.0.0",
   "description": "Send links and downloads to 1 download manager instead of the browser's own downloader.",
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "browser_specific_settings": {
     "gecko": {
       "id": "1downloadmanager@localhost",
@@ -31,6 +37,12 @@
   ],
   "action": {
     "default_title": "1 download manager",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   }
 }

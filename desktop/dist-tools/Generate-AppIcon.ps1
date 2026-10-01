@@ -15,7 +15,12 @@
 # bleed with no corners.
 
 param(
-    [string]$OutputPath = (Join-Path $PSScriptRoot 'app-icon.ico')
+    [string]$OutputPath = (Join-Path $PSScriptRoot 'app-icon.ico'),
+    # Where to also write the PNG sizes the browser extension needs. The extension
+    # is a third surface showing the same mark, so it is drawn from these
+    # coordinates rather than from a copy of them: a second copy of this drawing is
+    # how the tray, the .ico and the launcher quietly stop matching.
+    [string]$PngOutDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -180,3 +185,23 @@ foreach ($image in $images) {
 
 [System.IO.File]::WriteAllBytes($OutputPath, $out.ToArray())
 Write-Host "Wrote $OutputPath ($([math]::Round((Get-Item $OutputPath).Length / 1KB, 1)) KB, $($sizes -join ', ') px)"
+
+# The extension's icons, from the same drawing.
+#
+# Both stores require them - Chrome Web Store rejects an upload with no icons
+# array at all - and the extension had none, which is part of why it could only
+# ever be loaded unpacked from inside the app. Only 16/32/48/128 are written:
+# those are the four sizes both stores ask for, and they are also what a toolbar
+# and a store listing render at, so nothing is generated that nothing shows.
+if ($PngOutDir) {
+    foreach ($dir in $PngOutDir.Split(';')) {
+        $target = $dir.Trim()
+        if (-not $target) { continue }
+        New-Item -ItemType Directory -Force -Path $target | Out-Null
+        foreach ($size in @(16, 32, 48, 128)) {
+            $png = Join-Path $target "icon$size.png"
+            [System.IO.File]::WriteAllBytes($png, (ConvertTo-PngBytes (New-IconBitmap $size)))
+        }
+        Write-Host "Wrote extension icons to $target (16, 32, 48, 128 px)"
+    }
+}
