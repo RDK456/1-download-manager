@@ -137,10 +137,7 @@ suspend fun searchSources(
             // would lose the other sources' results too - which is the exact opposite of
             // what a search over four sources should do when one of them is down.
             try {
-                Answer.Ok(
-                    source,
-                    if (trimmed.isEmpty()) emptyList() else source.search(trimmed)
-                )
+                Answer.Ok(source, askLeniently(source, trimmed))
             } catch (cancellation: kotlinx.coroutines.CancellationException) {
                 // Real cancellation - the user closed the window - is not a failed source,
                 // and swallowing it would leave the search hanging after nobody wants it.
@@ -177,6 +174,57 @@ private sealed interface Answer {
     class Ok(val source: SearchSource, val results: List<SearchResult>) : Answer
     class Failed(val source: SearchSource, val reason: String) : Answer
 }
+
+/**
+ * Asks a source, and asks again more loosely when the first answer is nothing.
+ *
+ * Searching for a keyword or half a name has to work, and no single source can be
+ * trusted to do it: each hands the query to a different API with different ideas
+ * about what a match is. Some AND every token and return nothing for anything
+ * short of the full title; one matches its own recent feed with a plain substring,
+ * so "witch" finds "The Witcher" and "the witc" does not.
+ *
+ * So the full query goes first, and only if it produced nothing that actually
+ * matches is it tried again - each meaningful word on its own, longest first. The
+ * extra requests happen only for a search that found nothing, so a search that
+ * worked the first time costs exactly what it did before.
+ *
+ * A source that fails on the first attempt is not retried: the fallback is for
+ * sources that answered with nothing, not for ones that are down, and a second
+ * round of failures would only delay the failure being reported.
+ */
+private suspend fun askLeniently(source: SearchSource, query: String): List<SearchResult> {
+    if (query.isEmpty()) return emptyList()
+    val first = source.search(query)
+    if (first.isNotEmpty() && first.any { matchesQuery(it.name, query) }) {
+        return rankByRelevance(first, query)
+    }
+    val seen = LinkedHashSet(first.map { it.infoHash.lowercase(Locale.US) })
+    val gathered = ArrayList(first)
+    for (narrower in relaxedQueries(query).take(MAX_FALLBACK_QUERIES)) {
+        val extra = try {
+            source.search(narrower)
+        } catch (cancellation: kotlinx.coroutines.CancellationException) {
+            throw cancellation
+        } catch (failure: Throwable) {
+            // The source answered the first query and then failed. That is a source
+            // going down mid-search, not a query that was too narrow, so widening
+            // again would only turn one failure into three.
+            null
+        } ?: break
+        extra.filter { matchesQuery(it.name, query) }
+            .filter { seen.add(it.infoHash.lowercase(Locale.US)) }
+            .forEach { gathered += it }
+        if (gathered.size >= MIN_USEFUL_FALLBACK_RESULTS) break
+    }
+    return rankByRelevance(gathered, query)
+}
+
+/** How many extra times one source may be asked before its first answer is trusted. */
+private const val MAX_FALLBACK_QUERIES = 3
+
+/** Stop widening once a fallback has clearly worked. */
+private const val MIN_USEFUL_FALLBACK_RESULTS = 8
 
 /** Stamps a result with its source's identity, including whether that source reports health. */
 private fun SearchResult.withSource(source: SearchSource): SearchResult =

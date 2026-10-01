@@ -138,13 +138,24 @@ class EztvSearchSource : SearchSource {
     override val reportsHealth = true
 
     override suspend fun search(query: String): List<SearchResult> {
-        val needle = query.trim().lowercase()
-        // The recent feed is the same for every query, so it is fetched once and matched
-        // locally rather than refetched per source per search.
+        // Matched by relevance rather than by substring. A substring has to be
+        // contiguous, so "the witc" never matched "The Witcher", and neither did
+        // "witcher season 2"; the shared matcher scores words instead, which is
+        // what makes a keyword or half a name find the show.
+        //
+        // The recent feed is the same for every query, so it is fetched once and
+        // matched locally rather than refetched per source per search.
         val shows = recentShows()
         val matched = shows
-            .filter { it.title.lowercase().contains(needle) }
-            .sortedByDescending { it.released }
+            .map { it to relevanceOf(it.title, query) }
+            .filter { it.second > 0 }
+            .sortedWith(
+                // Relevance first, then recency: a query naming one show must not
+                // be outranked by whatever else happened to come out today.
+                compareByDescending<Pair<EztvShow, Int>> { it.second }
+                    .thenByDescending { it.first.released }
+            )
+            .map { it.first }
             .take(MAX_SHOWS)
         if (matched.isEmpty()) return emptyList()
 
@@ -251,8 +262,13 @@ class SubsPleaseSearchSource : SearchSource {
         val results = parseSubsPleaseFeed(fetchText(FEED))
         // It is a latest-releases feed, so the query has to be honoured here or every
         // search returns the same week. Nothing matching means nothing to offer.
-        val needle = query.trim().lowercase()
-        return if (needle.isEmpty()) results else results.filter { it.name.lowercase().contains(needle) }
+        //
+        // Matched by relevance rather than by substring, for the same reason EZTV
+        // is: a substring has to be contiguous, so "blue lock" missed "Blue Lock S2"
+        // only by luck and "blue lo" missed it always. This week is small enough
+        // that scoring every row costs nothing.
+        if (query.isBlank()) return results
+        return rankByRelevance(results, query)
     }
 
     private companion object {
