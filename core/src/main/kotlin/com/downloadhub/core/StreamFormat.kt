@@ -104,6 +104,62 @@ fun offerVideoFormats(formats: List<StreamFormat>): List<StreamFormat> =
         .sortedByDescending { it.height ?: 0 }
 
 /**
+ * Every video row worth showing: exact duplicates dropped, artefacts removed.
+ *
+ * Listing the raw formats is what makes a 4K row visible at all - grouping to
+ * one row per height is how a 4K option once hid behind a 1080p row. But a real
+ * extraction also carries rows that are not streams: on one video, five rows at
+ * five different heights all reported **3.34 MB**, which no video is. Those are
+ * previews or duplicates sharing a height with the real stream.
+ *
+ * So exact duplicates go first (same id, container, height, frame rate and
+ * codec is one format listed twice), then anything under [SHARE_FLOOR] of the
+ * largest size at its own height. A row that small is not a worse version of
+ * the same quality - at 3.34 MB against 334 MB it is a different thing wearing
+ * that row's label.
+ *
+ * A floor rather than a cutoff because the sizes are the extractor's estimates
+ * and some are absent: an unknown size is kept, since unknown is not small.
+ */
+fun offerVideoRows(all: List<StreamFormat>): List<StreamFormat> {
+    val videos = all.filter { it.hasVideo }
+    val distinct = videos.distinctBy {
+        listOf(it.formatId, it.ext, it.height, it.fps, it.videoCodec)
+    }
+    val largestAtHeight = videos
+        .filter { it.sizeBytes != null }
+        .groupBy { it.height }
+        .mapValues { (_, group) -> group.mapNotNull { it.sizeBytes }.max() }
+    return distinct
+        .filter { row ->
+            val size = row.sizeBytes ?: return@filter true
+            val largest = largestAtHeight[row.height] ?: return@filter true
+            size >= (largest * SHARE_FLOOR).toLong()
+        }
+        .sortedWith(
+            compareByDescending<StreamFormat> { it.height ?: 0 }
+                .thenByDescending { it.sizeBytes ?: 0L }
+        )
+}
+
+/**
+ * Every audio-only row, best by bitrate first.
+ *
+ * Kept beside [offerVideoRows] because the single-video chooser lists both raw
+ * and grouped at once, and the two must agree on what "raw but sane" means.
+ */
+fun offerAudioRows(all: List<StreamFormat>): List<StreamFormat> =
+    all.filter { it.isAudioOnly }
+        .distinctBy { listOf(it.formatId, it.ext) }
+        .sortedWith(
+            compareByDescending<StreamFormat> { it.totalBitrate ?: 0 }
+                .thenByDescending { it.sizeBytes ?: 0L }
+        )
+
+/** A row below this share of the largest at its height is not the stream. */
+private const val SHARE_FLOOR = 0.10
+
+/**
  * The audio qualities worth offering, best first.
  *
  * By bitrate, because for audio that is the whole quality difference, and the bitrate is

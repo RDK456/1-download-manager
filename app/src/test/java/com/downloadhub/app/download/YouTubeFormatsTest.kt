@@ -177,6 +177,77 @@ class YouTubeFormatsTest {
         )
     }
 
+    /**
+     * The rows that were not streams.
+     *
+     * A real extraction on one video reported 3.34 MB at 1772p, 1182p, 886p,
+     * 590p and 394p - five heights, identical size - next to a real 334 MB
+     * 1772p stream. Five different resolutions cannot all be 3.34 MB, so those
+     * rows are previews or duplicates wearing a real stream's label, and a list
+     * that shows them looks like noise rather than like a choice.
+     */
+    @Test
+    fun rowsFarSmallerThanTheirOwnHeightAreNotStreams() {
+        val preview = 3_340_000L
+        val formats = listOf(
+            videoFormat("401", 1772, size = preview, vcodec = "vp09", ext = "mp4"),
+            videoFormat("399", 1772, size = 334_150_000L, vcodec = "vp9", ext = "webm"),
+            videoFormat("137", 1772, size = 202_070_000L, vcodec = "av01", ext = "mp4"),
+            videoFormat("271", 1182, size = preview, vcodec = "vp09", ext = "mp4"),
+            videoFormat("136", 1182, size = 141_880_000L, vcodec = "avc1", ext = "mp4"),
+            videoFormat("140", height = 0, size = preview, vcodec = null, ext = "mp4")
+        )
+        val offered = com.downloadhub.core.offerVideoRows(formats)
+        assertEquals(
+            "the 3.34 MB rows are previews and must not be offered",
+            listOf(399L, 137L, 136L),
+            offered.map { it.formatId.toLong() }
+        )
+        assertEquals(
+            "largest first",
+            listOf(1772, 1772, 1182),
+            offered.map { it.height }
+        )
+    }
+
+    @Test
+    fun aRealSmallerVariantOfTheSameHeightSurvives() {
+        val formats = listOf(
+            videoFormat("401", 1080, size = 200_000_000L, vcodec = "vp9"),
+            videoFormat("137", 1080, size = 150_000_000L, vcodec = "av01"),
+            videoFormat("136", 1080, size = 120_000_000L, vcodec = "avc1")
+        )
+        assertEquals(
+            "three real streams at one height are three choices",
+            3,
+            com.downloadhub.core.offerVideoRows(formats).size
+        )
+    }
+
+    @Test
+    fun anUnknownSizeIsKeptBecauseUnknownIsNotSmall() {
+        val formats = listOf(
+            videoFormat("399", 1080, size = 200_000_000L),
+            com.downloadhub.core.StreamFormat(
+                formatId = "298",
+                ext = "mp4",
+                height = 1080,
+                fps = 60,
+                videoCodec = "avc1",
+                audioCodec = "none",
+                sizeBytes = null,
+                totalBitrate = null
+            )
+        )
+        assertEquals(2, com.downloadhub.core.offerVideoRows(formats).size)
+    }
+
+    @Test
+    fun theSameFormatListedTwiceIsOneRow() {
+        val one = videoFormat("399", 1080, size = 200_000_000L)
+        assertEquals(1, com.downloadhub.core.offerVideoRows(listOf(one, one)).size)
+    }
+
     @Test
     fun knownIdsAreDroppedByIdNotTitle() {
         val entries = listOf(

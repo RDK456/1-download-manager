@@ -2,6 +2,8 @@ package com.downloadhub.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -378,6 +380,27 @@ fun YouTubeScreen(
         }
 
         if (entries.isNotEmpty()) {
+            // The action first, then what it acts on, matching the desktop panel.
+            Button(
+                onClick = {
+                    val chosen = entries.filter { checked.contains(it.id) }
+                    if (chosen.isEmpty()) {
+                        error = "Tick at least one video first."
+                        return@Button
+                    }
+                    onQueue(chosen, audioOnly, ceiling)
+                    checked = emptySet()
+                    onDone()
+                },
+                enabled = checked.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (checked.isEmpty()) "Download selected" else "Download ${checked.size} selected",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -412,22 +435,6 @@ fun YouTubeScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Button(
-                onClick = {
-                    val chosen = entries.filter { checked.contains(it.id) }
-                    if (chosen.isEmpty()) {
-                        error = "Tick at least one video first."
-                        return@Button
-                    }
-                    onQueue(chosen, audioOnly, ceiling)
-                    checked = emptySet()
-                    onDone()
-                },
-                enabled = checked.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (checked.isEmpty()) "Download selected" else "Download ${checked.size} selected")
-            }
             Spacer(Modifier.height(4.dp))
         }
     }
@@ -499,12 +506,11 @@ private fun YouTubeSingleQuality(
             return@Column
         }
         val found = listing ?: return@Column
-        val videos = found.allFormats.filter { it.hasVideo }.sortedByDescending { it.height ?: 0 }
-        val audios = found.allFormats.filter { it.isAudioOnly }
-            .sortedWith(
-                compareByDescending<StreamFormat> { it.totalBitrate ?: 0 }
-                    .thenByDescending { it.sizeBytes ?: 0L }
-            )
+        // offerVideoRows, not the raw list: the raw one carried previews wearing a
+        // real row's label - five rows at five heights all reporting 3.34 MB on one
+        // video - which is what made this look like noise rather than a list.
+        val videos = com.downloadhub.core.offerVideoRows(found.allFormats)
+        val audios = com.downloadhub.core.offerAudioRows(found.allFormats)
         val bestAudio = audios.firstOrNull()
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(
@@ -518,6 +524,15 @@ private fun YouTubeSingleQuality(
                 label = { Text("Audio only") }
             )
         }
+        // Its own scroll. Dumped straight into the screen's column the rows ran
+        // past the bottom with no way to reach them - and the Download button,
+        // which came after them, was off-screen entirely.
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+        ) {
         if (audioOnly) {
             if (audios.isEmpty()) {
                 Text(
@@ -556,6 +571,8 @@ private fun YouTubeSingleQuality(
                 )
             }
         }
+        }
+        Spacer(Modifier.height(8.dp))
         val pick = chosen
         Button(
             onClick = {
@@ -597,29 +614,36 @@ private fun FormatRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(vertical = 1.dp)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .background(
                 if (selected) MaterialTheme.colorScheme.primaryContainer
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
             )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            // Tight: one line of title, the detail beside it, nothing else. The
+            // rows were a third taller than their content, so a video with twenty
+            // formats needed three screens of scrolling to see six of them.
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
-            if (subtitle.isNotBlank()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.bodyMedium)
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        "  $subtitle",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
+        Spacer(Modifier.width(8.dp))
         Text(
-            if (sizeBytes != null && sizeBytes > 0L) formatBytes(sizeBytes) else "size unknown",
+            if (sizeBytes != null && sizeBytes > 0L) formatBytes(sizeBytes) else "unknown",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

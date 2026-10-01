@@ -2,6 +2,8 @@ package com.downloadhub.desktop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -302,6 +304,37 @@ fun YouTubePanel(
                     .background(AppTheme.Palette.surface)
                     .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
+                // The action first, then what it acts on. The button was below the
+                // chips and its label was long enough to clip at this width, which
+                // left the one control that does the thing as the least visible.
+                Button(
+                    onClick = {
+                        val chosen = entries.filter { checked.contains(it.id) }
+                        if (chosen.isEmpty()) {
+                            message = "Tick at least one video first."
+                            return@Button
+                        }
+                        val queued = onQueue(chosen, audioOnly, ceiling, "m4a")
+                        val skipped = chosen.size - queued
+                        message = buildString {
+                            append("Queued $queued")
+                            if (skipped > 0) append(", $skipped already in the queue")
+                            append(".")
+                        }
+                        // Queued rows join the known ones, so a second press queues
+                        // nothing twice.
+                        checked = emptySet()
+                    },
+                    enabled = checked.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (checked.isEmpty()) "Download selected" else "Download ${checked.size} selected",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -326,7 +359,7 @@ fun YouTubePanel(
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Text(
                     if (audioOnly) {
                         "Audio with artwork and details kept inside the file."
@@ -336,30 +369,6 @@ fun YouTubePanel(
                     fontSize = 11.sp,
                     color = AppTheme.Palette.muted
                 )
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = {
-                        val chosen = entries.filter { checked.contains(it.id) }
-                        if (chosen.isEmpty()) {
-                            message = "Tick at least one video first."
-                            return@Button
-                        }
-                        val queued = onQueue(chosen, audioOnly, ceiling, "m4a")
-                        val skipped = chosen.size - queued
-                        message = buildString {
-                            append("Queued $queued")
-                            if (skipped > 0) append(", $skipped already in the queue")
-                            append(".")
-                        }
-                        // Queued rows join the known ones, so a second press queues
-                        // nothing twice.
-                        checked = emptySet()
-                    },
-                    enabled = checked.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Download ${if (checked.isEmpty()) "" else "${checked.size} "}selected")
-                }
             }
         }
     }
@@ -432,12 +441,11 @@ private fun YouTubeSingleQuality(
             return@Column
         }
         val found = listing ?: return@Column
-        val videos = found.allFormats.filter { it.hasVideo }.sortedByDescending { it.height ?: 0 }
-        val audios = found.allFormats.filter { it.isAudioOnly }
-            .sortedWith(
-                compareByDescending<com.downloadhub.core.StreamFormat> { it.totalBitrate ?: 0 }
-                    .thenByDescending { it.sizeBytes ?: 0L }
-            )
+        // offerVideoRows, not the raw list: the raw one carried previews wearing a
+        // real row's label - five rows at five heights all reporting 3.34 MB on one
+        // video - which is what made this look like noise rather than a list.
+        val videos = com.downloadhub.core.offerVideoRows(found.allFormats)
+        val audios = com.downloadhub.core.offerAudioRows(found.allFormats)
         val bestAudio = audios.firstOrNull()
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(
@@ -452,6 +460,15 @@ private fun YouTubeSingleQuality(
             )
         }
         Spacer(Modifier.height(4.dp))
+        // Its own scroll. Dumped straight into the panel's column the rows ran past
+        // the bottom of the window with no way to reach them - and the Download
+        // button, which came after them, was off-screen entirely.
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+        ) {
         if (audioOnly) {
             if (audios.isEmpty()) {
                 Text(
@@ -490,7 +507,8 @@ private fun YouTubeSingleQuality(
                 )
             }
         }
-        Spacer(Modifier.height(6.dp))
+        }
+        Spacer(Modifier.height(8.dp))
         val pick = chosen
         Button(
             onClick = {
@@ -534,29 +552,43 @@ private fun QualityRow(
     Row(
         Modifier
             .fillMaxWidth()
+            .padding(vertical = 1.dp)
             .background(
                 if (selected) AppTheme.Palette.accentContainer else AppTheme.Palette.surface,
                 RoundedCornerShape(4.dp)
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 7.dp),
+            // Tight: one line of title, one of detail, and nothing else. The rows
+            // were a third taller than their content, so a video with twenty formats
+            // needed three screens of scrolling to see six of them.
+            .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                fontSize = 13.sp,
-                color = if (selected) AppTheme.Palette.accent else AppTheme.Palette.onSurface
-            )
-            if (subtitle.isNotBlank()) {
-                Text(subtitle, fontSize = 10.sp, color = AppTheme.Palette.faint)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (selected) AppTheme.Palette.accent else AppTheme.Palette.onSurface
+                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        "  $subtitle",
+                        fontSize = 10.sp,
+                        color = AppTheme.Palette.faint,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
+        Spacer(Modifier.width(8.dp))
         Text(
             if (sizeBytes != null && sizeBytes > 0L) {
                 com.downloadhub.core.DisplayFormat.bytes(sizeBytes)
             } else {
-                "size unknown"
+                "unknown"
             },
             fontSize = 11.sp,
             color = AppTheme.Palette.muted
