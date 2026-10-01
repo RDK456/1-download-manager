@@ -483,7 +483,6 @@ private fun YouTubeSingleQuality(
                         title = "${format.qualityLabel} · ${format.ext}",
                         subtitle = buildString {
                             format.totalBitrate?.let { append(it).append(" kbps") }
-                            if (bytes != null && bytes > 0L && isNotEmpty()) append("  ·  ")
                         },
                         sizeBytes = bytes,
                         selected = chosen?.formatId == format.formatId,
@@ -495,8 +494,15 @@ private fun YouTubeSingleQuality(
             videos.forEach { format ->
                 val total = (format.sizeBytes ?: 0L) + (bestAudio?.sizeBytes ?: 0L)
                 QualityRow(
-                    title = format.fullLabel,
+                    // "4K", not "1772p": a row nobody can compare against another
+                    // row is not a choice, and the exact height is in the subtitle.
+                    title = format.displayLabel,
                     subtitle = buildString {
+                        val rate = format.fps
+                        if (rate != null && rate >= 50) {
+                            append(rate).append(" fps")
+                            append("  ·  ")
+                        }
                         append(format.ext)
                         format.videoCodec?.let { append("  ·  ").append(it.substringBefore('.')) }
                         append("  ·  needs joining")

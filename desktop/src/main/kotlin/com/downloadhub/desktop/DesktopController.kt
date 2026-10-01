@@ -904,7 +904,10 @@ class DesktopController(
             playlist = false,
             preferredName = preferredName?.takeIf { it.isNotBlank() },
             streamFormatId = choice.video.formatId,
-            streamAudioFormatId = choice.audio?.formatId
+            streamAudioFormatId = choice.audio?.formatId,
+            // Known now, from the row that was tapped - which is what makes the
+            // size column and the progress bar right from the first second.
+            totalBytes = choice.totalBytes
         )
     }
 
@@ -936,7 +939,11 @@ class DesktopController(
                 format = audioFormat.ifBlank { "m4a" },
                 height = if (audioOnly) null else maxHeight,
                 playlist = false,
-                preferredName = entry.title
+                preferredName = entry.title,
+                // The batch's total is only known once a quality is chosen, and it
+                // is chosen after queueing. Zero leaves the row's bar honest rather
+                // than moving against a total nobody stated.
+                totalBytes = 0L
             )
             queued++
         }
@@ -974,7 +981,16 @@ class DesktopController(
          * better path but it is not the only way in, and the other way has to keep working.
          */
         streamFormatId: String? = null,
-        streamAudioFormatId: String? = null
+        streamAudioFormatId: String? = null,
+        /**
+         * Bytes the download will take, when they are already known.
+         *
+         * A video's size is known the moment a row is chosen from the format list,
+         * and writing it then is what makes the row's size and progress bar real
+         * from the first second. Without it the total stayed zero, so the bar could
+         * not move and the row read "Connecting" for the whole download.
+         */
+        totalBytes: Long = 0L
     ) {
         val trimmed = link.trim()
         if (trimmed.isEmpty()) return
@@ -1014,6 +1030,9 @@ class DesktopController(
                 audioFormat = if (audioOnly) format else null,
                 streamFormatId = streamFormatId,
                 streamAudioFormatId = streamAudioFormatId,
+                // Only where something already knows it. A plain HTTP row's length
+                // comes from its own headers, not from here.
+                totalBytes = if (source == DownloadSource.YOUTUBE) totalBytes else 0L,
                 playlist = playlist,
                 torrentFilePath = localTorrent?.absolutePath,
                 // "Add but do not start" has to reach the queue as a paused row. Left
@@ -1156,9 +1175,18 @@ class DesktopController(
                     // A progress line can still be in flight when the job finishes.
                     // Applying it afterwards would overwrite the final size with a
                     // partial one - a finished 32 MB video showing as 0 bytes.
-                    if (current.status != DownloadStatus.RESOLVING) return@update current
+                    if (current.status != DownloadStatus.RESOLVING &&
+                        current.status != DownloadStatus.RUNNING
+                    ) {
+                        return@update current
+                    }
+                    // The first progress line is the end of "Connecting" and the
+                    // start of "Downloading". It never used to happen: nothing moved
+                    // the row out of RESOLVING, so a video sat on "Connecting" for
+                    // its whole download and then finished in one step.
                     val total = current.totalBytes
                     current.copy(
+                        status = DownloadStatus.RUNNING,
                         bytesDownloaded = if (total > 0) (total * percent / 100) else 0L
                     )
                 }

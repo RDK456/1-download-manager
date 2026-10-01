@@ -248,6 +248,33 @@ class YouTubeListingTest {
      * The section lists without downloading: one small object per entry, not a
      * full extraction per video.
      */
+    /**
+     * A video sat on "Connecting" for its whole download and then finished in one
+     * step. Nothing moved the row out of RESOLVING, and nothing gave it a total,
+     * so the progress bar had nothing to move against.
+     */
+    @Test
+    fun aProgressLineEndsTheConnectingStateAndMovesTheBar() {
+        val controller = File("src/main/kotlin/com/downloadhub/desktop/DesktopController.kt").readText()
+        val body = controller.substringAfter("private suspend fun runYtDlp")
+            .substringBefore("fun chooseFolder")
+        assertTrue(
+            "the first progress line must move the row to RUNNING, or the status " +
+                "reads Connecting until the job ends",
+            body.contains("status = DownloadStatus.RUNNING")
+        )
+        assertTrue(
+            "bytes must be written against the row's total for the bar to move",
+            body.contains("bytesDownloaded = if (total > 0)")
+        )
+        // And the total has to exist: the chosen row's size is known before the
+        // download starts, and a zero total is a bar pinned at nothing.
+        assertTrue(
+            "a chosen video must carry its known size into the row",
+            controller.contains("totalBytes = choice.totalBytes")
+        )
+    }
+
     @Test
     fun theSectionFetchesFlatListings() {
         val engine = File("src/main/kotlin/com/downloadhub/desktop/YtDlpEngine.kt").readText()

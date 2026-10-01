@@ -229,6 +229,11 @@ class YoutubeDownloader(
         }
 
         val lastCallback = AtomicLong(0L)
+        // The first progress line is the end of "Resolving" and the start of
+        // "Downloading". Nothing used to move the row between the two, so a video
+        // sat on the resolving label for its whole download and then appeared
+        // finished - the row never showed itself transferring.
+        val startedTransfer = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
             YoutubeDL.getInstance().execute(
                 request = request,
@@ -244,6 +249,15 @@ class YoutubeDownloader(
                             0L
                         }
                         serviceScope.launch {
+                            if (startedTransfer.compareAndSet(false, true)) {
+                                dao.transitionStatus(
+                                    item.id,
+                                    DownloadStatus.RESOLVING,
+                                    DownloadStatus.RUNNING,
+                                    null,
+                                    System.currentTimeMillis()
+                                )
+                            }
                             dao.updateProgress(
                                 item.id,
                                 estimatedBytes,

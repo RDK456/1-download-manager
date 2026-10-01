@@ -57,9 +57,18 @@ class YouTubeCompletionTest {
     @Test
     fun aProgressLineCannotOverwriteAFinishedDownload() {
         val body = runYtDlpBody()
+        // The guard has to allow both live states now - RESOLVING and RUNNING are
+        // both "in flight" - and nothing else. Matched on the status pair rather
+        // than on one line, because the condition is two lines and wrapping it
+        // differently is not a behaviour change.
+        val guarded = body.contains(
+            "current.status != DownloadStatus.RESOLVING &&"
+        ) && body.contains(
+            "current.status != DownloadStatus.RUNNING"
+        )
         assertTrue(
             "a late progress update must not clobber the completed row: $body",
-            body.contains("if (current.status != DownloadStatus.RESOLVING) return@update current")
+            guarded
         )
     }
 

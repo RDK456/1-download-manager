@@ -50,6 +50,44 @@ data class StreamFormat(
             return if (hasVideo && fps != null && fps >= 50) "$base${fps}" else base
         }
 
+    /**
+     * The label people actually use: 4K, 2K, 1080p, 720p, 480p.
+     *
+     * A row reading "1772p" is the pixel height of a 3840-wide video, and it tells
+     * nobody anything they can compare against another row. The real heights on
+     * offer are 1772, 1182, 886, 590 and 394 on one video - all of them near a
+     * familiar rung but none of them on it - because the site scales to the source
+     * rather than to a menu. So each height is rounded to the rung it belongs to,
+     * and the exact height stays available beside it.
+     *
+     * Nearest rung by threshold, not by nearest number: 1182 is 102 from 1080 and
+     * 258 from 1440, but "1080p" is what a 1182-line video is called, and rounding
+     * arithmetic would call it 2K.
+     */
+    val tierLabel: String
+        get() {
+            val h = height ?: return qualityLabel
+            return when {
+                h >= 1600 -> "4K"
+                h >= 1200 -> "2K"
+                h >= 1000 -> "1080p"
+                h >= 700 -> "720p"
+                h >= 450 -> "480p"
+                h >= 300 -> "360p"
+                h >= 200 -> "240p"
+                else -> "144p"
+            }
+        }
+
+    /** The tier, plus the exact height where it is not one people say out loud. */
+    val displayLabel: String
+        get() {
+            val h = height ?: return tierLabel
+            val tier = tierLabel
+            val exact = "${h}p"
+            return if (tier == exact || tier == "4K" || tier == "2K") tier else "$tier ($exact)"
+        }
+
     /** True when the two streams are separately downloadable and must be joined. */
     val isAudioOnly: Boolean get() = hasAudio && !hasVideo
 }
