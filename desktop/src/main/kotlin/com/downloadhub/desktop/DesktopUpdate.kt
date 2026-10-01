@@ -201,13 +201,6 @@ fun compareVersions(left: String, right: String): Int {
 }
 
 /**
- * Downloads an installer and hands it to Windows Installer.
- *
- * Launching the .msi directly is what makes upgrades work: the installer knows the
- * product code and upgrade code from the MSI itself, so it replaces the installed
- * copy in place and keeps the settings, which live in the user profile.
- */
-/**
  * Downloads an update installer and hands it to Windows Installer.
  *
  * The staging directory is the app's own cache folder, not `java.io.tmpdir`. TEMP is
@@ -288,7 +281,13 @@ class UpdateInstaller(private val directory: File = AppPaths.updateDir) {
     }
 
     /**
-     * Starts the installer.
+     * Starts the installer through Windows Installer.
+     *
+     * An .msi is not an executable. ProcessBuilder uses CreateProcess, which fails
+     * with error 193 ("%1 is not a valid Win32 application") on one - exactly what
+     * users saw on "Install now". It has to go through msiexec, which also knows
+     * the product and upgrade codes from the MSI itself, so it replaces the
+     * installed copy in place and keeps the settings in the user profile.
      *
      * Windows Installer prompts for elevation itself, so the app does not try to.
      * A failure here is reported rather than swallowed: a user who sees nothing
@@ -296,7 +295,7 @@ class UpdateInstaller(private val directory: File = AppPaths.updateDir) {
      */
     fun launch(msi: File): Result<Unit> = runCatching {
         if (!msi.isFile) error("The installer file is missing")
-        ProcessBuilder(msi.absolutePath)
+        ProcessBuilder("msiexec", "/i", msi.absolutePath)
             .redirectErrorStream(true)
             .start()
         Unit

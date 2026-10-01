@@ -697,7 +697,21 @@ class DesktopController(
         addPrepared = ::addPrepared,
         addChosenVideo = ::addChosenVideo,
         listVideoFormats = { url, done ->
-            scope.launch { done(ytdlp.listFormats(url)) }
+            scope.launch {
+                // A thrown exception must still answer the dialog. Without this, any
+                // unexpected failure inside the lookup skips `done` entirely and the
+                // dialog sits on "Reading what this video offers..." for ever, with
+                // no timeout and no Retry able to reach it.
+                done(
+                    runCatching { ytdlp.listFormats(url) }.getOrElse { failed ->
+                        YtDlpEngine.FormatListing(
+                            emptyList(), emptyList(), "", 0L,
+                            "Could not read that link" +
+                                (failed.message?.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty())
+                        )
+                    }
+                )
+            }
         },
         setFilePriority = { id, index, priority ->
             // Torrents only. An HTTP download has no files to prioritise, and the file

@@ -12,6 +12,43 @@ import java.io.File
  */
 class UpdateAndRevealTest {
 
+    // --- starting the installer ------------------------------------------------
+
+    /**
+     * "Install now" handed the .msi to ProcessBuilder as if it were an executable.
+     * CreateProcess fails with error 193 ("%1 is not a valid Win32 application") on
+     * an .msi, so every in-app upgrade died in a dialog quoting that at the user -
+     * which is also why nobody reporting a bug could be on the version with the
+     * fix. An installer goes through Windows Installer.
+     */
+    @Test
+    fun theInstallerIsStartedThroughMsiexecNotExecutedDirectly() {
+        val updater = File("src/main/kotlin/com/downloadhub/desktop/DesktopUpdate.kt").readText()
+        val body = updater.substringAfter("fun launch(msi: File)").substringBefore("\n    }")
+        assertTrue(
+            "the .msi must go through Windows Installer:\n$body",
+            body.contains("\"msiexec\"") && body.contains("\"/i\"")
+        )
+        assertFalse(
+            "the .msi must not be the process command itself, which is error 193:\n$body",
+            body.contains("ProcessBuilder(msi.absolutePath)")
+        )
+    }
+
+    @Test
+    fun aMissingInstallerFileStillFailsBeforeAnyProcessStarts() {
+        val dir = File.createTempFile("dlm-installer-test", "").let {
+            it.delete()
+            File(it, "updates").apply { parentFile.mkdirs(); mkdirs() }
+        }
+        try {
+            val result = UpdateInstaller(dir).launch(File(dir, "no-such-installer.msi"))
+            assertTrue("a missing installer must fail loudly", result.isFailure)
+        } finally {
+            dir.parentFile.deleteRecursively()
+        }
+    }
+
     // --- revealing a finished download ---------------------------------------
 
     /**

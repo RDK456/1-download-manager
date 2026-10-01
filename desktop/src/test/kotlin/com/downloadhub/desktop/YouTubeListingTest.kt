@@ -168,4 +168,20 @@ class YouTubeListingTest {
         assertTrue(YtDlpTools.compareVersions("2026.07.01", "2026.08.19") < 0)
         assertTrue(YtDlpTools.compareVersions("2026.08.19", "2025.12.31") > 0)
     }
+
+    /**
+     * The dialog only stops spinning when the loader calls back. If the lookup
+     * itself throws, the callback is skipped and no timeout or Retry can ever be
+     * reached - so the action must answer even on failure.
+     */
+    @Test
+    fun theLoaderAnswersEvenWhenTheLookupThrows() {
+        val controller = File("src/main/kotlin/com/downloadhub/desktop/DesktopController.kt").readText()
+        val body = controller.substringAfter("listVideoFormats = { url, done ->")
+            .substringBefore("setFilePriority = { id, index, priority ->")
+        assertTrue(
+            "a thrown lookup must still answer the dialog:\n$body",
+            body.contains("runCatching") && body.contains("getOrElse")
+        )
+    }
 }
