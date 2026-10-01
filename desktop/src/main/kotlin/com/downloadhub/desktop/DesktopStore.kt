@@ -230,6 +230,17 @@ data class QueuedDownload(
     val mimeType: String? = null,
     val quality: String? = null,
     val audioFormat: String? = null,
+    /**
+     * The streams the chooser named, as yt-dlp format ids.
+     *
+     * A height cannot express what the chooser offers - 1080p60 and 1080p are the same
+     * height and not the same download - so the row carries the ids themselves. Without
+     * them a row restored from disk would fall back to the old bestvideo[height<=N]
+     * selector and quietly download something other than what was chosen.
+     */
+    val streamFormatId: String? = null,
+    /** The audio half of the pair; empty for an audio-only row, which has just the one. */
+    val streamAudioFormatId: String? = null,
     val playlist: Boolean = false,
     val torrentFilePath: String? = null,
     val torrentInfoHash: String? = null,

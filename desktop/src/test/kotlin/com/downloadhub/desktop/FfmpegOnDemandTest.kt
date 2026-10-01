@@ -8,14 +8,18 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Covers ffmpeg being fetched on demand rather than bundled.
+ * Covers fetching ffmpeg from the archive, which is now the fallback rather than the plan.
  *
- * The reason it is fetched rather than shipped is a real failure: bundling it made
- * the download 150 MB across roughly a thousand files, and on a machine whose
- * security agent locks runtime files as they are written the install died with
- * "Failed to launch JVM". These tests are the guard against someone putting the
- * 100 MB back, and against the unpack silently picking the wrong file out of the
- * archive.
+ * ffmpeg ships in the package as a single executable - see [FirstRunSetupTest] for why
+ * one file and not the archive's thousand - so on a normal install this code never runs.
+ * It stays because it is what happens when the shipped copy is missing: an older install
+ * being updated, an antivirus that quarantined it, a tools folder the user cleaned out.
+ *
+ * The archive handling is the part worth guarding. It has to find the executable under a
+ * version-named folder, refuse a decoy of the same name in the documentation directory,
+ * refuse a download cut short, and refuse an archive with no executable in it at all -
+ * because each of those failures otherwise shows up as an HTML file called ffmpeg.exe, or
+ * a truncated one, or a job that dies part way through with nothing to explain why.
  */
 class FfmpegOnDemandTest {
 
@@ -141,17 +145,28 @@ class FfmpegOnDemandTest {
     /**
      * The status line is what the user sees, so it has to explain the situation
      * rather than imply something is broken.
+     *
+     * ffmpeg ships in the package now, so the honest reading of "yt-dlp present, ffmpeg
+     * absent" is that the unpack has not finished, not that a quality is unavailable. The
+     * old wording - "high-quality formats download ffmpeg on demand" - described the
+     * shipping arrangement as a permanent limitation, which stopped being true when the
+     * executable started arriving inside the jar.
      */
     @Test
-    fun theStatusExplainsTheOnDemandFetchRatherThanClaimingAnError() {
+    fun theStatusExplainsThePendingFetchRatherThanClaimingAnError() {
         val dir = tempDir()
         try {
             val tools = YtDlpTools(dir)
             dir.mkdirs()
             tools.ytDlp.writeBytes(ByteArray(2_000_000))
+            val pending = tools.statusText()
             assertTrue(
-                "the pending fetch should read as a note, not a failure: ${tools.statusText()}",
-                tools.statusText().contains("on demand")
+                "the pending fetch should read as something in progress: $pending",
+                pending.contains("fetching") && !pending.contains("on demand")
+            )
+            assertFalse(
+                "a first-run unpack must not be reported as an error: $pending",
+                pending.contains("could not") || pending.contains("error")
             )
             tools.ffmpeg.writeBytes(ByteArray(2_000_000))
             assertTrue(

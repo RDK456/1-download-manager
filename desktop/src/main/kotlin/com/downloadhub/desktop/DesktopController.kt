@@ -77,6 +77,24 @@ data class DesktopActions(
      * signature the plain dialog used.
      */
     val addPrepared: (com.downloadhub.core.TorrentAddRequest) -> Unit,
+    /**
+     * Queues a video at the streams the quality chooser named.
+     *
+     * Separate from `addPrepared` rather than an extra argument on it, because the two
+     * carry different things: that one is a torrent's file selection and save path, this
+     * one is two yt-dlp format ids. Bolting the ids onto it would have meant a request type
+     * that is mostly nulls depending on which kind of download it is.
+     */
+    val addChosenVideo: (String, com.downloadhub.core.StreamChoice, Boolean, String?) -> Unit,
+    /**
+     * Asks yt-dlp what a link offers.
+     *
+     * Runs a real process for a few seconds, so it goes on the controller's scope and hands
+     * the answer back rather than being awaited by the dialog - a dialog that suspended a
+     * lookup would have to be careful about being closed mid-lookup, and this way a closed
+     * dialog simply stops listening.
+     */
+    val listVideoFormats: (String, (YtDlpEngine.FormatListing) -> Unit) -> Unit,
     val pause: (String) -> Unit,
     val resume: (String) -> Unit,
     /**
@@ -276,12 +294,15 @@ class DesktopController(
         // be a real file on disk for the app to execute it, so this is not optional.
         scope.launch {
             // Adopt the configured cache folder at startup as well as on save, or a folder
-        // set in a previous session is ignored until the user changes it again.
-        runCatching {
-            val folder = settingsState.value.cacheDirFile()
-            if (folder.isDirectory || folder.mkdirs()) AppPaths.cacheDirectory = folder
-        }
-        tools.install()
+            // set in a previous session is ignored until the user changes it again.
+            runCatching {
+                val folder = settingsState.value.cacheDirFile()
+                if (folder.isDirectory || folder.mkdirs()) AppPaths.cacheDirectory = folder
+            }
+            // Unpacks yt-dlp and ffmpeg. Both, and independently: one being present says
+            // nothing about the other, and ffmpeg is what makes a chosen quality a playable
+            // file rather than two loose ones.
+            tools.install()
             if (extension.install()) refresh()
         }
         // The pairing token is generated on first run and has to reach disk, or it
@@ -669,6 +690,10 @@ class DesktopController(
     val actions: DesktopActions = DesktopActions(
         addDownload = ::addDownload,
         addPrepared = ::addPrepared,
+        addChosenVideo = ::addChosenVideo,
+        listVideoFormats = { url, done ->
+            scope.launch { done(ytdlp.listFormats(url)) }
+        },
         setFilePriority = { id, index, priority ->
             // Torrents only. An HTTP download has no files to prioritise, and the file
             // list is only ever shown for a torrent, so nothing else can reach this.
@@ -797,6 +822,35 @@ class DesktopController(
         )
     }
 
+    /**
+     * Queues a YouTube link at the exact quality the chooser offered.
+     *
+     * The whole point of the chooser is that the streams are chosen before anything is
+     * written to disk, so this takes the ids rather than a height: by the time a height
+     * could be used the two would already have to be guessed apart again, and 1080p60
+     * would be indistinguishable from 1080p.
+     *
+     * The height is still filled in, because the list column shows it. That is a display
+     * field here, not the download's definition - the ids are.
+     */
+    fun addChosenVideo(
+        link: String,
+        choice: com.downloadhub.core.StreamChoice,
+        audioOnly: Boolean,
+        preferredName: String? = null
+    ) {
+        addDownload(
+            link = link,
+            audioOnly = audioOnly,
+            format = choice.audio?.ext?.ifBlank { "m4a" } ?: "m4a",
+            height = choice.video.height,
+            playlist = false,
+            preferredName = preferredName?.takeIf { it.isNotBlank() },
+            streamFormatId = choice.video.formatId,
+            streamAudioFormatId = choice.audio?.formatId
+        )
+    }
+
     fun addDownload(
         link: String,
         audioOnly: Boolean,
@@ -819,7 +873,16 @@ class DesktopController(
          * exactly as it did. A non-null request carries the file selection, save
          * directory and share limits the dialog collected.
          */
-        torrentRequest: com.downloadhub.core.TorrentAddRequest? = null
+        torrentRequest: com.downloadhub.core.TorrentAddRequest? = null,
+        /**
+         * The two streams the YouTube chooser picked, as yt-dlp format ids.
+         *
+         * Null for everything that is not a video, and for a video added without the
+         * chooser, which is why the height parameter still exists: the chooser is the
+         * better path but it is not the only way in, and the other way has to keep working.
+         */
+        streamFormatId: String? = null,
+        streamAudioFormatId: String? = null
     ) {
         val trimmed = link.trim()
         if (trimmed.isEmpty()) return
@@ -857,6 +920,8 @@ class DesktopController(
                 category = LinkParser.categoryFor(source, name),
                 quality = height?.toString(),
                 audioFormat = if (audioOnly) format else null,
+                streamFormatId = streamFormatId,
+                streamAudioFormatId = streamAudioFormatId,
                 playlist = playlist,
                 torrentFilePath = localTorrent?.absolutePath,
                 // "Add but do not start" has to reach the queue as a paused row. Left
@@ -985,7 +1050,9 @@ class DesktopController(
                 audioOnly = item.audioFormat != null,
                 audioFormat = item.audioFormat ?: "m4a",
                 maxHeight = item.quality?.toIntOrNull(),
-                playlist = item.playlist
+                playlist = item.playlist,
+                videoFormatId = item.streamFormatId,
+                audioFormatId = item.streamAudioFormatId
             ),
             targetDir = jobDir
         ) { percent, _ ->

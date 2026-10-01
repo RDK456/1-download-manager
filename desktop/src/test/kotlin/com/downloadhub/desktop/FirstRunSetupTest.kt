@@ -1,7 +1,7 @@
 package com.downloadhub.desktop
 
 import java.io.File
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,13 +67,10 @@ class FirstRunSetupTest {
 
         val lib = File(resources, "lib")
         assertTrue("yt-dlp is not staged", File(lib, "yt-dlp.exe").isFile)
-        // ffmpeg must NOT be staged: it is 100 MB, and bundling it made the install
-        // a thousand files, which is what broke the JVM launch on a machine with an
-        // aggressive security agent. It is downloaded on demand instead.
-        assertFalse(
-            "ffmpeg must be fetched on demand, not bundled",
-            File(lib, "ffmpeg.exe").exists()
-        )
+        // ffmpeg ships now, because every quality YouTube offers is two streams that have
+        // to be muxed and there is no merge without it. See the file-count test below for
+        // why it ships as one file rather than as the archive's contents.
+        assertTrue("ffmpeg is not staged", File(lib, "ffmpeg.exe").isFile)
 
         // Both browser builds have to ship, because Firefox cannot load the Chromium
         // one at all and a Firefox user told to load it gets an extension that
@@ -143,22 +140,115 @@ class FirstRunSetupTest {
     }
 
     /**
-     * Keeps the 100 MB from creeping back in.
+     * The test that has to survive this change, and the reason for it.
      *
-     * ffmpeg is fetched on demand now. Bundling it made the install a thousand files
-     * and it failed with "Failed to launch JVM" on a machine whose security agent
-     * locks runtime files while they are written, so a regression here is a
-     * regression users will see as a broken install rather than a slow one.
+     * ffmpeg was bundled once and removed, and the cause was never size. The earlier build
+     * shipped the archive's *extracted* tree - ffmpeg, ffprobe, presets, headers,
+     * documentation, roughly a thousand files - and a thousand files is what a security
+     * agent fights with, so the install died with "Failed to launch JVM" and nothing in the
+     * log said why. Halving the download did not fix it.
+     *
+     * So ffmpeg ships again, as one executable beside the one yt-dlp it ships beside. This
+     * asserts the distinction, because it is the whole difficulty: a future tidy-up that
+     * "just extracts the whole ffmpeg folder" would pass every other test here and break
+     * installs on exactly the machines that already broke once.
+     */
+    @Test
+    fun ffmpegShipsAsOneFileRatherThanAnExtractedTree() {
+        val lib = buildDir()?.resolve("resources/main/lib")
+        org.junit.Assume.assumeTrue("no build output to inspect", lib?.isDirectory == true)
+
+        val staged = lib!!.listFiles().orEmpty().filter { it.isFile }
+        val ffmpegFiles = staged.filter { it.name.startsWith("ffmpeg") }
+        assertEquals(
+            "exactly one ffmpeg artefact must be staged. The extracted tree is ~1000 " +
+                "files, and a thousand files is what broke the install with " +
+                "'Failed to launch JVM' on a machine whose security agent locks runtime " +
+                "files while they are written. Found: " +
+                ffmpegFiles.joinToString { it.name },
+            1,
+            ffmpegFiles.size
+        )
+        assertEquals(
+            "the staged artefact must be the executable, not the archive it came from",
+            "ffmpeg.exe",
+            ffmpegFiles.single().name
+        )
+        // And it must be the real thing, not a stub that would fail at the first mux.
+        assertTrue(
+            "the staged ffmpeg.exe is only ${ffmpegFiles.single().length()} bytes",
+            ffmpegFiles.single().length() > 50_000_000L
+        )
+    }
+
+    /**
+     * Keeps a large *dependency* from creeping back in.
+     *
+     * This is not about ffmpeg, which is now expected and accounted for. It is about the
+     * 36 MB material-icons jar that used to ship, and about any other library large enough
+     * to be worth noticing: ffmpeg is measured and subtracted, so what is left is the app's
+     * own code and its dependencies, which should stay small.
      */
     @Test
     fun theAppJarStaysSmallEnoughToUnpackCleanly() {
         val jar = desktopJar()
         org.junit.Assume.assumeTrue("no packaged app image to inspect", jar != null)
-        val megabytes = jar!!.length() / (1024.0 * 1024.0)
+        val ffmpeg = java.util.zip.ZipFile(jar!!).use { zip ->
+            zip.entries().toList().firstOrNull { it.name == "lib/ffmpeg.exe" }?.size ?: 0L
+        }
+        val withoutFfmpeg = (jar.length() - ffmpeg) / (1024.0 * 1024.0)
         assertTrue(
-            "the app jar is ${"%.0f".format(megabytes)} MB; anything near the old " +
-                "36 MB material-icons jar means a large dependency crept back in",
-            megabytes < 30.0
+            "the app jar is ${"%.0f".format(withoutFfmpeg)} MB without ffmpeg; anything " +
+                "near the old 36 MB material-icons jar means a large dependency crept " +
+                "back in",
+            withoutFfmpeg < 30.0
         )
+    }
+
+    /**
+     * The one line everything else depends on.
+     *
+     * ffmpeg being inside the jar is worth nothing on its own; it has to come back out onto
+     * disk as an executable yt-dlp can run. That extraction is a stream copy out of a zip,
+     * it is easy to break, and it breaks silently: a missing resource makes `install()`
+     * return without throwing, the app comes up fine, and every YouTube download fails later
+     * at the merge with a message about a tool the user was never told was missing.
+     *
+     * So this actually extracts it, into a temporary folder, and checks the result is a real
+     * executable rather than a file that exists.
+     */
+    @Test
+    fun theShippedFfmpegUnpacksToDiskOnFirstRun() {
+        val dir = File.createTempFile("dlm-unpack-test", "").let {
+            it.delete()
+            File(it, "tools").apply { parentFile.mkdirs(); mkdirs() }
+        }
+        try {
+            val tools = YtDlpTools(dir)
+            tools.install()
+            assertTrue(
+                "the shipped ffmpeg.exe did not come back out of the jar",
+                tools.ffmpeg.isFile
+            )
+            assertTrue(
+                "the unpacked ffmpeg.exe is only ${tools.ffmpeg.length()} bytes, which " +
+                    "means the resource was missing or empty rather than the executable",
+                tools.ffmpeg.length() > 50_000_000L
+            )
+            // First two bytes of a PE executable. A zip of source, or an error page saved
+            // under the right name, would not start with these.
+            tools.ffmpeg.inputStream().use { input ->
+                val magic = ByteArray(2)
+                assertEquals(2, input.read(magic))
+                assertEquals(
+                    "the unpacked file is not a Windows executable",
+                    'M'.code.toByte(),
+                    magic[0]
+                )
+                assertEquals('Z'.code.toByte(), magic[1])
+            }
+        } finally {
+            dir.parentFile.deleteRecursively()
+        }
     }
 }

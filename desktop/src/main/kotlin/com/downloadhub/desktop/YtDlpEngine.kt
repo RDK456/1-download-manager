@@ -41,9 +41,13 @@ class YtDlpTools(private val installDir: File = AppPaths.toolsDir) {
      * installed build while working in the IDE.
      */
     fun install(): Boolean {
-        if (available) return true
         installDir.mkdirs()
-        return extractResource("lib/yt-dlp.exe", ytDlp)
+        // Both, and independently: one being present says nothing about the other, and
+        // an install that returned early on yt-dlp would never unpack the ffmpeg it also
+        // shipped.
+        if (!available) extractResource("lib/yt-dlp.exe", ytDlp)
+        if (!ffmpegReady) extractResource("lib/ffmpeg.exe", ffmpeg)
+        return available
     }
 
     /**
@@ -191,9 +195,11 @@ class YtDlpTools(private val installDir: File = AppPaths.toolsDir) {
     fun statusText(): String = when {
         !available -> "yt-dlp is not installed yet"
         ffmpegReady -> "yt-dlp ready, ffmpeg ready"
-        // Not an error: the formats that need ffmpeg are simply unavailable, and
-        // saying so is more useful than a spinner that never resolves.
-        else -> "yt-dlp ready (high-quality formats download ffmpeg on demand)"
+        // Not an error, but on a packaged install it should not happen: ffmpeg ships in
+        // the app and is unpacked beside yt-dlp. It is still worth saying, because the one
+        // time it happens is a first run racing itself, and "fetching it now" tells the
+        // user to wait rather than to go looking for a bug.
+        else -> "yt-dlp ready, fetching ffmpeg"
     }
 
     private companion object {
@@ -209,7 +215,16 @@ data class YtDlpRequest(
     val audioOnly: Boolean,
     val audioFormat: String,
     val maxHeight: Int?,
-    val playlist: Boolean
+    val playlist: Boolean,
+    /**
+     * Exact streams to take, when the chooser was used.
+     *
+     * Null falls back to the height selector, which is what every row queued before the
+     * chooser existed - and what a row added without the dialog still uses, because the
+     * dialog is not the only way into the queue.
+     */
+    val videoFormatId: String? = null,
+    val audioFormatId: String? = null
 )
 
 /** Result of a yt-dlp run. */
@@ -257,6 +272,41 @@ class YtDlpEngine(private val tools: YtDlpTools) {
     ): YtDlpResult {
         if (!tools.available) return YtDlpResult(false, "yt-dlp is not installed")
         targetDir.mkdirs()
+
+        // A row that names its streams goes down the exact path, with no height cap and
+        // no fallback chain: the user picked these two out of the list that was in front of
+        // them, so anything else would be substituting one download for another.
+        if (request.videoFormatId != null) {
+            val video = com.downloadhub.core.StreamFormat(
+                formatId = request.videoFormatId,
+                ext = if (request.audioOnly) request.audioFormat.ifBlank { "m4a" } else "mp4",
+                height = request.maxHeight,
+                fps = null,
+                videoCodec = null,
+                audioCodec = null,
+                sizeBytes = null,
+                totalBitrate = null
+            )
+            val audio = request.audioFormatId?.let {
+                com.downloadhub.core.StreamFormat(
+                    formatId = it,
+                    ext = "m4a",
+                    height = null,
+                    fps = null,
+                    videoCodec = null,
+                    audioCodec = null,
+                    sizeBytes = null,
+                    totalBitrate = null
+                )
+            }
+            return downloadChoice(
+                url = request.url,
+                choice = com.downloadhub.core.StreamChoice(video, audio),
+                targetDir = targetDir,
+                audioOnly = request.audioOnly,
+                onProgress = onProgress
+            )
+        }
 
         // The chosen formats need ffmpeg: `-x` converts the audio stream, and
         // bestvideo+bestaudio are two files that must be muxed together. Fetching it

@@ -16,6 +16,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import com.downloadhub.core.ThemeMode
 import com.downloadhub.core.ThemePalette
+import com.downloadhub.core.DownloadSource
+import com.downloadhub.core.LinkParser
 import kotlin.system.exitProcess
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -339,6 +341,31 @@ fun main(args: Array<String>) {
                      * be seen.
                      */
                     pendingAdd?.let { pending ->
+                        // A video goes to the quality chooser instead of this window.
+                        //
+                        // Everything this window offers is about a torrent: which files out of
+                        // forty, what to call the content folder, when to stop seeding. A video
+                        // has no file list and no share ratio, so those options would be a pane
+                        // of disabled controls - and the one thing a video does need choosing,
+                        // which is its quality, is not here at all. The old path took a height
+                        // dropdown in a dialog and guessed at what was on offer.
+                        if (LinkParser.sourceFor(pending.link) == DownloadSource.YOUTUBE) {
+                            YouTubeQualityDialog(
+                                url = pending.link,
+                                loader = controller.actions.listVideoFormats,
+                                onPick = { choice, audioOnly ->
+                                    // Closed before the row appears, for the same reason the
+                                    // window below is: two things on screen at once reads as
+                                    // neither having been asked for.
+                                    pendingAdd = null
+                                    controller.actions.addChosenVideo(
+                                        pending.link, choice, audioOnly, null
+                                    )
+                                },
+                                onDismiss = { pendingAdd = null }
+                            )
+                            return@let
+                        }
                         Window(
                             onCloseRequest = { pendingAdd = null },
                             title = if (pending.isTorrent) {

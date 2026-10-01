@@ -38,8 +38,6 @@ import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DisplayFormat
 import com.downloadhub.core.StreamFormat
 import com.downloadhub.core.chooseStream
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * Which stream to download, with the real ones on offer.
@@ -58,7 +56,15 @@ import kotlinx.coroutines.withContext
 @Composable
 fun YouTubeQualityDialog(
     url: String,
-    engine: YtDlpEngine,
+    /**
+     * Asks the engine what the link offers, and calls back with the answer.
+     *
+     * A callback rather than the engine itself, because the engine lives in the controller
+     * and running it is a process launch that takes seconds - not something a composable
+     * should be holding and starting from a `LaunchedEffect` on whatever dispatcher it
+     * happens to be recomposed on.
+     */
+    loader: (String, (YtDlpEngine.FormatListing) -> Unit) -> Unit,
     onPick: (com.downloadhub.core.StreamChoice, Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -70,9 +76,10 @@ fun YouTubeQualityDialog(
 
     LaunchedEffect(url) {
         busy = true
-        val answer = withContext(Dispatchers.IO) { engine.listFormats(url) }
-        if (answer.error != null) error = answer.error else listing = answer
-        busy = false
+        loader(url) { answer ->
+            if (answer.error != null) error = answer.error else listing = answer
+            busy = false
+        }
     }
 
     val found = listing

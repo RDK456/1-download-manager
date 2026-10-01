@@ -1,5 +1,7 @@
 import java.net.URI
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.util.zip.ZipFile
+
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
@@ -12,6 +14,9 @@ plugins {
 
 // Shared with the Android APK so the two never drift apart.
 val appVersion: String = (project.findProperty("appVersion") as String?) ?: "1.0.0"
+
+/** gyan.dev's static Windows build of ffmpeg. The same source the runtime fetcher uses. */
+val FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 
 kotlin {
     jvmToolchain(17)
@@ -69,14 +74,13 @@ fun downloadTo(url: String, destination: File) {
     require(partial.renameTo(destination)) { "Could not move the download into place" }
 }
 
+
 /**
  * Downloads the standalone yt-dlp executable for Windows.
  *
- * yt-dlp is the only binary shipped inside the app. ffmpeg used to be bundled too,
- * at 100 MB, which made the download 150 MB across roughly a thousand files - and a
- * thousand files is exactly what a security agent fights with, which is how the
- * install died with "Failed to launch JVM". ffmpeg is now fetched on first use
- * instead, the same way the Android build already handles yt-dlp.
+ * ffmpeg is shipped as well, but as a single file - see [fetchFfmpeg] for why that
+ * distinction is the whole difficulty. Android still fetches it on first use, because
+ * an APK is a different thing to be large.
  */
 val fetchYtDlp by tasks.registering {
     description = "Downloads the standalone yt-dlp executable for Windows."
@@ -112,6 +116,76 @@ val fetchYtDlp by tasks.registering {
         logger.lifecycle("yt-dlp $tag staged: ${out.length()} bytes")
     }
 }
+/**
+ * Fetches ffmpeg for Windows, and keeps only the one executable.
+ *
+ * ffmpeg was bundled once and removed, and the reason is written down here because it is
+ * the whole difficulty with this task: the earlier build shipped the *extracted tree* -
+ * ffmpeg, ffprobe, presets, headers, documentation, roughly a thousand files - and a
+ * thousand files is what a security agent fights with, so the install died with "Failed to
+ * launch JVM" and nothing in the log said why. Size was not the problem; file count was,
+ * and cutting the download from 150 MB to 78 MB did not help.
+ *
+ * So this ships **one file**. The archive is 109 MB and the executable inside it is about
+ * 80 MB, and what actually lands in the package is a single `ffmpeg.exe` next to the
+ * single `yt-dlp.exe` that is already there. That keeps the property that made the first
+ * attempt work - YouTube works on first run, with nothing to fetch and nothing to wait for
+ * - without the property that made it fail.
+ *
+ * Still worth knowing: ffmpeg is a third-party binary the project does not build, so it is
+ * fetched from gyan.dev at build time and pinned by nothing. A build that must be
+ * reproducible should hash what it fetched, and this does not.
+ */
+val fetchFfmpeg by tasks.registering {
+    description = "Downloads ffmpeg for Windows and keeps only the executable."
+    group = "build setup"
+    val outputDir = ytBinDir
+    val target = "ffmpeg.exe"
+    outputs.file(outputDir.map { it.file(target) })
+    doLast {
+        val dir = outputDir.get().asFile
+        dir.mkdirs()
+        val out = File(dir, target)
+        if (out.isFile && out.length() > 1_000_000L) return@doLast
+
+        val archive = File(dir, "ffmpeg-download.zip")
+        try {
+            logger.lifecycle("Fetching ffmpeg (109 MB, one build step)")
+            downloadTo(FFMPEG_URL, archive)
+            require(archive.isFile && archive.length() > 1_000_000L) {
+                "the ffmpeg archive looks truncated (${archive.length()} bytes)"
+            }
+            // The archive's top folder is named after the build, so it is matched rather
+            // than hard-coded - which is the mistake that made the runtime unpacker
+            // silently find nothing.
+            ZipFile(archive).use { zip ->
+                val entry = zip.stream().toList().firstOrNull { candidate ->
+                    !candidate.isDirectory &&
+                        candidate.name.replace('\\', '/').substringAfterLast('/') == target &&
+                        candidate.name.replace('\\', '/').contains("/bin/")
+                } ?: error("no $target in the ffmpeg archive")
+                val partial = File(dir, "$target.part")
+                partial.delete()
+                zip.getInputStream(entry).use { input ->
+                    partial.outputStream().use { sink -> input.copyTo(sink) }
+                }
+                if (partial.length() < 1_000_000L) {
+                    partial.delete()
+                    error("the extracted $target looks truncated (${partial.length()} bytes)")
+                }
+                out.delete()
+                if (!partial.renameTo(out)) {
+                    partial.delete()
+                    error("could not move $target into place")
+                }
+            }
+            logger.lifecycle("ffmpeg staged: ${out.length()} bytes, one file")
+        } finally {
+            archive.delete()
+        }
+    }
+}
+
 
 /**
  * Copies the bundled executables into the runtime resources so they land in the
@@ -119,9 +193,9 @@ val fetchYtDlp by tasks.registering {
  * installer ships without them and YouTube silently fails.
  */
 val stageYtBin by tasks.registering(Copy::class) {
-    description = "Stages yt-dlp into the runtime resources."
+    description = "Stages yt-dlp and ffmpeg into the runtime resources."
     group = "build setup"
-    dependsOn(fetchYtDlp)
+    dependsOn(fetchYtDlp, fetchFfmpeg)
     from(ytBinDir)
     into(layout.buildDirectory.dir("resources/main/lib"))
 }
