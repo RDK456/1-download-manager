@@ -77,14 +77,24 @@ fun YouTubeQualityDialog(
     // the point: a transient failure - rate-limiting, a stalled connection - is worth
     // one more attempt without making the user close the dialog and paste again.
     var attempt by remember(url) { mutableStateOf(0) }
+    // Seconds since the lookup started. A silent spinner reads as frozen; a counting
+    // one reads as working slowly, and the number is what a bug report needs.
+    var elapsedSeconds by remember(url, attempt) { mutableStateOf(0) }
 
     LaunchedEffect(url, attempt) {
         busy = true
         error = null
         listing = null
+        elapsedSeconds = 0
         loader(url) { answer ->
             if (answer.error != null) error = answer.error else listing = answer
             busy = false
+        }
+    }
+    LaunchedEffect(url, attempt, busy) {
+        while (busy) {
+            kotlinx.coroutines.delay(1000)
+            elapsedSeconds++
         }
     }
 
@@ -112,7 +122,8 @@ fun YouTubeQualityDialog(
             Spacer(Modifier.height(2.dp))
             Text(
                 when {
-                    busy -> "Reading what this video offers..."
+                    busy -> if (elapsedSeconds < 5) "Reading what this video offers..."
+                    else "Still reading... (${elapsedSeconds}s - this usually takes seconds)"
                     error != null -> ""
                     found != null -> DisplayFormat.bytes(found.bestTotalBytes) +
                         " for the largest option. Every quality is two files joined together."

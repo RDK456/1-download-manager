@@ -1,6 +1,7 @@
 package com.downloadhub.desktop
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -182,6 +183,50 @@ class YouTubeListingTest {
         assertTrue(
             "a thrown lookup must still answer the dialog:\n$body",
             body.contains("runCatching") && body.contains("getOrElse")
+        )
+    }
+
+    /**
+     * Every running YouTube download parks a thread in blocking process I/O for
+     * its whole duration. On the shared Default pool - a thread per core - a few
+     * of those starve the quality lookup coroutine, and the dialog spins for ever
+     * with no timeout able to reach it, because the timeout lives inside the
+     * starved coroutine.
+     */
+    @Test
+    fun blockingYoutubeWorkStaysOffTheSharedPool() {
+        val controller = File("src/main/kotlin/com/downloadhub/desktop/DesktopController.kt").readText()
+        val loader = controller.substringAfter("listVideoFormats = { url, done ->")
+            .substringBefore("setFilePriority = { id, index, priority ->")
+        assertTrue(
+            "the lookup must run where blocking is allowed:\n$loader",
+            loader.contains("Dispatchers.IO")
+        )
+        assertTrue(
+            "downloads must run where blocking is allowed",
+            controller.contains("scope.launch(Dispatchers.IO) { runYtDlp(id) }")
+        )
+    }
+
+    /**
+     * The old download path read the process output before waiting, the same
+     * defect the lookup had: a stalled transfer held the read open and the wait
+     * behind it. Both paths now run through the one runner with the stall
+     * detector.
+     */
+    @Test
+    fun everyDownloadGoesThroughTheStallDetectingRunner() {
+        val engine = File("src/main/kotlin/com/downloadhub/desktop/YtDlpEngine.kt").readText()
+        // No newline in the end marker: the file may carry CRLF endings.
+        val download = engine.substringAfter("fun download(")
+            .substringBefore("What the site actually offers")
+        assertTrue(
+            "the download path must use the shared runner",
+            download.contains("return runStreaming(args, targetDir, onProgress)")
+        )
+        assertFalse(
+            "the inline read-then-wait loop must be gone",
+            download.contains("forEachLine") && download.contains("process.waitFor(60")
         )
     }
 }

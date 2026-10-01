@@ -697,7 +697,13 @@ class DesktopController(
         addPrepared = ::addPrepared,
         addChosenVideo = ::addChosenVideo,
         listVideoFormats = { url, done ->
-            scope.launch {
+            // Blocking process I/O must not sit on the shared Default pool: every
+            // running YouTube download already parks one of its few threads for its
+            // whole duration, and on a machine with several of those the lookup
+            // coroutine never gets a thread - the dialog spins for ever with no
+            // timeout able to reach it, because the timeout lives inside the
+            // starved coroutine. IO exists for exactly this kind of work.
+            scope.launch(Dispatchers.IO) {
                 // A thrown exception must still answer the dialog. Without this, any
                 // unexpected failure inside the lookup skips `done` entirely and the
                 // dialog sits on "Reading what this video offers..." for ever, with
@@ -968,7 +974,10 @@ class DesktopController(
         refresh()
 
         if (source == DownloadSource.YOUTUBE) {
-            scope.launch { runYtDlp(id) }
+            // IO, not the shared Default pool: a download parks its thread in
+            // blocking process I/O for its whole duration, and several of those
+            // would starve the pool the quality lookup also runs on.
+            scope.launch(Dispatchers.IO) { runYtDlp(id) }
         } else if (source == DownloadSource.TORRENT) {
             // libtorrent picks it up from the loop; nothing to do here.
             torrents.startLoop()

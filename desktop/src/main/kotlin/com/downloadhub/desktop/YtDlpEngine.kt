@@ -337,6 +337,9 @@ class YtDlpTools(private val installDir: File = AppPaths.toolsDir) {
         const val FFMPEG_URL =
             "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 
+        /** Silence plus zero growth for this long means a wedged transfer. */
+        const val STALL_MILLIS = 10L * 60L * 1000L
+
         /**
          * Orders yt-dlp releases, which are dates with an optional suffix.
          *
@@ -475,6 +478,10 @@ class YtDlpEngine(private val tools: YtDlpTools) {
             "--newline",
             "--no-warnings",
             "--no-playlist",
+            // A stalled transfer must fail and retry rather than park a thread - and
+            // a queue row - for ever. Thirty seconds of silence means the network is
+            // gone, not slow; yt-dlp retries the fragment from there.
+            "--socket-timeout", "30",
             "-o", File(targetDir, "%(title)s.%(ext)s").absolutePath
         )
         // Only passed when it exists: yt-dlp treats the path as a directory and
@@ -499,26 +506,10 @@ class YtDlpEngine(private val tools: YtDlpTools) {
         }
         args.add(request.url)
 
-        val process = ProcessBuilder(args)
-            .redirectErrorStream(true)
-            .start()
-
-        val progressRegex = Regex("\\[download\\]\\s+([0-9.]+)%")
-        process.inputStream.bufferedReader().forEachLine { line ->
-            val match = progressRegex.find(line)
-            val percent = match?.groupValues?.get(1)?.toDoubleOrNull()?.toInt() ?: -1
-            if (percent >= 0) onProgress(percent, line.trim())
-        }
-        val finished = process.waitFor(60, TimeUnit.MINUTES)
-        if (!finished) {
-            process.destroyForcibly()
-            return YtDlpResult(false, "yt-dlp timed out")
-        }
-        val files = targetDir.listFiles()?.filter { it.isFile && it.length() > 0 } ?: emptyList()
-        if (process.exitValue() != 0) {
-            return YtDlpResult(false, "yt-dlp could not download that link", files)
-        }
-        return YtDlpResult(true, "ok", files)
+        // One runner for every download: it consumes output on its own thread while
+        // waiting with a timeout, so a stalled transfer cannot hold the reading
+        // thread past the wait the way the inline loop here used to.
+        return runStreaming(args, targetDir, onProgress)
     }
 
     /**
@@ -664,25 +655,64 @@ class YtDlpEngine(private val tools: YtDlpTools) {
         return downloadChoice(url, com.downloadhub.core.StreamChoice(single, null), targetDir, onProgress = onProgress)
     }
 
+    /**
+     * Runs a download to completion, with a stall detector instead of a deadline.
+     *
+     * A download has no natural length - a total timeout would kill legitimate
+     * multi-hour transfers - but a process that is silent *and* growing nothing is
+     * doing nothing. The reader thread timestamps every line; the waiting thread
+     * also watches the target directory, because the ffmpeg merge at the end
+     * writes the output file for minutes at a time. Ten minutes with neither a
+     * line nor a byte means the transfer is wedged, and the row and the thread
+     * are released instead of held for ever.
+     */
     private fun runStreaming(args: List<String>, targetDir: File, onProgress: (Int, String) -> Unit): YtDlpResult {
         val process = ProcessBuilder(args).redirectErrorStream(true).start()
         val progressRegex = Regex("\\[download\\]\\s+([0-9.]+)%")
         val tail = StringBuilder()
-        process.inputStream.bufferedReader().forEachLine { line ->
-            val match = progressRegex.find(line)
-            val percent = match?.groupValues?.get(1)?.toDoubleOrNull()?.toInt() ?: -1
-            if (percent >= 0) onProgress(percent, line.trim())
-            else if (line.contains("ERROR")) {
-                tail.append(line.trim()).append('\n')
+        val lastActivity = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+        fun dirSize(): Long = targetDir.listFiles()?.sumOf { it.length() } ?: 0L
+        var lastSize = dirSize()
+        val reader = Thread({
+            runCatching {
+                process.inputStream.bufferedReader().forEachLine { line ->
+                    lastActivity.set(System.currentTimeMillis())
+                    val match = progressRegex.find(line)
+                    val percent = match?.groupValues?.get(1)?.toDoubleOrNull()?.toInt() ?: -1
+                    if (percent >= 0) onProgress(percent, line.trim())
+                    else if (line.contains("ERROR")) {
+                        synchronized(tail) { tail.append(line.trim()).append('\n') }
+                    }
+                }
+            }
+        }, "dlm-ytdlp-stream").apply { isDaemon = true; start() }
+
+        var code: Int? = null
+        while (code == null) {
+            if (process.waitFor(60, TimeUnit.SECONDS)) {
+                code = process.exitValue()
+            } else if (System.currentTimeMillis() - lastActivity.get() > YtDlpTools.STALL_MILLIS &&
+                dirSize() == lastSize
+            ) {
+                process.destroyForcibly()
+                reader.join(5_000)
+                return YtDlpResult(
+                    false,
+                    "The download stalled - no progress for ten minutes - so it was " +
+                        "stopped rather than left running. Retrying usually resumes " +
+                        "where it stopped."
+                )
+            } else {
+                lastSize = dirSize()
             }
         }
-        val code = process.waitFor()
+        reader.join(10_000)
         return if (code == 0) {
             YtDlpResult(true, "ok", targetDir.listFiles()?.toList().orEmpty())
         } else {
             // A 403 part way through is YouTube rate-limiting, not a broken link, and the
             // two want completely different responses from the user.
-            val errors = tail.toString().trim()
+            val errors = synchronized(tail) { tail.toString() }.trim()
             val message = when {
                 errors.contains("403") ->
                     "YouTube refused this request (HTTP 403). That is rate limiting rather " +
