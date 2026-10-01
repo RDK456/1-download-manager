@@ -42,12 +42,142 @@ class YtDlpTools(private val installDir: File = AppPaths.toolsDir) {
      */
     fun install(): Boolean {
         installDir.mkdirs()
+        // A previous run may have downloaded a newer yt-dlp and then died between
+        // deleting the old exe and moving the new one in. A leftover of either half
+        // is still a newer yt-dlp than the bundled copy, so it is promoted before
+        // the bundled one is unpacked over it.
+        if (!available) promotePendingUpdate()
         // Both, and independently: one being present says nothing about the other, and
         // an install that returned early on yt-dlp would never unpack the ffmpeg it also
         // shipped.
         if (!available) extractResource("lib/yt-dlp.exe", ytDlp)
         if (!ffmpegReady) extractResource("lib/ffmpeg.exe", ffmpeg)
         return available
+    }
+
+    /**
+     * The yt-dlp this install is actually running, or null when it cannot be asked.
+     *
+     * yt-dlp versions are dates - 2026.08.19 - so they compare as version numbers and
+     * read as them too. Cached after the first ask: this is read on every status
+     * refresh, and spawning a process per refresh would be felt.
+     */
+    @Volatile
+    private var versionCache: String? = null
+
+    fun installedVersion(): String? {
+        versionCache?.let { return it }
+        if (!available) return null
+        return runCatching {
+            val process = ProcessBuilder(ytDlp.absolutePath, "--version")
+                .redirectErrorStream(true).start()
+            // One line on stdout and no network, so reading first is safe here: this
+            // cannot stall the way a dump-json over a dead connection can.
+            val output = process.inputStream.bufferedReader().readText()
+            if (!process.waitFor(1, TimeUnit.MINUTES)) {
+                process.destroyForcibly()
+                return null
+            }
+            output.trim().lineSequence().lastOrNull { it.isNotBlank() }?.trim()
+                ?.takeIf { it.matches(Regex("\\d{4}\\.\\d{2}\\.\\d{2}.*")) }
+                ?.also { versionCache = it }
+        }.getOrNull()
+    }
+
+    /**
+     * Brings yt-dlp up to date in the background, at most once a day.
+     *
+     * The extractor is a scraper, and YouTube changes the pages it scrapes without
+     * notice: a yt-dlp that read every video in August can call a public video "not
+     * available" in October, with no other symptom. The install ships whatever was
+     * current on build day and would otherwise stay that age for ever, so this is the
+     * only thing standing between a working YouTube download and a slowly rotting
+     * one. The callback reports whether anything was replaced.
+     *
+     * Replacement is done old-to-backup, new-into-place, so a crash mid-swap leaves
+     * a promotable copy rather than no yt-dlp at all - and [install] promotes one on
+     * the next start.
+     */
+    fun updateCheckInBackground(onDone: (Boolean) -> Unit = {}) {
+        Thread({
+            val updated = runCatching { updateYtDlpIfNeeded() }.getOrDefault(false)
+            runCatching { onDone(updated) }
+        }, "dlm-ytdlp-update").apply { isDaemon = true }.start()
+    }
+
+    private fun updateYtDlpIfNeeded(): Boolean {
+        if (!available) return false
+        val marker = File(installDir, "yt-dlp.lastcheck")
+        val last = runCatching { marker.readText().trim().toLong() }.getOrDefault(0L)
+        if (System.currentTimeMillis() - last < 24L * 60L * 60L * 1000L) return false
+        // No marker write on failure: a failed check retries on the next launch
+        // rather than going quiet for a day.
+        val latest = latestReleaseTag() ?: return false
+        val current = installedVersion()
+        if (current != null && compareVersions(current, latest) >= 0) {
+            runCatching { marker.writeText(System.currentTimeMillis().toString()) }
+            return false
+        }
+        if (!fetchReleaseAsset(latest)) return false
+        versionCache = latest
+        runCatching { marker.writeText(System.currentTimeMillis().toString()) }
+        return true
+    }
+
+    private fun latestReleaseTag(): String? = runCatching {
+        java.net.URI("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")
+            .toURL().openConnection().apply {
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("User-Agent", "1-download-manager")
+                connectTimeout = 20_000
+                readTimeout = 20_000
+            }.getInputStream().bufferedReader().use { reader ->
+                Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"")
+                    .find(reader.readText())?.groupValues?.get(1)
+                    ?.takeIf { it.matches(Regex("\\d{4}\\.\\d{2}\\.\\d{2}.*")) }
+            }
+    }.getOrNull()
+
+    private fun fetchReleaseAsset(tag: String): Boolean = runCatching {
+        val pending = File(installDir, "yt-dlp.exe.new")
+        pending.delete()
+        download(
+            "https://github.com/yt-dlp/yt-dlp/releases/download/$tag/yt-dlp.exe",
+            pending
+        )
+        if (!pending.isFile || pending.length() < 1_000_000L) {
+            pending.delete()
+            return false
+        }
+        // Windows will not rename over a running exe, and deleting first would leave
+        // a gap. The old exe steps aside instead: if anything below fails, the backup
+        // is still there for [promotePendingUpdate] to put back.
+        val backup = File(installDir, "yt-dlp.exe.bak")
+        backup.delete()
+        if (ytDlp.isFile && !ytDlp.renameTo(backup)) {
+            pending.delete()
+            return false
+        }
+        if (!pending.renameTo(ytDlp)) {
+            runCatching { backup.renameTo(ytDlp) }
+            pending.delete()
+            return false
+        }
+        backup.delete()
+        true
+    }.getOrDefault(false)
+
+    private fun promotePendingUpdate() {
+        val pending = File(installDir, "yt-dlp.exe.new")
+        if (pending.isFile && pending.length() > 1_000_000L && !ytDlp.isFile) {
+            runCatching { pending.renameTo(ytDlp) }
+        } else {
+            pending.delete()
+        }
+        val backup = File(installDir, "yt-dlp.exe.bak")
+        if (!ytDlp.isFile && backup.isFile && backup.length() > 1_000_000L) {
+            runCatching { backup.renameTo(ytDlp) }
+        }
     }
 
     /**
@@ -194,7 +324,7 @@ class YtDlpTools(private val installDir: File = AppPaths.toolsDir) {
     /** Reported to the UI so a missing binary is explained rather than silent. */
     fun statusText(): String = when {
         !available -> "yt-dlp is not installed yet"
-        ffmpegReady -> "yt-dlp ready, ffmpeg ready"
+        ffmpegReady -> "yt-dlp ${installedVersion() ?: "ready"}, ffmpeg ready"
         // Not an error, but on a packaged install it should not happen: ffmpeg ships in
         // the app and is unpacked beside yt-dlp. It is still worth saying, because the one
         // time it happens is a first run racing itself, and "fetching it now" tells the
@@ -202,10 +332,29 @@ class YtDlpTools(private val installDir: File = AppPaths.toolsDir) {
         else -> "yt-dlp ready, fetching ffmpeg"
     }
 
-    private companion object {
+    internal companion object {
         /** gyan.dev's static Windows build of ffmpeg. */
         const val FFMPEG_URL =
             "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+
+        /**
+         * Orders yt-dlp releases, which are dates with an optional suffix.
+         *
+         * Positive when [a] is newer, so the updater knows whether the installed
+         * copy is behind the release it just resolved.
+         */
+        internal fun compareVersions(a: String, b: String): Int {
+            val parts = { version: String ->
+                version.split(Regex("[^0-9]+")).filter { it.isNotEmpty() }.map { it.toIntOrNull() ?: 0 }
+            }
+            val left = parts(a)
+            val right = parts(b)
+            for (i in 0 until maxOf(left.size, right.size)) {
+                val compared = (left.getOrElse(i) { 0 }).compareTo(right.getOrElse(i) { 0 })
+                if (compared != 0) return compared
+            }
+            return 0
+        }
     }
 }
 
@@ -389,9 +538,24 @@ class YtDlpEngine(private val tools: YtDlpTools) {
             return FormatListing(emptyList(), emptyList(), "", 0L, "yt-dlp is not installed")
         }
         val result = run(
-            listOf(tools.ytDlp.absolutePath, "--dump-json", "--no-warnings", "--skip-download", url),
+            listOf(
+                tools.ytDlp.absolutePath,
+                "--dump-json", "--no-warnings", "--skip-download",
+                // Without this a stalled connection hangs the extractor, and the process
+                // timeout above is minutes away. Thirty seconds of silence means the
+                // network is gone, not slow.
+                "--socket-timeout", "30",
+                url
+            ),
             timeoutMinutes = 3
         )
+        if (result.first == 124) {
+            return FormatListing(
+                emptyList(), emptyList(), "", 0L,
+                "Reading that link timed out - the connection stalled for over three " +
+                    "minutes. Check you are online and try again."
+            )
+        }
         if (result.first != 0) {
             val reason = result.second.lineSequence()
                 .map { it.trim() }
@@ -401,7 +565,7 @@ class YtDlpEngine(private val tools: YtDlpTools) {
                 ?: result.second.lineSequence().lastOrNull { it.isNotBlank() }?.trim().orEmpty()
             return FormatListing(
                 emptyList(), emptyList(), "", 0L,
-                reason.ifBlank { "yt-dlp could not read that link" }
+                explainExtractionFailure(url, reason.ifBlank { "yt-dlp could not read that link" })
             )
         }
         val all = com.downloadhub.core.parseStreamFormats(result.second)
@@ -541,15 +705,121 @@ class YtDlpEngine(private val tools: YtDlpTools) {
     ) {
         val isEmpty: Boolean get() = videoFormats.isEmpty() && audioFormats.isEmpty()
     }
-    private fun run(command: List<String>, timeoutMinutes: Long): Pair<Int, String> {
+
+    /**
+     * Says what an extraction failure actually means, rather than repeating yt-dlp.
+     *
+     * "This video is not available" is what the extractor says both for a video that
+     * is gone and for a public video it was refused - rate-limiting or bot-checking
+     * on this network, which a current yt-dlp still hits. The two want opposite
+     * responses from the user, so a "not available" failure earns one cheap check:
+     * YouTube's oEmbed endpoint answers for any public video with no login, so if it
+     * answers, the video is there and the extractor was refused. If it does not, or
+     * the check itself fails, the original message stands - a wrong guess would be
+     * worse than an unadorned one.
+     */
+    internal fun explainExtractionFailure(
+        url: String,
+        reason: String,
+        /**
+         * Whether YouTube admits the video exists. Null asks the network; passing it
+         * explicitly is what makes this testable without one.
+         */
+        looksPublic: Boolean? = null
+    ): String {
+        if (!reason.contains("not available", ignoreCase = true) &&
+            !reason.contains("private", ignoreCase = true)
+        ) {
+            return reason
+        }
+        val id = extractYouTubeId(url) ?: return reason
+        return when (looksPublic ?: videoLooksPublic(id)) {
+            true -> "$reason. The video itself looks public, so this is YouTube " +
+                "refusing the extractor rather than a removed video - usually " +
+                "rate-limiting or bot-checking on this network. Waiting a while and " +
+                "trying again is what fixes it."
+            else -> reason
+        }
+    }
+
+    /**
+     * The video id in a YouTube URL, whatever shape it arrived in.
+     *
+     * Watch, short, Shorts, embed, live and music URLs all carry the same eleven
+     * characters in different places; matching the place rather than splitting on
+     * fixed positions is what keeps a `youtu.be` link and a `watch?v=` link equal.
+     */
+    internal fun extractYouTubeId(url: String): String? {
+        val trimmed = url.trim()
+        // A `watch?v=` on any other host is not a YouTube video, so the host is
+        // checked first: matching the parameter alone invents ids out of strangers.
+        val host = runCatching { java.net.URI(trimmed).host?.lowercase() }.getOrNull()
+            ?: return null
+        if (!host.contains("youtube.com") && host != "youtu.be") return null
+        val patterns = listOf(
+            Regex("[?&]v=([A-Za-z0-9_-]{11})"),
+            Regex("youtu\\.be/([A-Za-z0-9_-]{11})"),
+            Regex("youtube\\.com/(?:shorts|embed|live|v)/([A-Za-z0-9_-]{11})")
+        )
+        return patterns.firstNotNullOfOrNull { it.find(trimmed)?.groupValues?.get(1) }
+    }
+
+    /**
+     * Whether YouTube itself admits the video exists: true for public, false for
+     * gone-or-private, null when the check could not complete.
+     *
+     * Best-effort by design - a null answer changes nothing, and the caller keeps
+     * the extractor's own message in that case.
+     */
+    internal fun videoLooksPublic(videoId: String): Boolean? = runCatching {
+        val connection = java.net.URI(
+            "https://www.youtube.com/oembed?url=" +
+                "https://www.youtube.com/watch?v=$videoId&format=json"
+        ).toURL().openConnection().apply {
+            setRequestProperty("User-Agent", "1-download-manager")
+            connectTimeout = 8_000
+            readTimeout = 8_000
+        } as java.net.HttpURLConnection
+        try {
+            when (connection.responseCode) {
+                200 -> true
+                401, 403, 404 -> false
+                else -> null
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }.getOrNull()
+    /**
+     * Runs a command and returns its exit code with everything it printed.
+     *
+     * The output is consumed on its own thread while the main one waits with a real
+     * timeout. Reading the stream on the waiting thread - the obvious
+     * `readText()`-then-`waitFor()` - blocks until the process exits, which puts the
+     * timeout behind the very thing it is meant to bound: a stalled network keeps
+     * yt-dlp alive, `readText()` never returns, and the caller spins for ever. That
+     * is exactly how the quality dialog used to sit on "Reading what this video
+     * offers..." until the user gave up. Exit code 124 marks the timeout, the way
+     * the Unix `timeout` command does.
+     */
+    internal fun run(command: List<String>, timeoutMinutes: Long): Pair<Int, String> {
         return runCatching {
             val process = ProcessBuilder(command).redirectErrorStream(true).start()
-            val output = process.inputStream.bufferedReader().readText()
+            val output = StringBuilder()
+            val reader = Thread({
+                runCatching {
+                    process.inputStream.bufferedReader().forEachLine { line ->
+                        synchronized(output) { output.appendLine(line) }
+                    }
+                }
+            }, "dlm-ytdlp-read").apply { isDaemon = true; start() }
             if (!process.waitFor(timeoutMinutes, TimeUnit.MINUTES)) {
                 process.destroyForcibly()
-                return@runCatching 124 to output
+                reader.join(5_000)
+                return@runCatching 124 to synchronized(output) { output.toString() }
             }
-            process.exitValue() to output
+            reader.join(10_000)
+            process.exitValue() to synchronized(output) { output.toString() }
         }.getOrDefault(-1 to "")
     }
 }

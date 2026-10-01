@@ -10,7 +10,7 @@ import com.downloadhub.app.data.model.DownloadStatus
 
 @Database(
     entities = [DownloadEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(DownloadConverters::class)
@@ -78,8 +78,20 @@ abstract class DownloadDatabase : RoomDatabase() {
             }
         }
         /**
+         * The streams the quality picker named, as yt-dlp format ids.
+         *
+         * Both nullable with no default: a row written before the picker existed has
+         * no choice recorded, and "no choice" must keep meaning "by height ceiling"
+         * rather than becoming an empty id the downloader would choke on.
+         */
+        val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN streamFormatId TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN streamAudioFormatId TEXT")
+            }
+        }
+        /**
          * Every migration, in one list.
-
          *
          * Named here so it can be checked that a path exists between every released
          * version and the current one. Adding a column to [DownloadEntity] with no
@@ -94,7 +106,8 @@ abstract class DownloadDatabase : RoomDatabase() {
             MIGRATION_2_3,
             MIGRATION_3_4,
             MIGRATION_4_5,
-            MIGRATION_5_6
+            MIGRATION_5_6,
+            MIGRATION_6_7
         )
     }
 }

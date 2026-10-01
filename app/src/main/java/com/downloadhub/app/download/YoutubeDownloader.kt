@@ -92,6 +92,66 @@ class YoutubeDownloader(
      */
     suspend fun latestStableVersion(): String? = YtDlpUpdateChecker().latestStableVersion()
 
+    /**
+     * What a link actually offers, for the quality picker.
+     *
+     * Runs the same extraction the download will run, but stops at the format list:
+     * `getInfo` reads the dump-json the wrapper already fetches, so this costs one
+     * lookup and no bytes of video. A failure carries the extractor's message rather
+     * than a generic one, because "this video is private" and "sign in to confirm
+     * your age" need different responses from the user.
+     */
+    suspend fun listFormats(url: String): YouTubeFormatListing = withContext(Dispatchers.IO) {
+        updateYtDlpIfNeeded()
+        ensureInitialized()
+        try {
+            val info = YoutubeDL.getInstance().getInfo(url)
+            val title = info.title?.takeIf { it.isNotBlank() }
+                ?: info.fulltitle?.takeIf { it.isNotBlank() }.orEmpty()
+            val all = info.formats.orEmpty().mapNotNull { it.toStreamFormat() }
+            if (all.isEmpty()) {
+                return@withContext failedYouTubeFormats(
+                    "No downloadable streams were offered for that link."
+                )
+            }
+            youTubeFormatListing(all, title)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val reason = (e as? YoutubeDLException)?.message
+                ?.substringAfter("ERROR: ")?.trim()?.takeIf { it.isNotBlank() }
+                ?: e.message?.trim()?.takeIf { it.isNotBlank() }
+                ?: "yt-dlp could not read that link"
+            failedYouTubeFormats(explainAvailability(url, reason))
+        }
+    }
+
+    /**
+     * Says what an extraction failure means when it claims unavailability.
+     *
+     * "This video is not available" is what the extractor says both for a video
+     * that is gone and for a public video it was refused - rate-limiting or
+     * bot-checking on this network. YouTube's oEmbed endpoint answers for any
+     * public video with no login, so if it answers, the video is there and the
+     * extractor was refused. Anything else keeps the original message: a wrong
+     * guess would be worse than an unadorned one.
+     */
+    private fun explainAvailability(url: String, reason: String): String {
+        if (!reason.contains("not available", ignoreCase = true) &&
+            !reason.contains("private", ignoreCase = true)
+        ) {
+            return reason
+        }
+        val id = youTubeVideoId(url) ?: return reason
+        return when (youTubeVideoLooksPublic(id)) {
+            true -> "$reason. The video itself looks public, so this is YouTube " +
+                "refusing the extractor rather than a removed video - usually " +
+                "rate-limiting or bot-checking on this network. Waiting a while " +
+                "and trying again is what fixes it."
+            else -> reason
+        }
+    }
+
     suspend fun download(item: DownloadEntity, serviceScope: CoroutineScope) = withContext(Dispatchers.IO) {
         updateYtDlpIfNeeded()
         ensureInitialized()
@@ -226,11 +286,33 @@ class YoutubeDownloader(
     }
 
     /**
-     * Builds the yt-dlp format selection from the user's choice. The explicit
-     * height ceiling keeps the request honest, and falls back to the best
-     * available stream when YouTube does not offer that height.
+     * Builds the yt-dlp format selection from the user's choice.
+     *
+     * A row picked from the real format list names its streams outright, and those
+     * ids are used verbatim: a height ceiling cannot express the difference between
+     * 1080p60 and 1080p, and falling back to it here would download something other
+     * than the row that was tapped. The ceiling remains for everything queued before
+     * the picker existed, and for anything added without it.
      */
     private fun applyFormatSelection(request: YoutubeDLRequest, item: DownloadEntity) {
+        val videoId = item.streamFormatId?.takeIf { it.isNotBlank() }
+        val audioId = item.streamAudioFormatId?.takeIf { it.isNotBlank() }
+        if (videoId != null) {
+            val audioOnly = item.quality == MediaQuality.AUDIO.value ||
+                item.category == DownloadCategory.AUDIO
+            if (audioOnly) {
+                val target = AudioFormat.fromValue(item.audioFormat)
+                request.addOption("-f", videoId)
+                request.addOption("-x")
+                request.addOption("--audio-format", target.value)
+                request.addOption("--audio-quality", if (target == AudioFormat.OPUS) "5" else "0")
+                request.addOption("--embed-metadata")
+            } else {
+                request.addOption("-f", videoId + (audioId?.let { "+$it" } ?: "+bestaudio"))
+                request.addOption("--merge-output-format", "mp4")
+            }
+            return
+        }
         val quality = MediaQuality.fromValue(item.quality)
         val audioFormat = AudioFormat.fromValue(item.audioFormat)
         if (quality.isAudioOnly || item.category == DownloadCategory.AUDIO) {

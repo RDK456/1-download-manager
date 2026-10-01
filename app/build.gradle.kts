@@ -155,6 +155,9 @@ dependencies {
     testImplementation(libs.junit)
     // Real org.json on the unit-test classpath (the Android stub only throws).
     testImplementation("org.json:json:20231013")
+    // The same databind the yt-dlp wrapper maps with, so the format-mapping tests
+    // read JSON the way the app does rather than the way a mock would.
+    testImplementation("com.fasterxml.jackson.core:jackson-databind:2.11.1")
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.espresso)
 }

@@ -51,6 +51,17 @@ data class DownloadEntity(
     val updatedAt: Long,
     val quality: String? = null,
     val audioFormat: String? = null,
+    /**
+     * The streams the quality picker named, as yt-dlp format ids.
+     *
+     * A height cannot say what the picker offers - 1080p60 and 1080p are the same
+     * height and not the same download - so the row carries the ids themselves. Null
+     * for everything queued before the picker existed, which keeps downloading by
+     * height ceiling exactly as it did.
+     */
+    val streamFormatId: String? = null,
+    /** The audio half of the pair; null for an audio-only row, which has just one. */
+    val streamAudioFormatId: String? = null,
     val thumbnailUrl: String? = null,
     val thumbnailPath: String? = null,
     val durationSeconds: Long? = null,

@@ -26,6 +26,7 @@ import com.downloadhub.app.download.MediaCandidate
 import com.downloadhub.app.download.MediaKind
 import com.downloadhub.app.download.PageScanState
 import com.downloadhub.app.download.PageScanner
+import com.downloadhub.app.download.YouTubeFormatListing
 import com.downloadhub.app.update.YtDlpUpdateState
 import com.downloadhub.app.update.compareVersions
 import java.io.File
@@ -386,6 +387,16 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * What a YouTube link offers, for the quality picker in the add sheet.
+     *
+     * One lookup per link, run while the sheet is open: the picker shows the real
+     * rows with real sizes rather than the fixed Best-to-360p menu, so a 1080p
+     * video no longer offers 4K and 2K rows that silently download 1080p.
+     */
+    suspend fun listYouTubeFormats(url: String): YouTubeFormatListing =
+        app.container.youtubeDownloader.listFormats(url)
+
     fun addLink(
         rawLink: String,
         fileName: String? = null,
@@ -394,7 +405,15 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         userAgent: String? = null,
         contentDisposition: String? = null,
         quality: MediaQuality? = null,
-        audioFormat: AudioFormat? = null
+        audioFormat: AudioFormat? = null,
+        /**
+         * Exact streams the picker named, as yt-dlp format ids.
+         *
+         * Null keeps the height ceiling, which is what every row queued before the
+         * picker existed - and what a row added without it still uses.
+         */
+        streamFormatId: String? = null,
+        streamAudioFormatId: String? = null
     ) {
         viewModelScope.launch {
             val link = LinkParser.extractFirstLink(rawLink) ?: rawLink.trim()
@@ -435,7 +454,9 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                     (audioFormat ?: AudioFormat.M4A).value
                 } else {
                     null
-                }
+                },
+                streamFormatId = streamFormatId?.takeIf { source == DownloadSource.YOUTUBE },
+                streamAudioFormatId = streamAudioFormatId?.takeIf { source == DownloadSource.YOUTUBE }
             )
             runCatching { repository.create(request) }
                 .onSuccess {

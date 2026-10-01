@@ -63,7 +63,9 @@ class DownloadRepository(
             createdAt = now,
             updatedAt = now,
             quality = request.quality,
-            audioFormat = request.audioFormat
+            audioFormat = request.audioFormat,
+            streamFormatId = request.streamFormatId,
+            streamAudioFormatId = request.streamAudioFormatId
         )
         dao.insert(entity)
         return entity

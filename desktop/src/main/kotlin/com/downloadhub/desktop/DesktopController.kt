@@ -304,6 +304,11 @@ class DesktopController(
             // file rather than two loose ones.
             tools.install()
             if (extension.install()) refresh()
+            // The extractor rots: YouTube changes its pages and a yt-dlp from build day
+            // starts calling public videos "not available". Checked in the background
+            // and at most daily, so startup never waits on it; a replacement refreshes
+            // the status line so the new version is visible.
+            tools.updateCheckInBackground { updated -> if (updated) refresh() }
         }
         // The pairing token is generated on first run and has to reach disk, or it
         // would change on every launch and silently unpair the extension.

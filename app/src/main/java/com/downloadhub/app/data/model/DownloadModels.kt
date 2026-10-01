@@ -104,5 +104,9 @@ data class DownloadCreateRequest(
     val contentDisposition: String? = null,
     val torrentFilePath: String? = null,
     val quality: String? = null,
-    val audioFormat: String? = null
+    val audioFormat: String? = null,
+    /** Exact video stream the picker named, as a yt-dlp format id. Null keeps the ceiling. */
+    val streamFormatId: String? = null,
+    /** Exact audio stream the picker named. Null keeps the ceiling. */
+    val streamAudioFormatId: String? = null
 )

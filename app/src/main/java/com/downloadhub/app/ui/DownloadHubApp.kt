@@ -445,6 +445,7 @@ fun DownloadHubApp(
                 scanning = scanState is PageScanState.Scanning,
                 onDismiss = viewModel::closeEditor,
                 onAdd = viewModel::addLink,
+                onListFormats = viewModel::listYouTubeFormats,
                 onPickTorrent = viewModel::addTorrentFile,
                 onScanPage = viewModel::scanPageForMedia
             )

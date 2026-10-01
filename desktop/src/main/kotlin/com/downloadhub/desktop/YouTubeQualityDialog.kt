@@ -73,9 +73,15 @@ fun YouTubeQualityDialog(
     var busy by remember(url) { mutableStateOf(true) }
     var audioOnly by remember(url) { mutableStateOf(false) }
     var chosen by remember(url) { mutableStateOf<StreamFormat?>(null) }
+    // Bumped by Retry, so the lookup below runs again. The link is the same, which is
+    // the point: a transient failure - rate-limiting, a stalled connection - is worth
+    // one more attempt without making the user close the dialog and paste again.
+    var attempt by remember(url) { mutableStateOf(0) }
 
-    LaunchedEffect(url) {
+    LaunchedEffect(url, attempt) {
         busy = true
+        error = null
+        listing = null
         loader(url) { answer ->
             if (answer.error != null) error = answer.error else listing = answer
             busy = false
@@ -122,6 +128,7 @@ fun YouTubeQualityDialog(
                 Text(error!!, fontSize = 12.sp, color = AppTheme.Palette.error)
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = { attempt++ }) { Text("Retry") }
                     TextButton(onClick = onDismiss) { Text("Close") }
                 }
                 return@Column

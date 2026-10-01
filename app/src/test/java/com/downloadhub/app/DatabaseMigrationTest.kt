@@ -111,6 +111,23 @@ class DatabaseMigrationTest {
     }
 
     @Test
+    fun theStreamChoiceColumnsAreAddedByAMigration() {
+        // Nullable like quality and audioFormat: a plain HTTP item has no streams
+        // named, so these are added without a default - which is right for them.
+        listOf("streamFormatId", "streamAudioFormatId").forEach { column ->
+            assertTrue(
+                "DownloadEntity declares $column",
+                entitySource.contains("val $column")
+            )
+            assertTrue(
+                "DownloadEntity declares $column but no ALTER TABLE adds it, so an " +
+                    "existing install cannot open its database",
+                databaseSource.contains("ADD COLUMN $column ")
+            )
+        }
+    }
+
+    @Test
     fun appContainerRegistersTheMigrationsTheDatabaseDeclares() {
         assertTrue(
             "AppContainer must register DownloadDatabase.ALL rather than its own copy, " +
