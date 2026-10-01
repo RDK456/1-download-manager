@@ -246,11 +246,21 @@ val packageExtension by tasks.registering {
     // four-number shape if a build ever gives it more.
     val extensionVersion = Regex("^\\d+(\\.\\d+){0,3}$")
         .let { if (it.matches(appVersion)) appVersion else appVersion.substringBefore('-') }
+    // Declared as an input, or the task is UP-TO-DATE on a second run: the output
+    // directory already exists and nothing it watches has changed, so no zip is
+    // written for the new version and the release finds none and stops. The version
+    // is the only thing that varies between runs, so it has to be one of the inputs.
+    inputs.property("appVersion", appVersion)
     outputs.dir(outputDir)
     doLast {
         val from = sourceDir.asFile
         val into = outputDir.get().asFile
         into.mkdirs()
+        // A zip from an earlier version is not an asset for this one, and leaving
+        // them accumulates a directory of dead files across every release.
+        into.listFiles { f -> f.name.endsWith(".zip") }?.forEach { stale ->
+            if (!stale.name.contains(extensionVersion)) stale.delete()
+        }
         listOf("chromium" to "chrome", "firefox" to "firefox").forEach { (folder, label) ->
             val dir = File(from, folder)
             require(dir.isDirectory) { "browser-extension/$folder is missing" }
