@@ -322,6 +322,175 @@ class YtDlpEngine(private val tools: YtDlpTools) {
         return YtDlpResult(true, "ok", files)
     }
 
+    /**
+     * What the site actually offers, for a link.
+     *
+     * The old probe ran yt-dlp with `--dump-json` and then threw all of it away, keeping
+     * only the exit code - a hundred and forty kilobytes of formats, with sizes, fed
+     * through a process pipe and thrown in the bin. Everything the quality chooser needs
+     * was already on the wire.
+     *
+     * Fails with the extractor's own message rather than a generic one: "this video is
+     * private" and "sign in to confirm your age" are the two most common, and neither is
+     * something a user can act on unless they are told which.
+     */
+    fun listFormats(url: String): FormatListing {
+        if (!tools.available) {
+            return FormatListing(emptyList(), emptyList(), "", 0L, "yt-dlp is not installed")
+        }
+        val result = run(
+            listOf(tools.ytDlp.absolutePath, "--dump-json", "--no-warnings", "--skip-download", url),
+            timeoutMinutes = 3
+        )
+        if (result.first != 0) {
+            val reason = result.second.lineSequence()
+                .map { it.trim() }
+                .firstOrNull { it.startsWith("ERROR") || it.startsWith("WARNING") }
+                ?.removePrefix("ERROR:")?.removePrefix("WARNING:")?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: result.second.lineSequence().lastOrNull { it.isNotBlank() }?.trim().orEmpty()
+            return FormatListing(
+                emptyList(), emptyList(), "", 0L,
+                reason.ifBlank { "yt-dlp could not read that link" }
+            )
+        }
+        val all = com.downloadhub.core.parseStreamFormats(result.second)
+        if (all.isEmpty()) {
+            return FormatListing(
+                emptyList(), emptyList(), "", 0L,
+                "No downloadable streams were offered for that link."
+            )
+        }
+        val video = com.downloadhub.core.offerVideoFormats(all)
+        val audio = com.downloadhub.core.offerAudioFormats(all)
+        val title = Regex("\"title\"\\s*:\\s*\"(.*?)\"").find(result.second)
+            ?.groupValues?.get(1).orEmpty()
+        return FormatListing(
+            videoFormats = video,
+            audioFormats = audio,
+            title = title,
+            // The best option, because that is what the list is ordered by and the number
+            // beside it is the number a user choosing the top row will spend.
+            bestTotalBytes = video.firstOrNull()?.let {
+                com.downloadhub.core.chooseStream(all, it.height ?: 0, audio)?.totalBytes
+            } ?: 0L,
+            error = null
+        )
+    }
+
+    /**
+     * Downloads exactly the two streams [choice] names.
+     *
+     * Passing ids rather than a height is what lets the chooser offer what is really there:
+     * 2160p60 is not "1080p", and the old selector could not express it because it only
+     * ever built `bestvideo[height<=N]`. With ffmpeg present the merge is happening
+     * anyway, so capping the height was capping quality for no reason.
+     */
+    fun downloadChoice(
+        url: String,
+        choice: com.downloadhub.core.StreamChoice,
+        targetDir: File,
+        audioOnly: Boolean = false,
+        onProgress: (Int, String) -> Unit
+    ): YtDlpResult {
+        if (!tools.available) return YtDlpResult(false, "yt-dlp is not installed")
+        // Every format on offer needs the merge, so a missing ffmpeg is not a degraded
+        // download - it is no download. Said plainly, because the alternative is a pair of
+        // files the user discovers are unplayable after waiting for both.
+        if (!tools.ffmpegReady && !tools.ensureFfmpeg()) {
+            return YtDlpResult(
+                false,
+                "This quality needs ffmpeg to join the video and audio, and it is still " +
+                    "downloading. It is being fetched now - try again in a minute, or " +
+                    "choose a lower quality once it is ready."
+            )
+        }
+        targetDir.mkdirs()
+
+        val args = mutableListOf(
+            tools.ytDlp.absolutePath,
+            "--newline", "--no-warnings", "--no-playlist",
+            "--ffmpeg-location", tools.ffmpeg.absolutePath,
+            "-o", File(targetDir, "%(title)s.%(ext)s").absolutePath
+        )
+        args += if (audioOnly) {
+            listOf("-x", "--audio-format", choice.video.ext.ifBlank { "m4a" })
+        } else {
+            val selector = buildString {
+                append(choice.video.formatId)
+                choice.audio?.let { append("+").append(it.formatId) }
+            }
+            listOf("-f", selector, "--merge-output-format", "mp4")
+        }
+        args += url
+        return runStreaming(args, targetDir, onProgress)
+    }
+
+    /**
+     * A single-file download, for when ffmpeg is not there and one is all there is.
+     *
+     * YouTube offers no such format today - four videos checked, none - so this is a path
+     * that currently always reports that there is nothing single-file to take. It is kept
+     * because that is a property of the site rather than of this code, and when it changes
+     * the fallback exists. `hasAnyProgressiveFormat` has a test asserting it is still
+     * false, so nobody mistakes this for a live feature.
+     */
+    fun downloadProgressive(
+        url: String,
+        targetDir: File,
+        onProgress: (Int, String) -> Unit
+    ): YtDlpResult {
+        val result = listFormats(url)
+        val single = result.videoFormats.firstOrNull { !it.needsMerge }
+            ?: return YtDlpResult(
+                false,
+                "This video has no single-file format, so ffmpeg is needed to join its " +
+                    "video and audio."
+            )
+        return downloadChoice(url, com.downloadhub.core.StreamChoice(single, null), targetDir, onProgress = onProgress)
+    }
+
+    private fun runStreaming(args: List<String>, targetDir: File, onProgress: (Int, String) -> Unit): YtDlpResult {
+        val process = ProcessBuilder(args).redirectErrorStream(true).start()
+        val progressRegex = Regex("\\[download\\]\\s+([0-9.]+)%")
+        val tail = StringBuilder()
+        process.inputStream.bufferedReader().forEachLine { line ->
+            val match = progressRegex.find(line)
+            val percent = match?.groupValues?.get(1)?.toDoubleOrNull()?.toInt() ?: -1
+            if (percent >= 0) onProgress(percent, line.trim())
+            else if (line.contains("ERROR")) {
+                tail.append(line.trim()).append('\n')
+            }
+        }
+        val code = process.waitFor()
+        return if (code == 0) {
+            YtDlpResult(true, "ok", targetDir.listFiles()?.toList().orEmpty())
+        } else {
+            // A 403 part way through is YouTube rate-limiting, not a broken link, and the
+            // two want completely different responses from the user.
+            val errors = tail.toString().trim()
+            val message = when {
+                errors.contains("403") ->
+                    "YouTube refused this request (HTTP 403). That is rate limiting rather " +
+                        "than a broken link - wait a moment and try again."
+                errors.isNotBlank() -> errors.lineSequence().last().trim()
+                else -> "yt-dlp exited with code $code"
+            }
+            YtDlpResult(false, message)
+        }
+    }
+
+    /** What [listFormats] found. */
+    data class FormatListing(
+        val videoFormats: List<com.downloadhub.core.StreamFormat>,
+        val audioFormats: List<com.downloadhub.core.StreamFormat>,
+        val title: String,
+        /** Bytes the top video option actually costs, audio included. */
+        val bestTotalBytes: Long,
+        val error: String?
+    ) {
+        val isEmpty: Boolean get() = videoFormats.isEmpty() && audioFormats.isEmpty()
+    }
     private fun run(command: List<String>, timeoutMinutes: Long): Pair<Int, String> {
         return runCatching {
             val process = ProcessBuilder(command).redirectErrorStream(true).start()
