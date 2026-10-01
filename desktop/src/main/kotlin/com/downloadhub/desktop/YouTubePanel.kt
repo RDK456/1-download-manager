@@ -67,8 +67,14 @@ fun YouTubePanel(
     onQueue: (List<YouTubeEntry>, Boolean, Int?, String) -> Int,
     /** Reads one video's full format list, with every height, frame rate and codec. */
     fetchFormats: (String, (YtDlpEngine.FormatListing) -> Unit) -> Unit,
-    /** Queues one video at its exact streams, then returns to the Downloads list. */
-    onPickExact: (String, com.downloadhub.core.StreamChoice, Boolean) -> Unit,
+    /**
+     * Queues one video at its exact streams, then returns to the Downloads list.
+     *
+     * The title travels with it. Without it the row is named from the URL, and a
+     * video URL's last segment is the route - so the row read "watch" until the
+     * extractor got far enough to rename it.
+     */
+    onPickExact: (String, com.downloadhub.core.StreamChoice, Boolean, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var link by remember { mutableStateOf("") }
@@ -211,7 +217,7 @@ fun YouTubePanel(
             YouTubeSingleQuality(
                 url = entry.url,
                 fetchFormats = fetchFormats,
-                onPick = { choice, audioOnly -> onPickExact(entry.url, choice, audioOnly) }
+                onPick = { choice, audioOnly -> onPickExact(entry.url, choice, audioOnly, entry.title) }
             )
         }
 
@@ -297,7 +303,11 @@ fun YouTubePanel(
             }
         }
 
-        if (entries.isNotEmpty()) {
+        // Only for a batch. On a single video the block above already has its own
+        // Download and its own Video/Audio-only, so this footer was a second
+        // Download button and a second row of chips for the same one download -
+        // and the ceiling chips on top of a list of exact rows contradicts them.
+        if (entries.size > 1) {
             Column(
                 Modifier
                     .fillMaxWidth()

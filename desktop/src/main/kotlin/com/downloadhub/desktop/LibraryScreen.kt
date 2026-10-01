@@ -284,8 +284,8 @@ fun LibraryScreen(
                             fetchFormats = actions.listVideoFormats,
                             // One video at its exact streams, then back to the
                             // Downloads list the same way.
-                            onPickExact = { url, choice, audioOnly ->
-                                actions.addChosenVideo(url, choice, audioOnly, null)
+                            onPickExact = { url, choice, audioOnly, title ->
+                                actions.addChosenVideo(url, choice, audioOnly, title)
                                 searchOpen = false
                                 youTubeOpen = false
                             },

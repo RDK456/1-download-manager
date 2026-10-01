@@ -275,6 +275,43 @@ class YouTubeListingTest {
         )
     }
 
+    /**
+     * A video row read "watch" for its whole download: `fileNameFrom` took the
+     * last path segment, and for `.../watch?v=...` that is the route, not a name.
+     */
+    @Test
+    fun aVideoRowIsNeverNamedAfterItsRoute() {
+        val parser = File("../core/src/main/kotlin/com/downloadhub/core/LinkParser.kt")
+        org.junit.Assume.assumeTrue("core sources are not present here", parser.isFile)
+        val text = parser.readText()
+        assertTrue(
+            "a video URL's last segment is a route, so the row must be named from " +
+                "the id instead:\n$text",
+            text.contains("\"youtube-\$id\"")
+        )
+    }
+
+    /**
+     * On a single video the exact-quality block already has a Download and a
+     * Video/Audio-only pair; the batch footer beside it was a second Download and
+     * a second row of chips for the same one download.
+     */
+    @Test
+    fun theBatchFooterIsHiddenWhenThereIsOnlyOneEntry() {
+        listOf(
+            "src/main/kotlin/com/downloadhub/desktop/YouTubePanel.kt",
+            "../app/src/main/java/com/downloadhub/app/ui/YouTubeScreen.kt"
+        ).forEach { path ->
+            val file = File(path)
+            org.junit.Assume.assumeTrue("$path is not present here", file.isFile)
+            assertFalse(
+                "$path gates its batch footer on entries.isNotEmpty(), so a single " +
+                    "video shows the footer as well as the quality block",
+                file.readText().contains("if (entries.isNotEmpty())")
+            )
+        }
+    }
+
     @Test
     fun theSectionFetchesFlatListings() {
         val engine = File("src/main/kotlin/com/downloadhub/desktop/YtDlpEngine.kt").readText()

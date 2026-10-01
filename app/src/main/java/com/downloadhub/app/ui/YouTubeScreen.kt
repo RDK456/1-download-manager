@@ -379,7 +379,12 @@ fun YouTubeScreen(
             }
         }
 
-        if (entries.isNotEmpty()) {
+        // Only for a batch. On a single video the quality block above already has
+        // its own Download and its own Video/Audio-only, so this footer was a
+        // second Download button and a second row of chips for the same one
+        // download - and the ceiling chips on top of a list of exact rows
+        // contradict them.
+        if (entries.size > 1) {
             // The action first, then what it acts on, matching the desktop panel.
             Button(
                 onClick = {

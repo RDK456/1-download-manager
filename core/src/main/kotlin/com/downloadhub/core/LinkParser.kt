@@ -211,6 +211,16 @@ object LinkParser {
             if (!candidate.isNullOrBlank()) return sanitizeFileName(candidate)
         }
 
+        // A video link's last path segment is a route, not a name: `watch?v=...`
+        // gave a row the name "watch", and `/shorts/`, `/embed/` and `/live/` are
+        // no better. The id is the only identifying part of the URL, so the row is
+        // named after that until the extractor supplies the real title - which it
+        // does the moment the download starts.
+        if (isYouTube(url)) {
+            val id = youTubeIdFromUrl(url)
+            if (id != null) return "youtube-$id"
+        }
+
         val path = runCatching { URI(url).path }.getOrNull().orEmpty()
         val pathName = path.substringAfterLast('/')
         if (pathName.isNotBlank()) {
