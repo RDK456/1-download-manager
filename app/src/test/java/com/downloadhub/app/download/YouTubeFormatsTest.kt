@@ -178,6 +178,16 @@ class YouTubeFormatsTest {
     }
 
     @Test
+    fun knownIdsAreDroppedByIdNotTitle() {
+        val entries = listOf(
+            com.downloadhub.core.YouTubeEntry("KPh2Efv66Aw", "Same Title", 1),
+            com.downloadhub.core.YouTubeEntry("dQw4w9WgXcQ", "Same Title", 2)
+        )
+        val remaining = filterQueuedEntries(entries) { it == "KPh2Efv66Aw" }
+        assertEquals(listOf("dQw4w9WgXcQ"), remaining.map { it.id })
+    }
+
+    @Test
     fun videoIdsAreFoundWhateverShapeTheLinkArrivedIn() {
         val id = "KPh2Efv66Aw"
         mapOf(

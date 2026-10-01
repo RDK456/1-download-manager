@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
@@ -88,6 +89,7 @@ import com.downloadhub.app.data.model.DownloadStatus
 import com.downloadhub.app.data.model.ThemeMode
 import com.downloadhub.app.data.model.label
 import com.downloadhub.app.download.PageScanState
+import com.downloadhub.app.download.youTubeVideoId
 import com.downloadhub.app.update.YtDlpUpdateState
 import com.downloadhub.app.ui.theme.DownloadHubTheme
 import kotlinx.coroutines.flow.collectLatest
@@ -112,6 +114,15 @@ fun DownloadHubApp(
         val context = LocalContext.current
         val visibleItems by viewModel.visibleDownloads.collectAsStateWithLifecycle()
         val visibleTorrents by viewModel.visibleTorrents.collectAsStateWithLifecycle()
+        // Unfiltered, so the YouTube section's dedup sees the whole queue rather
+        // than just the rows the current filter shows.
+        val allItems by viewModel.allDownloads.collectAsStateWithLifecycle()
+        val knownYouTubeIds = remember(allItems) {
+            allItems.asSequence()
+                .filter { it.source == DownloadSource.YOUTUBE }
+                .mapNotNull { youTubeVideoId(it.url) }
+                .toSet()
+        }
         val mainSummary by viewModel.mainSummary.collectAsStateWithLifecycle()
         val torrentSummary by viewModel.torrentSummary.collectAsStateWithLifecycle()
         val categoryCounts by viewModel.categoryCounts.collectAsStateWithLifecycle()
@@ -242,7 +253,7 @@ fun DownloadHubApp(
                         // Adding a download is the floating action button's job, so the
                         // root tabs show the app mark instead of a second add button.
                         when (destination) {
-                            AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.SEARCH -> {
+                            AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.SEARCH, AppDestination.YOUTUBE -> {
                                 Image(
                                     painter = painterResource(R.drawable.ic_launcher_foreground),
                                     contentDescription = null,
@@ -315,6 +326,12 @@ fun DownloadHubApp(
                             icon = { Icon(Icons.Default.Search, contentDescription = null) },
                             label = { Text("Search") }
                         )
+                        NavigationBarItem(
+                            selected = destination == AppDestination.YOUTUBE,
+                            onClick = { navigate(AppDestination.YOUTUBE) },
+                            icon = { Icon(Icons.Default.Movie, contentDescription = null) },
+                            label = { Text("YouTube") }
+                        )
                     }
                 }
             },
@@ -383,6 +400,20 @@ fun DownloadHubApp(
                         onPick = { magnet ->
                             viewModel.prepareSearchResult(magnet)
                             navigate(AppDestination.DOWNLOADS)
+                        }
+                    )
+                    AppDestination.YOUTUBE -> YouTubeScreen(
+                        knownIds = knownYouTubeIds,
+                        onFetch = viewModel::fetchYouTubeListing,
+                        onQueue = { entries, audioOnly, ceiling ->
+                            viewModel.queueYouTubeEntries(entries, audioOnly, ceiling)
+                        },
+                        // One video keeps the exact chooser: the section lists, the
+                        // add sheet specifies.
+                        onSingle = { url ->
+                            viewModel.openEditor(
+                                EditorSeed(link = url, source = DownloadSource.YOUTUBE)
+                            )
                         }
                     )
                     AppDestination.SETTINGS -> SettingsScreen(
@@ -869,6 +900,7 @@ private fun destinationTitle(destination: AppDestination): String = when (destin
     AppDestination.DOWNLOADS -> APP_TITLE
     AppDestination.TORRENTS -> "Torrents"
     AppDestination.SEARCH -> "Search"
+    AppDestination.YOUTUBE -> "YouTube"
     AppDestination.SETTINGS -> "Settings"
     AppDestination.DOWNLOAD_SETTINGS -> "Download settings"
     AppDestination.THEMES -> "Themes"

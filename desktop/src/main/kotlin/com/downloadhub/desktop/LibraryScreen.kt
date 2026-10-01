@@ -142,6 +142,15 @@ fun LibraryScreen(
      */
     var searchOpen by remember { mutableStateOf(false) }
     /**
+     * Whether the YouTube section is open.
+     *
+     * A second flag beside [searchOpen] rather than one shared "panel" state,
+     * because the two panels hold unrelated work - a search and a pasted link -
+     * and switching between them should not wipe either. Only one shows at a
+     * time, and every rail row that is neither closes both.
+     */
+    var youTubeOpen by remember { mutableStateOf(false) }
+    /**
      * How tall the detail pane is, and who changed it.
      *
      * Saved rather than merely remembered, so a file list made tall enough to read is
@@ -206,22 +215,22 @@ fun LibraryScreen(
                         torrentsOnly = state.torrentsTab,
                         width = sidebar,
                         compact = table.narrowSidebar,
-                        // Every row that is not Search closes the search section.
-                        //
-                        // They did not, so the rail looked broken: you could go from
-                        // Downloads to Search and then not back, because clicking All
-                        // Downloads set the group and the category - both of which the
-                        // search panel does not read - and left the panel on screen. It
-                        // read as "the rail stopped working" rather than as one flag that
-                        // was never cleared.
-                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL; searchOpen = false },
-                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL; searchOpen = false },
+                        // Every row that is neither panel closes both. They did not, so the
+                        // rail looked broken: you could go from Downloads to Search and
+                        // then not back, because clicking All Downloads set the group
+                        // and the category - both of which the panels do not read -
+                        // and left the panel on screen.
+                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL; searchOpen = false; youTubeOpen = false },
+                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL; searchOpen = false; youTubeOpen = false },
                         onToggleTorrents = {
                             searchOpen = false
+                            youTubeOpen = false
                             actions.setTorrentsTab(!state.torrentsTab)
                         },
                         searchOpen = searchOpen,
-                        onToggleSearch = { searchOpen = !searchOpen }
+                        onToggleSearch = { searchOpen = !searchOpen; youTubeOpen = false },
+                        youTubeOpen = youTubeOpen,
+                        onToggleYouTube = { youTubeOpen = !youTubeOpen; searchOpen = false }
                     )
                     VerticalRule()
                     Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -234,6 +243,24 @@ fun LibraryScreen(
                             onPick = { magnet ->
                                 searchOpen = false
                                 onOpenAddForLink(magnet)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        return@Column
+                     }
+                     if (youTubeOpen) {
+                        YouTubePanel(
+                            fetch = actions.fetchYouTubeListing,
+                            knownIds = all
+                                .filter { it.source == com.downloadhub.core.DownloadSource.YOUTUBE }
+                                .mapNotNull { com.downloadhub.core.youTubeIdFromUrl(it.url) }
+                                .toSet(),
+                            onQueue = actions.queueYouTubeEntries,
+                            // One video keeps the exact chooser rather than a ceiling:
+                            // the panel lists, the dialog specifies.
+                            onSingle = { url ->
+                                youTubeOpen = false
+                                onOpenAddForLink(url)
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -573,7 +600,10 @@ private fun CategoryRail(
     onToggleTorrents: () -> Unit,
     /** Search is a section rather than a filter, so it is its own boolean. */
     searchOpen: Boolean,
-    onToggleSearch: () -> Unit
+    onToggleSearch: () -> Unit,
+    /** YouTube is a section beside it, for the same reason. */
+    youTubeOpen: Boolean,
+    onToggleYouTube: () -> Unit
 ) {
     // What the table is actually showing, so every number beside it is reachable.
     val scoped = DownloadLibrary.scopedFor(items, torrentsOnly)
@@ -601,7 +631,7 @@ private fun CategoryRail(
                     // A status row is only selected when nothing else is narrowing: the
                     // category and the group are both part of the same query, and two
                     // highlighted rows read as two choices when there is one.
-                    selected = group == entry.group && category == LibraryCategory.ALL && !torrentsOnly && !searchOpen,
+                    selected = group == entry.group && category == LibraryCategory.ALL && !torrentsOnly && !searchOpen && !youTubeOpen,
                     icon = StatusIcons.of(entry.group),
                     compact = compact
                 ) { onGroup(entry.group) }
@@ -609,7 +639,7 @@ private fun CategoryRail(
                 is RailEntry.Category -> RailRow(
                     label = entry.category.label,
                     count = railCount(entry, scoped),
-                    selected = category == entry.category && group == LibraryGroup.ALL && !torrentsOnly && !searchOpen,
+                    selected = category == entry.category && group == LibraryGroup.ALL && !torrentsOnly && !searchOpen && !youTubeOpen,
                     icon = LibraryCategoryIcons.of(entry.category),
                     compact = compact
                 ) { onCategory(entry.category) }
@@ -622,10 +652,18 @@ private fun CategoryRail(
                     compact = compact
                 ) { onToggleSearch() }
 
+                RailEntry.YouTube -> RailRow(
+                    label = "YouTube",
+                    count = 0,
+                    selected = youTubeOpen,
+                    icon = DlmIcons.YouTube,
+                    compact = compact
+                ) { onToggleYouTube() }
+
                 RailEntry.Torrents -> RailRow(
                     label = "Torrents",
                     count = railCount(entry, items),
-                    selected = torrentsOnly && !searchOpen,
+                    selected = torrentsOnly && !searchOpen && !youTubeOpen,
                     icon = DlmIcons.Folder,
                     compact = compact
                 ) { onToggleTorrents() }

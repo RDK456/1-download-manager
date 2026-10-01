@@ -3,9 +3,11 @@ package com.downloadhub.app.ui
 import com.downloadhub.app.ui.AppDestination.ABOUT
 import com.downloadhub.app.ui.AppDestination.DOWNLOADS
 import com.downloadhub.app.ui.AppDestination.DOWNLOAD_SETTINGS
+import com.downloadhub.app.ui.AppDestination.SEARCH
 import com.downloadhub.app.ui.AppDestination.SETTINGS
 import com.downloadhub.app.ui.AppDestination.THEMES
 import com.downloadhub.app.ui.AppDestination.TORRENTS
+import com.downloadhub.app.ui.AppDestination.YOUTUBE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -99,6 +101,8 @@ class NavStackTest {
     fun onlyTheListTabsAreRoots() {
         assertTrue(DOWNLOADS.isRoot)
         assertTrue(TORRENTS.isRoot)
+        assertTrue(SEARCH.isRoot)
+        assertTrue(YOUTUBE.isRoot)
         assertFalse(SETTINGS.isRoot)
         assertFalse(DOWNLOAD_SETTINGS.isRoot)
         assertFalse(THEMES.isRoot)

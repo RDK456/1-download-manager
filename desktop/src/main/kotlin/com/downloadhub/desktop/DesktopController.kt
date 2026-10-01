@@ -95,6 +95,24 @@ data class DesktopActions(
      * dialog simply stops listening.
      */
     val listVideoFormats: (String, (YtDlpEngine.FormatListing) -> Unit) -> Unit,
+    /**
+     * Lists what a pasted link holds: a playlist, album, channel, or one video.
+     *
+     * Same shape as [listVideoFormats] for the same reason: a real process takes
+     * seconds, and a panel that suspended it would have to be careful about being
+     * closed mid-lookup.
+     */
+    val fetchYouTubeListing: (String, (YtDlpEngine.PlaylistFetch) -> Unit) -> Unit,
+    /**
+     * Queues several videos at one quality, skipping what is already queued.
+     *
+     * One call rather than one per row, because the dedup has to see the whole
+     * batch: two rows naming the same video - overlapping playlists do that -
+     * must queue once. Returns how many were actually queued.
+     */
+    val queueYouTubeEntries: (
+        List<com.downloadhub.core.YouTubeEntry>, Boolean, Int?, String
+    ) -> Int,
     val pause: (String) -> Unit,
     val resume: (String) -> Unit,
     /**
@@ -719,6 +737,20 @@ class DesktopController(
                 )
             }
         },
+        fetchYouTubeListing = { url, done ->
+            scope.launch(Dispatchers.IO) {
+                done(
+                    runCatching { ytdlp.fetchPlaylist(url) }.getOrElse { failed ->
+                        YtDlpEngine.PlaylistFetch(
+                            "", emptyList(), false,
+                            "Could not read that link" +
+                                (failed.message?.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty())
+                        )
+                    }
+                )
+            }
+        },
+        queueYouTubeEntries = ::queueYouTubeEntries,
         setFilePriority = { id, index, priority ->
             // Torrents only. An HTTP download has no files to prioritise, and the file
             // list is only ever shown for a torrent, so nothing else can reach this.
@@ -874,6 +906,41 @@ class DesktopController(
             streamFormatId = choice.video.formatId,
             streamAudioFormatId = choice.audio?.formatId
         )
+    }
+
+    /**
+     * Queues a batch of videos at one quality, skipping what is already queued.
+     *
+     * The id is the dedup key, never the title or the URL shape: titles repeat
+     * across uploads, and the same video arrives as `watch?v=`, `youtu.be` and
+     * Shorts links in one afternoon. Returns how many were actually queued, so
+     * the panel can say "12 queued, 3 already there" instead of just closing.
+     */
+    fun queueYouTubeEntries(
+        entries: List<com.downloadhub.core.YouTubeEntry>,
+        audioOnly: Boolean,
+        maxHeight: Int?,
+        audioFormat: String = "m4a"
+    ): Int {
+        val known = store.snapshot()
+            .asSequence()
+            .filter { it.source == DownloadSource.YOUTUBE }
+            .mapNotNull { com.downloadhub.core.youTubeIdFromUrl(it.url) }
+            .toHashSet()
+        var queued = 0
+        entries.forEach { entry ->
+            if (!known.add(entry.id)) return@forEach
+            addDownload(
+                link = entry.url,
+                audioOnly = audioOnly,
+                format = audioFormat.ifBlank { "m4a" },
+                height = if (audioOnly) null else maxHeight,
+                playlist = false,
+                preferredName = entry.title
+            )
+            queued++
+        }
+        return queued
     }
 
     fun addDownload(

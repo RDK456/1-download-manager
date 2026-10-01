@@ -229,4 +229,44 @@ class YouTubeListingTest {
             download.contains("forEachLine") && download.contains("process.waitFor(60")
         )
     }
+
+    /**
+     * The section needs its own rail glyph rather than reusing the filled
+     * triangle, which already means an active download. Two paths because one
+     * stroke and one fill cannot share a path: a ring drawn, a triangle filled.
+     */
+    @Test
+    fun theSectionHasItsOwnGlyph() {
+        val icons = File("src/main/kotlin/com/downloadhub/desktop/DlmIcons.kt").readText()
+        val glyph = icons.substringAfter("val YouTube").substringBefore(".build()")
+        assertTrue("the ring is missing:\n$glyph", glyph.contains("stroke = SolidColor"))
+        assertTrue("the triangle is missing:\n$glyph", glyph.contains("fill = SolidColor"))
+        assertTrue("the triangle points are missing:\n$glyph", glyph.contains("lineTo(16f, 12f)"))
+    }
+
+    /**
+     * The section lists without downloading: one small object per entry, not a
+     * full extraction per video.
+     */
+    @Test
+    fun theSectionFetchesFlatListings() {
+        val engine = File("src/main/kotlin/com/downloadhub/desktop/YtDlpEngine.kt").readText()
+        val fetch = engine.substringAfter("fun fetchPlaylist(").substringBefore("data class PlaylistFetch")
+        assertTrue("no flat playlist fetch:\n$fetch", fetch.contains("--dump-single-json"))
+        assertTrue("entries must stay small:\n$fetch", fetch.contains("--flat-playlist"))
+    }
+
+    /**
+     * Queuing the same playlist twice must not double the queue. Titles repeat
+     * across uploads, so the id is the key - and the batch is deduped as one,
+     * because overlapping playlists repeat entries inside a single fetch.
+     */
+    @Test
+    fun queuingIsDedupedByVideoId() {
+        val controller = File("src/main/kotlin/com/downloadhub/desktop/DesktopController.kt").readText()
+        val queue = controller.substringAfter("fun queueYouTubeEntries(")
+            .substringBefore("fun addDownload(")
+        assertTrue("no id-keyed dedup:\n$queue", queue.contains("known.add(entry.id)"))
+        assertTrue("the batch must report what it queued:\n$queue", queue.contains("return queued"))
+    }
 }

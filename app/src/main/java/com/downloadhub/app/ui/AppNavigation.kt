@@ -12,13 +12,21 @@ enum class AppDestination {
      * should return to the list the user came from rather than walking a stack.
      */
     SEARCH,
+    /**
+     * A pasted YouTube link, listed as downloadables.
+     *
+     * A root beside Search: found versus pasted, the two ways new things
+     * arrive. It replaces the list rather than narrowing it, because a
+     * playlist is not in the queue yet and no filter could show it.
+     */
+    YOUTUBE,
     SETTINGS,
     DOWNLOAD_SETTINGS,
     THEMES,
     ABOUT;
 
-    /** The list tabs and search are roots; everything else is a sub-page. */
-    val isRoot: Boolean get() = this == DOWNLOADS || this == TORRENTS || this == SEARCH
+    /** The list tabs, search and YouTube are roots; everything else is a sub-page. */
+    val isRoot: Boolean get() = this == DOWNLOADS || this == TORRENTS || this == SEARCH || this == YOUTUBE
 }
 
 /** Guard against unbounded growth if a sub-page ever re-navigates to itself. */

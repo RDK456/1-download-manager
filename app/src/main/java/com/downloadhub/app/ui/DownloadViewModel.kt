@@ -26,7 +26,10 @@ import com.downloadhub.app.download.MediaCandidate
 import com.downloadhub.app.download.MediaKind
 import com.downloadhub.app.download.PageScanState
 import com.downloadhub.app.download.PageScanner
+import com.downloadhub.app.download.AppPlaylistFetch
 import com.downloadhub.app.download.YouTubeFormatListing
+import com.downloadhub.app.download.youTubeVideoId
+import com.downloadhub.core.YouTubeEntry
 import com.downloadhub.app.update.YtDlpUpdateState
 import com.downloadhub.app.update.compareVersions
 import java.io.File
@@ -396,6 +399,82 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
      */
     suspend fun listYouTubeFormats(url: String): YouTubeFormatListing =
         app.container.youtubeDownloader.listFormats(url)
+
+    /**
+     * What a pasted link holds, for the YouTube section.
+     *
+     * A playlist, an album, a channel, or one video - the section lists whatever
+     * it was and queues the checked rows.
+     */
+    suspend fun fetchYouTubeListing(url: String): AppPlaylistFetch =
+        app.container.youtubeDownloader.fetchPlaylist(url)
+
+    /**
+     * Queues several videos at one quality, skipping what is already queued.
+     *
+     * The id is the dedup key, never the title or the URL shape. Reports what
+     * happened - "Queued 12, 3 already in the queue" - because a batch that just
+     * closes leaves no way to tell a success from a skip.
+     */
+    fun queueYouTubeEntries(
+        entries: List<YouTubeEntry>,
+        audioOnly: Boolean,
+        maxHeight: Int?,
+        onDone: (queued: Int, skipped: Int) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val known = allDownloads.value
+                .asSequence()
+                .filter { it.source == DownloadSource.YOUTUBE }
+                .mapNotNull { youTubeVideoId(it.url) }
+                .toHashSet()
+            val quality = if (audioOnly) {
+                MediaQuality.AUDIO
+            } else {
+                MediaQuality.entries.firstOrNull { it.maxHeight == maxHeight }
+                    ?: MediaQuality.BEST
+            }
+            val ids = ArrayList<String>()
+            var skipped = 0
+            entries.forEach { entry ->
+                if (!known.add(entry.id)) {
+                    skipped++
+                    return@forEach
+                }
+                runCatching {
+                    repository.create(
+                        DownloadCreateRequest(
+                            source = DownloadSource.YOUTUBE,
+                            url = entry.url,
+                            fileName = entry.title,
+                            category = if (audioOnly) {
+                                DownloadCategory.AUDIO
+                            } else {
+                                DownloadCategory.VIDEO
+                            },
+                            quality = quality.value,
+                            audioFormat = AudioFormat.M4A.value
+                        )
+                    )
+                }.onSuccess { ids += it.id }.onFailure { skipped++ }
+            }
+            if (ids.isNotEmpty()) {
+                DownloadService.start(getApplication(), ids)
+            }
+            onDone(ids.size, skipped)
+            _events.emit(
+                DownloadEvent.Message(
+                    if (ids.isEmpty() && skipped > 0) {
+                        "Everything selected is already in the queue"
+                    } else if (skipped > 0) {
+                        "Queued ${ids.size}, $skipped already in the queue"
+                    } else {
+                        "Queued ${ids.size}"
+                    }
+                )
+            )
+        }
+    }
 
     fun addLink(
         rawLink: String,

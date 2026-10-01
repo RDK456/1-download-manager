@@ -93,6 +93,45 @@ class YoutubeDownloader(
     suspend fun latestStableVersion(): String? = YtDlpUpdateChecker().latestStableVersion()
 
     /**
+     * Lists what a pasted link holds: a playlist, album, channel, or one video.
+     *
+     * `--dump-single-json` answers collections and single videos with the same
+     * shape, and `--flat-playlist` keeps each entry small - a full extraction
+     * downloads a hundred kilobytes per video before the first row can show.
+     * The shared parser reads both, so this never branches on link shape.
+     */
+    suspend fun fetchPlaylist(url: String): AppPlaylistFetch = withContext(Dispatchers.IO) {
+        updateYtDlpIfNeeded()
+        ensureInitialized()
+        try {
+            val request = YoutubeDLRequest(url).apply {
+                addOption("--dump-single-json")
+                addOption("--flat-playlist")
+                addOption("--no-warnings")
+                addOption("--no-playlist")
+                addOption("--socket-timeout", "30")
+            }
+            val out = YoutubeDL.getInstance().execute(request, null, null).out
+            val listing = out?.let { com.downloadhub.core.parseYouTubeListing(it) }
+            if (listing == null || listing.isEmpty) {
+                return@withContext AppPlaylistFetch(
+                    "", emptyList(), false,
+                    "That link held nothing downloadable."
+                )
+            }
+            AppPlaylistFetch(listing.title, listing.entries, listing.single, null)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val reason = (e as? YoutubeDLException)?.message
+                ?.substringAfter("ERROR: ")?.trim()?.takeIf { it.isNotBlank() }
+                ?: e.message?.trim()?.takeIf { it.isNotBlank() }
+                ?: "yt-dlp could not read that link"
+            AppPlaylistFetch("", emptyList(), false, explainAvailability(url, reason))
+        }
+    }
+
+    /**
      * What a link actually offers, for the quality picker.
      *
      * Runs the same extraction the download will run, but stops at the format list:
@@ -307,9 +346,11 @@ class YoutubeDownloader(
                 request.addOption("--audio-format", target.value)
                 request.addOption("--audio-quality", if (target == AudioFormat.OPUS) "5" else "0")
                 request.addOption("--embed-metadata")
+                request.addOption("--embed-thumbnail")
             } else {
                 request.addOption("-f", videoId + (audioId?.let { "+$it" } ?: "+bestaudio"))
                 request.addOption("--merge-output-format", "mp4")
+                request.addOption("--embed-metadata")
             }
             return
         }
@@ -326,6 +367,9 @@ class YoutubeDownloader(
             request.addOption("--audio-format", target.value)
             request.addOption("--audio-quality", if (target == AudioFormat.OPUS) "5" else "0")
             request.addOption("--embed-metadata")
+            // Artwork and details travel inside the file, which is what makes a
+            // downloaded playlist a library rather than a folder of numbered files.
+            request.addOption("--embed-thumbnail")
             return
         }
 
@@ -337,6 +381,7 @@ class YoutubeDownloader(
         }
         request.addOption("-f", selector)
         request.addOption("--merge-output-format", "mp4")
+        request.addOption("--embed-metadata")
     }
 
     private fun estimateTotal(exact: Long, approximate: Long): Long = when {

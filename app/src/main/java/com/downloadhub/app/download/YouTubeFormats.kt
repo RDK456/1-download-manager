@@ -1,9 +1,13 @@
 package com.downloadhub.app.download
 
 import com.downloadhub.core.StreamFormat
+import com.downloadhub.core.YouTubeEntry
 import com.downloadhub.core.chooseStream
+import com.downloadhub.core.filterKnownEntries
 import com.downloadhub.core.offerAudioFormats
 import com.downloadhub.core.offerVideoFormats
+import com.downloadhub.core.parseYouTubeListing
+import com.downloadhub.core.youTubeIdFromUrl
 import com.yausername.youtubedl_android.mapper.VideoFormat
 
 /**
@@ -73,23 +77,22 @@ fun failedYouTubeFormats(reason: String): YouTubeFormatListing =
 /**
  * The video id in a YouTube URL, whatever shape it arrived in.
  *
- * Watch, short, Shorts, embed, live and music URLs all carry the same eleven
- * characters in different places.
+ * One copy, in :core: this used to own its own, and two copies of an
+ * eleven-character regex in two modules is how they drift apart.
  */
-fun youTubeVideoId(url: String): String? {
-    val trimmed = url.trim()
-    // A `watch?v=` on any other host is not a YouTube video, so the host is
-    // checked first: matching the parameter alone invents ids out of strangers.
-    val host = runCatching { java.net.URL(trimmed).host.lowercase() }.getOrNull()
-        ?: return null
-    if (!host.contains("youtube.com") && host != "youtu.be") return null
-    val patterns = listOf(
-        Regex("[?&]v=([A-Za-z0-9_-]{11})"),
-        Regex("youtu\\.be/([A-Za-z0-9_-]{11})"),
-        Regex("youtube\\.com/(?:shorts|embed|live|v)/([A-Za-z0-9_-]{11})")
-    )
-    return patterns.firstNotNullOfOrNull { it.find(trimmed)?.groupValues?.get(1) }
-}
+fun youTubeVideoId(url: String): String? = youTubeIdFromUrl(url)
+
+/**
+ * Drops entries already on record, by id.
+ *
+ * Downloading the same song twice is the one thing the section must never do,
+ * and the id is the only reliable key: titles repeat across uploads, and URLs
+ * vary by shape while the id never does.
+ */
+fun filterQueuedEntries(
+    entries: List<YouTubeEntry>,
+    isKnown: (String) -> Boolean
+): List<YouTubeEntry> = filterKnownEntries(entries, isKnown)
 
 /**
  * Whether YouTube itself admits the video exists: true for public, false for
@@ -114,3 +117,16 @@ fun youTubeVideoLooksPublic(videoId: String): Boolean? = runCatching {
         connection.disconnect()
     }
 }.getOrNull()
+
+/**
+ * What a pasted link holds: a playlist, album, channel, or one video.
+ *
+ * Entries, or why there are none: a collection the extractor refused reads the
+ * same as an empty one unless the reason travels with it.
+ */
+data class AppPlaylistFetch(
+    val title: String,
+    val entries: List<YouTubeEntry>,
+    val single: Boolean,
+    val error: String?
+)

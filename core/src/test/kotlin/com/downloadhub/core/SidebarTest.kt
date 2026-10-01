@@ -80,6 +80,7 @@ class SidebarTest {
                     is RailEntry.Category -> it.category.label
                     RailEntry.Torrents -> "Torrents"
                     RailEntry.Search -> "Search"
+                    RailEntry.YouTube -> "YouTube"
                     is RailEntry.Heading -> null
                 }
             }
@@ -252,6 +253,7 @@ class SidebarTest {
                 is RailEntry.Category -> "category"
                 is RailEntry.Torrents -> "torrents"
                 is RailEntry.Search -> "search"
+                is RailEntry.YouTube -> "youtube"
                 is RailEntry.Heading -> "heading"
             }
         }

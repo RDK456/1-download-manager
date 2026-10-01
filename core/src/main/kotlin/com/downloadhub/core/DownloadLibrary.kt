@@ -106,6 +106,15 @@ sealed interface RailEntry {
      */
     data object Search : RailEntry
 
+    /**
+     * A pasted YouTube link, listed as downloadables.
+     *
+     * Like [Search] it replaces the list rather than narrowing it: a playlist is
+     * not in the queue yet, so no filter could show it. It sits beside Search
+     * because the two are the two ways new things arrive - found versus pasted.
+     */
+    data object YouTube : RailEntry
+
     /** A heading with nothing selectable under it. */
     data class Heading(val label: String) : RailEntry
 }
@@ -127,6 +136,8 @@ fun sidebarEntries(): List<RailEntry> = buildList {
         // reading "Search" above a row reading "Search", which is the duplication this list
         // is arranged to avoid.
         if (index == 0) add(RailEntry.Search)
+        // YouTube beside Search: found versus pasted, the two ways new things arrive.
+        if (index == 0) add(RailEntry.YouTube)
     }
     add(RailEntry.Heading("Categories"))
     // ALL is already up above as "All Downloads"; repeating it here under Categories
@@ -148,6 +159,8 @@ fun railCount(entry: RailEntry, items: List<DownloadItem>): Int = when (entry) {
     // Search holds no downloads: it is a box to type in, and a count beside it would be a
     // count of something it does not contain.
     RailEntry.Search -> 0
+    // YouTube holds no downloads either: a pasted playlist is not in the queue yet.
+    RailEntry.YouTube -> 0
     is RailEntry.Heading -> 0
 }
 

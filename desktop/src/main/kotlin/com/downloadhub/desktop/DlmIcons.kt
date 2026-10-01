@@ -275,4 +275,36 @@ object DlmIcons {
             close()
         }
     }
+
+    /**
+     * A play triangle in a circle: the video section.
+     *
+     * Its own glyph rather than the filled triangle, which already means an
+     * active download in the rail. Two paths because one stroke and one fill
+     * cannot share a path: the ring is drawn, the triangle is filled.
+     */
+    val YouTube: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "YouTube",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(fill = null, stroke = SolidColor(Color.Black), strokeLineWidth = 2f) {
+                // This version's arcTo is the SVG form, so the ring is two
+                // half-circles: top one way, bottom one back.
+                moveTo(3f, 12f)
+                arcTo(9f, 9f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 21f, y1 = 12f)
+                arcTo(9f, 9f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 3f, y1 = 12f)
+                close()
+            }
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(10f, 8.5f)
+                lineTo(16f, 12f)
+                lineTo(10f, 15.5f)
+                close()
+            }
+        }.build()
+    }
 }

@@ -504,6 +504,10 @@ class YtDlpEngine(private val tools: YtDlpTools) {
             args.add("--merge-output-format")
             args.add("mp4")
         }
+        // Artist, title and artwork travel inside the file, which is what makes a
+        // downloaded playlist a library rather than a folder of numbered files.
+        args.add("--embed-metadata")
+        if (request.audioOnly) args.add("--embed-thumbnail")
         args.add(request.url)
 
         // One runner for every download: it consumes output on its own thread while
@@ -536,6 +540,10 @@ class YtDlpEngine(private val tools: YtDlpTools) {
                 // timeout above is minutes away. Thirty seconds of silence means the
                 // network is gone, not slow.
                 "--socket-timeout", "30",
+                // A lookup is not a download: there is nothing to resume, so grinding
+                // through the default retries only moves a refusal from seconds to
+                // minutes. Two attempts, then an answer.
+                "--extractor-retries", "2",
                 url
             ),
             timeoutMinutes = 3
@@ -544,7 +552,10 @@ class YtDlpEngine(private val tools: YtDlpTools) {
             return FormatListing(
                 emptyList(), emptyList(), "", 0L,
                 "Reading that link timed out - the connection stalled for over three " +
-                    "minutes. Check you are online and try again."
+                    "minutes. If your phone on the same network downloads the same " +
+                    "video fine, the block is on this PC: a firewall or antivirus " +
+                    "holding yt-dlp's connections looks exactly like this, and the " +
+                    "fix is allowing it through rather than retrying."
             )
         }
         if (result.first != 0) {
@@ -627,6 +638,10 @@ class YtDlpEngine(private val tools: YtDlpTools) {
             }
             listOf("-f", selector, "--merge-output-format", "mp4")
         }
+        // The track keeps its details: artist, title and artwork travel inside the
+        // file, which is what makes a downloaded playlist a library rather than a
+        // folder of "videoplayback" files. Needs ffmpeg, which is guaranteed above.
+        args += listOf("--embed-metadata", "--embed-thumbnail")
         args += url
         return runStreaming(args, targetDir, onProgress)
     }
@@ -724,6 +739,65 @@ class YtDlpEngine(private val tools: YtDlpTools) {
         }
     }
 
+    /** What [fetchPlaylist] found: entries, or why there are none. */
+    data class PlaylistFetch(
+        val title: String,
+        val entries: List<com.downloadhub.core.YouTubeEntry>,
+        val single: Boolean,
+        val error: String?
+    ) {
+        val isEmpty: Boolean get() = entries.isEmpty() && error == null
+    }
+
+    /**
+     * Lists what a link holds: a playlist, album, channel, or one video.
+     *
+     * `--dump-single-json` answers playlists and single videos with the same
+     * shape, and `--flat-playlist` keeps each entry small - a full extraction
+     * downloads a hundred kilobytes per video before the first row can show.
+     * Same timeouts as the quality lookup, for the same stalled-network reason.
+     */
+    fun fetchPlaylist(url: String): PlaylistFetch {
+        if (!tools.available) {
+            return PlaylistFetch("", emptyList(), false, "yt-dlp is not installed")
+        }
+        val result = run(
+            listOf(
+                tools.ytDlp.absolutePath,
+                "--dump-single-json", "--flat-playlist",
+                "--no-warnings", "--no-playlist",
+                "--socket-timeout", "30",
+                "--extractor-retries", "2",
+                url
+            ),
+            timeoutMinutes = 3
+        )
+        if (result.first == 124) {
+            return PlaylistFetch(
+                "", emptyList(), false,
+                "Reading that link timed out - the connection stalled for over three " +
+                    "minutes. If your phone on the same network reads it fine, the " +
+                    "block is on this PC: a firewall or antivirus holding yt-dlp's " +
+                    "connections looks exactly like this."
+            )
+        }
+        if (result.first != 0 || result.second.isBlank()) {
+            val reason = result.second.lineSequence()
+                .map { it.trim() }
+                .firstOrNull { it.startsWith("ERROR") }
+                ?.removePrefix("ERROR:")?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: "yt-dlp could not read that link"
+            return PlaylistFetch("", emptyList(), false, reason)
+        }
+        val listing = com.downloadhub.core.parseYouTubeListing(result.second)
+            ?: return PlaylistFetch(
+                "", emptyList(), false,
+                "That link held nothing downloadable."
+            )
+        return PlaylistFetch(listing.title, listing.entries, listing.single, null)
+    }
+
     /** What [listFormats] found. */
     data class FormatListing(
         val videoFormats: List<com.downloadhub.core.StreamFormat>,
@@ -775,24 +849,12 @@ class YtDlpEngine(private val tools: YtDlpTools) {
     /**
      * The video id in a YouTube URL, whatever shape it arrived in.
      *
-     * Watch, short, Shorts, embed, live and music URLs all carry the same eleven
-     * characters in different places; matching the place rather than splitting on
-     * fixed positions is what keeps a `youtu.be` link and a `watch?v=` link equal.
+     * One copy, in :core: the app and the message check used to own their own,
+     * and two copies of an eleven-character regex in two modules is how they
+     * drift apart.
      */
-    internal fun extractYouTubeId(url: String): String? {
-        val trimmed = url.trim()
-        // A `watch?v=` on any other host is not a YouTube video, so the host is
-        // checked first: matching the parameter alone invents ids out of strangers.
-        val host = runCatching { java.net.URI(trimmed).host?.lowercase() }.getOrNull()
-            ?: return null
-        if (!host.contains("youtube.com") && host != "youtu.be") return null
-        val patterns = listOf(
-            Regex("[?&]v=([A-Za-z0-9_-]{11})"),
-            Regex("youtu\\.be/([A-Za-z0-9_-]{11})"),
-            Regex("youtube\\.com/(?:shorts|embed|live|v)/([A-Za-z0-9_-]{11})")
-        )
-        return patterns.firstNotNullOfOrNull { it.find(trimmed)?.groupValues?.get(1) }
-    }
+    internal fun extractYouTubeId(url: String): String? =
+        com.downloadhub.core.youTubeIdFromUrl(url)
 
     /**
      * Whether YouTube itself admits the video exists: true for public, false for
