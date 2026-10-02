@@ -32,3 +32,9 @@ keystore/
 
 # Kotlin session scratch
 .kotlin/
+
+# Built extension packages. They are release assets, not source: the script
+# stages them itself, and a stale one left in the repo root is a file
+# nobody meant to commit and everybody has to remember to delete.
+1-download-manager-extension-*.xpi
+1-download-manager-extension-*.zip
