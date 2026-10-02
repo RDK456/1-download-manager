@@ -69,6 +69,7 @@ import com.downloadhub.core.RailEntry
 import com.downloadhub.core.railCount
 import com.downloadhub.core.sidebarEntries
 import com.downloadhub.core.LibraryGroup
+import com.downloadhub.core.LibraryKind
 import com.downloadhub.core.LibraryQuery
 import com.downloadhub.core.LibrarySort
 import com.downloadhub.core.SortDirection
@@ -156,6 +157,14 @@ fun LibraryScreen(
      * time, and every rail row that is neither closes both.
      */
     var youTubeOpen by remember { mutableStateOf(false) }
+    /**
+     * Which kind of download is being looked at, apart from the Torrents tab.
+     *
+     * Its own flag rather than three more booleans, because the three kinds are one
+     * choice and a choice with three parts made in one at a time is a way to end up
+     * scoped to torrents and YouTube at once, which is not a list anyone asked for.
+     */
+    var kindFilter by remember { mutableStateOf(LibraryKind.ALL) }
 
     // A handed-over link opens the section with the link already loading, then
     // is forgotten: later recompositions must not re-fetch it over what was
@@ -186,11 +195,20 @@ fun LibraryScreen(
     var columnWidths by remember { mutableStateOf(ColumnWidths.DEFAULT) }
 
     val all = state.items.map { it.toCoreItem() }
+    /**
+     * Which kind of download the list is showing.
+     *
+     * All, torrents, YouTube, or ordinary downloads. The Torrents tab at the bottom
+     * is the older way of asking the same question, so it is folded in here rather
+     * than kept as a second flag: two flags meaning "torrents only" is how the list
+     * ends up scoped to torrents while the rail says something else.
+     */
+    val kind = if (state.torrentsTab) LibraryKind.TORRENT else kindFilter
     val query = LibraryQuery(
         category = category,
         group = group,
         search = search,
-        torrentsOnly = state.torrentsTab,
+        kind = kind,
         sort = sort
     )
     val visible = DownloadLibrary.visible(all, query)
@@ -228,7 +246,7 @@ fun LibraryScreen(
                         items = all,
                         category = category,
                         group = group,
-                        torrentsOnly = state.torrentsTab,
+                        kind = kind,
                         width = sidebar,
                         compact = table.narrowSidebar,
                         // Every row that is neither panel closes both. They did not, so the
@@ -236,12 +254,19 @@ fun LibraryScreen(
                         // then not back, because clicking All Downloads set the group
                         // and the category - both of which the panels do not read -
                         // and left the panel on screen.
-                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL; searchOpen = false; youTubeOpen = false },
-                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL; searchOpen = false; youTubeOpen = false },
-                        onToggleTorrents = {
+                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL; kindFilter = LibraryKind.ALL; searchOpen = false; youTubeOpen = false },
+                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL; kindFilter = LibraryKind.ALL; searchOpen = false; youTubeOpen = false },
+                        // Picking a kind drops the category and the status as well, so the
+                        // list is exactly the kind asked for and not the kind intersected
+                        // with whatever was selected before. Choosing a second kind is the
+                        // way to change your mind about the first.
+                        onKind = {
+                            selected = emptySet()
+                            category = LibraryCategory.ALL
+                            group = LibraryGroup.ALL
+                            kindFilter = if (kind == it) LibraryKind.ALL else it
                             searchOpen = false
                             youTubeOpen = false
-                            actions.setTorrentsTab(!state.torrentsTab)
                         },
                         searchOpen = searchOpen,
                         onToggleSearch = { searchOpen = !searchOpen; youTubeOpen = false },
@@ -613,7 +638,7 @@ private fun CategoryRail(
     items: List<DownloadItem>,
     category: LibraryCategory,
     group: LibraryGroup,
-    torrentsOnly: Boolean,
+    kind: LibraryKind,
     /**
      * Sized from the window by the caller. A fixed 230 dp is a third of a 700 dp
      * window, which leaves nothing for the thing the window is for, so it narrows
@@ -624,7 +649,7 @@ private fun CategoryRail(
     compact: Boolean,
     onCategory: (LibraryCategory) -> Unit,
     onGroup: (LibraryGroup) -> Unit,
-    onToggleTorrents: () -> Unit,
+    onKind: (LibraryKind) -> Unit,
     /** Search is a section rather than a filter, so it is its own boolean. */
     searchOpen: Boolean,
     onToggleSearch: () -> Unit,
@@ -633,7 +658,11 @@ private fun CategoryRail(
     onToggleYouTube: () -> Unit
 ) {
     // What the table is actually showing, so every number beside it is reachable.
-    val scoped = DownloadLibrary.scopedFor(items, torrentsOnly)
+    //
+    // The kind counts deliberately do not use this. They are counted over the whole
+    // queue, because a count of zero beside Torrents when the list is already scoped to
+    // YouTube says "there are none" when it means "not this list".
+    val scoped = DownloadLibrary.scopedFor(items, kind)
     Column(
         modifier = Modifier
             .width(width)
@@ -656,9 +685,10 @@ private fun CategoryRail(
                     label = entry.group.label,
                     count = railCount(entry, scoped),
                     // A status row is only selected when nothing else is narrowing: the
-                    // category and the group are both part of the same query, and two
-                    // highlighted rows read as two choices when there is one.
-                    selected = group == entry.group && category == LibraryCategory.ALL && !torrentsOnly && !searchOpen && !youTubeOpen,
+                    // category, the group and the kind are all part of the same query,
+                    // and two highlighted rows read as two choices when there is one.
+                    selected = group == entry.group && category == LibraryCategory.ALL &&
+                        kind == LibraryKind.ALL && !searchOpen && !youTubeOpen,
                     icon = StatusIcons.of(entry.group),
                     compact = compact
                 ) { onGroup(entry.group) }
@@ -666,10 +696,21 @@ private fun CategoryRail(
                 is RailEntry.Category -> RailRow(
                     label = entry.category.label,
                     count = railCount(entry, scoped),
-                    selected = category == entry.category && group == LibraryGroup.ALL && !torrentsOnly && !searchOpen && !youTubeOpen,
+                    selected = category == entry.category && group == LibraryGroup.ALL &&
+                        kind == LibraryKind.ALL && !searchOpen && !youTubeOpen,
                     icon = LibraryCategoryIcons.of(entry.category),
                     compact = compact
                 ) { onCategory(entry.category) }
+
+                // The three kinds. Selecting one clears the category and the status, so
+                // the query says one thing rather than three that happen to agree.
+                is RailEntry.Kind -> RailRow(
+                    label = entry.kind.label,
+                    count = railCount(entry, items),
+                    selected = kind == entry.kind && !searchOpen && !youTubeOpen,
+                    icon = LibraryKindIcons.of(entry.kind),
+                    compact = compact
+                ) { onKind(entry.kind) }
 
                 RailEntry.Search -> RailRow(
                     label = "Search",
@@ -686,16 +727,20 @@ private fun CategoryRail(
                     icon = DlmIcons.YouTube,
                     compact = compact
                 ) { onToggleYouTube() }
-
-                RailEntry.Torrents -> RailRow(
-                    label = "Torrents",
-                    count = railCount(entry, items),
-                    selected = torrentsOnly && !searchOpen && !youTubeOpen,
-                    icon = DlmIcons.Folder,
-                    compact = compact
-                ) { onToggleTorrents() }
             }
         }
+    }
+}
+
+/** An icon for each kind, so the three read as three rather than as one list twice. */
+private object LibraryKindIcons {
+    fun of(kind: LibraryKind): androidx.compose.ui.graphics.vector.ImageVector? = when (kind) {
+        // The whole queue gets no icon, like All Downloads: there is nothing in it that
+        // is not in one of the other three.
+        LibraryKind.ALL -> null
+        LibraryKind.TORRENT -> DlmIcons.Folder
+        LibraryKind.YOUTUBE -> DlmIcons.YouTube
+        LibraryKind.NORMAL -> DlmIcons.ArrowDownward
     }
 }
 

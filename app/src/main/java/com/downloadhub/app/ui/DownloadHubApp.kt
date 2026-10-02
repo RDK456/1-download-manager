@@ -11,6 +11,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,6 +44,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.documentfile.provider.DocumentFile
 import com.downloadhub.app.BuildConfig
+import com.downloadhub.core.LibraryKind
 import com.downloadhub.app.R
 import com.downloadhub.app.data.local.DownloadEntity
 import com.downloadhub.app.data.model.DownloadCategory
@@ -126,6 +129,8 @@ fun DownloadHubApp(
         val mainSummary by viewModel.mainSummary.collectAsStateWithLifecycle()
         val torrentSummary by viewModel.torrentSummary.collectAsStateWithLifecycle()
         val categoryCounts by viewModel.categoryCounts.collectAsStateWithLifecycle()
+    val kind by viewModel.currentKind.collectAsStateWithLifecycle()
+    val kindCounts by viewModel.kindCounts.collectAsStateWithLifecycle()
         val torrentCategoryCounts by viewModel.torrentCategoryCounts.collectAsStateWithLifecycle()
         val hasActiveFilter by viewModel.hasActiveFilter.collectAsStateWithLifecycle()
         val selectedItem by viewModel.selectedDownload.collectAsStateWithLifecycle()
@@ -358,10 +363,13 @@ fun DownloadHubApp(
                         loader = viewModel.thumbnailCache,
                         filter = filter,
                         category = category,
+                        kind = kind,
+                        kindCounts = kindCounts,
                         query = query,
                         onQueryChange = viewModel::setQuery,
                         onFilterChange = viewModel::setFilter,
                         onCategoryChange = viewModel::setCategoryFilter,
+                        onKindChange = viewModel::setKindFilter,
                         onSelect = viewModel::select,
                         onPause = viewModel::pause,
                         onResume = viewModel::resume,
@@ -378,10 +386,15 @@ fun DownloadHubApp(
                         loader = viewModel.thumbnailCache,
                         filter = filter,
                         category = category,
+                        kind = LibraryKind.TORRENT,
+                        kindCounts = kindCounts,
                         query = query,
                         onQueryChange = viewModel::setQuery,
                         onFilterChange = viewModel::setFilter,
                         onCategoryChange = viewModel::setCategoryFilter,
+                        // Never offered on this tab, so anything arriving here is the
+                        // Torrents tab itself asking for torrents.
+                        onKindChange = { viewModel.setKindFilter(it) },
                         onSelect = viewModel::select,
                         onPause = viewModel::pause,
                         onResume = viewModel::resume,
@@ -548,6 +561,46 @@ fun DownloadHubApp(
     }
 }
 
+/**
+ * All, Torrents, YouTube and Downloads, as a row of chips.
+ *
+ * Always visible rather than hidden until something is chosen: the whole point of
+ * the split is that the three kinds can be told apart at a glance, and a control
+ * that only appears once it has been used is a control nobody finds. All is first
+ * and stays the default, so the tab still opens on the entire queue.
+ *
+ * A kind with nothing in it is still shown, dimmed rather than hidden. A chip that
+ * appears only once you have something of that kind is a chip you cannot press to go
+ * there and be told the truth.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun KindFilterRow(
+    kind: LibraryKind,
+    counts: Map<LibraryKind, Int>,
+    onKindChange: (LibraryKind) -> Unit
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        LibraryKind.entries.forEach { option ->
+            val count = counts[option] ?: 0
+            val selected = option == kind
+            FilterChip(
+                selected = selected,
+                onClick = { onKindChange(option) },
+                enabled = option == LibraryKind.ALL || count > 0 || selected,
+                label = {
+                    Text(if (count > 0) "${option.label} $count" else option.label)
+                }
+            )
+        }
+    }
+}
+
 @Composable
 private fun DownloadsScreen(
     items: List<DownloadEntity>,
@@ -556,10 +609,13 @@ private fun DownloadsScreen(
     loader: com.downloadhub.app.download.ThumbnailCache,
     filter: DownloadFilter,
     category: DownloadCategory?,
+    kind: LibraryKind,
+    kindCounts: Map<LibraryKind, Int>,
     query: String,
     onQueryChange: (String) -> Unit,
     onFilterChange: (DownloadFilter) -> Unit,
     onCategoryChange: (DownloadCategory?) -> Unit,
+    onKindChange: (LibraryKind) -> Unit,
     onSelect: (String) -> Unit,
     onPause: (String) -> Unit,
     onResume: (String) -> Unit,
@@ -589,7 +645,17 @@ private fun DownloadsScreen(
             },
             leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) }
         )
-        if (filter != DownloadFilter.ALL || category != null) {
+        // The kinds, on the Downloads tab only. The Torrents tab is already one kind,
+        // and offering three ways to ask for torrents on a screen that is torrents is
+        // a row of chips where one of them is always right.
+        if (!showTorrentAction) {
+            KindFilterRow(
+                kind = kind,
+                counts = kindCounts,
+                onKindChange = onKindChange
+            )
+        }
+        if (kind != LibraryKind.ALL || filter != DownloadFilter.ALL || category != null) {
             ActiveFilterRow(
                 filter = filter,
                 category = category,

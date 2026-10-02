@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * The sidebar.
@@ -78,7 +79,7 @@ class SidebarTest {
                 when (it) {
                     is RailEntry.Status -> it.group.label
                     is RailEntry.Category -> it.category.label
-                    RailEntry.Torrents -> "Torrents"
+                    is RailEntry.Kind -> it.kind.label
                     RailEntry.Search -> "Search"
                     RailEntry.YouTube -> "YouTube"
                     is RailEntry.Heading -> null
@@ -153,7 +154,7 @@ class SidebarTest {
             val expected = scoped.count { group.matches(it) }
             val shown = DownloadLibrary.visible(
                 scoped,
-                LibraryQuery(group = group, torrentsOnly = false)
+                LibraryQuery(group = group)
             ).size
             assertEquals(
                 "the rail says ${railCount(RailEntry.Status(group), scoped)} for ${group.label} " +
@@ -192,7 +193,7 @@ class SidebarTest {
         // they can be seen at all.
         val onlyTorrents = DownloadLibrary.visible(
             mixed,
-            LibraryQuery(torrentsOnly = true)
+            LibraryQuery(kind = LibraryKind.TORRENT)
         )
         assertEquals(2, onlyTorrents.size)
         assertTrue(onlyTorrents.all { it.isTorrent })
@@ -220,15 +221,72 @@ class SidebarTest {
      */
     @Test
     fun torrentsAreCountedTheSameOnEitherTab() {
-        assertEquals(2, railCount(RailEntry.Torrents, mixed))
+        val torrents = RailEntry.Kind(LibraryKind.TORRENT)
+        assertEquals(2, railCount(torrents, mixed))
         assertEquals(
             2,
-            railCount(RailEntry.Torrents, DownloadLibrary.scopedFor(mixed, torrentsOnly = false))
+            railCount(torrents, DownloadLibrary.scopedFor(mixed, torrentsOnly = false))
         )
         assertEquals(
             2,
-            railCount(RailEntry.Torrents, DownloadLibrary.scopedFor(mixed, torrentsOnly = true))
+            railCount(torrents, DownloadLibrary.scopedFor(mixed, torrentsOnly = true))
         )
+    }
+
+    /**
+     * A kind's count must be taken over the whole queue, not over the narrowed list.
+     *
+     * Scoped to YouTube and then reading the Torrents count would otherwise say zero,
+     * which means "there are none" and not "not the list you are looking at" - and
+     * zero is the number that stops someone pressing it. railCount counts what it is
+     * handed, so the responsibility is on the caller to hand it the whole queue.
+     */
+    @Test
+    fun theKindRowsAreCountedOverTheWholeQueueAndTheStateRowsOverTheList() {
+        // The fixture has no YouTube downloads, so the narrow list is torrents - which
+        // is the same shape of question: one kind excluded, the other counted.
+        val torrentsOnly = DownloadLibrary.scopedFor(mixed, LibraryKind.TORRENT)
+        assertTrue("the narrowed list is not empty for this to mean anything", torrentsOnly.isNotEmpty())
+
+        // From :core's working directory, so the path climbs out of the module.
+        val rail = File("../desktop/src/main/kotlin/com/downloadhub/desktop/LibraryScreen.kt").readText()
+        val kindRows = rail.substringAfter("is RailEntry.Kind -> RailRow(")
+            .substringBefore("RailEntry.Search")
+        assertTrue(
+            "a kind row must be counted over the whole queue:\n$kindRows",
+            kindRows.contains("railCount(entry, items)")
+        )
+        val stateRows = rail.substringAfter("is RailEntry.Status -> RailRow(")
+            .substringBefore("is RailEntry.Category -> RailRow(")
+        assertTrue(
+            "a state row counts what the table is showing:\n$stateRows",
+            stateRows.contains("railCount(entry, scoped)")
+        )
+        // And the two really do differ, so the distinction is not academic.
+        assertEquals(2, railCount(RailEntry.Kind(LibraryKind.TORRENT), mixed))
+        assertEquals(0, railCount(RailEntry.Kind(LibraryKind.NORMAL), torrentsOnly))
+    }
+
+    /**
+     * The three kinds together are the whole queue, and All is the whole queue.
+     *
+     * The split adds ways to narrow. If anything fell between the three, a download
+     * would exist that no row could produce - which is what happened when YouTube was
+     * grouped with ordinary links and could not be asked for on its own.
+     */
+    @Test
+    fun theThreeKindsAddUpToEverything() {
+        val total = mixed.size
+        val split = LibraryKind.entries
+            .filter { it.isFilter }
+            .sumOf { kind -> DownloadLibrary.kindCount(mixed, kind) }
+        assertEquals("no download may fall between the kinds", total, split)
+        assertEquals(total, DownloadLibrary.kindCount(mixed, LibraryKind.ALL))
+        // And each download is in exactly one of them.
+        mixed.forEach { item ->
+            val hits = LibraryKind.entries.count { kind -> kind.isFilter && kind.matches(item) }
+            assertEquals("${item.fileName} is in $hits kinds", 1, hits)
+        }
     }
 
     @Test
@@ -246,20 +304,38 @@ class SidebarTest {
     }
 
     @Test
-    fun theOrderIsStatesThenCategoriesThenTorrents() {
+    fun theKindsAreUnderTheirOwnHeadingAndDoNotRepeatAll() {
+        val entries = sidebarEntries()
+        val at = entries.indexOfFirst { it is RailEntry.Heading && it.label == "Kinds" }
+        assertTrue("there must be a Kinds heading", at >= 0)
+        val after = entries.drop(at + 1)
+            .takeWhile { it !is RailEntry.Heading }
+            .filterIsInstance<RailEntry.Kind>()
+        assertEquals(3, after.size)
+        assertEquals(
+            listOf(LibraryKind.TORRENT, LibraryKind.YOUTUBE, LibraryKind.NORMAL),
+            after.map { it.kind }
+        )
+        // All Downloads is the top row and still means everything; repeating it under
+        // Kinds would be the same entry twice.
+        assertFalse(after.any { it.kind == LibraryKind.ALL })
+    }
+
+    @Test
+    fun theOrderIsStatesThenCategoriesThenKinds() {
         val kinds = sidebarEntries().map {
             when (it) {
                 is RailEntry.Status -> "state"
                 is RailEntry.Category -> "category"
-                is RailEntry.Torrents -> "torrents"
+                is RailEntry.Kind -> "kind"
                 is RailEntry.Search -> "search"
                 is RailEntry.YouTube -> "youtube"
                 is RailEntry.Heading -> "heading"
             }
         }
         val firstCategory = kinds.indexOf("category")
-        val firstTorrent = kinds.indexOf("torrents")
+        val firstKind = kinds.indexOf("kind")
         assertTrue("all the states come first", firstCategory > kinds.indexOfLast { it == "state" })
-        assertTrue("torrents come last", firstTorrent > firstCategory)
+        assertTrue("the kinds come last", firstKind > firstCategory)
     }
 }

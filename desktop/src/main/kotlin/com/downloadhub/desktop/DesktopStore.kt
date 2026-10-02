@@ -326,6 +326,18 @@ class DesktopStore(initial: List<QueuedDownload> = emptyList()) {
         initial.forEach { items[it.id] = it }
     }
 
+    /**
+     * Every read of the queue takes the lock.
+     *
+     * This one did not, and it is the one that matters: it is the only way the screen
+     * reads the queue, so it runs on the UI thread while the torrent poll is calling
+     * [update] several times a second from its own thread. [items] is a LinkedHashMap
+     * and [items.values].toList() walks it from beginning to end, so a single put
+     * landing mid-walk threw ConcurrentModificationException out of [refresh] - on the
+     * thread building the state, before it could be assigned, leaving the list showing
+     * whatever the last build that survived happened to contain. That is a list that
+     * comes and goes on its own.
+     */
     @Synchronized
     fun snapshot(): List<QueuedDownload> = items.values.toList()
 

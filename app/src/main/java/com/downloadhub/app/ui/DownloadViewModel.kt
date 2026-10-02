@@ -29,6 +29,7 @@ import com.downloadhub.app.download.PageScanner
 import com.downloadhub.app.download.AppPlaylistFetch
 import com.downloadhub.app.download.YouTubeFormatListing
 import com.downloadhub.app.download.youTubeVideoId
+import com.downloadhub.core.LibraryKind
 import com.downloadhub.core.YouTubeEntry
 import com.downloadhub.app.update.YtDlpUpdateState
 import com.downloadhub.app.update.compareVersions
@@ -84,16 +85,31 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     /** Shared artwork cache handed to the download cards. */
     val thumbnailCache = app.container.thumbnailCache
 
+    // SharingStarted.Lazily, and this is the whole fix for a download list that
+    // would appear and then vanish.
+    //
+    // WhileSubscribed(5_000) stops collecting the moment the last screen watching
+    // the list goes away, and restarts it later with the *initial* value it was
+    // given. For a list that initial value is empty, so navigating to another tab
+    // and coming back after five seconds put an empty list on screen and left every
+    // list derived from it - the torrent list, both tab summaries, the category
+    // counts - showing nothing but their defaults until the database happened to
+    // re-emit. The list came and went on its own, and only a restart cleared it.
+    //
+    // Lazily starts the collection on the first subscription and then keeps it, so
+    // the last real list is held for as long as the screen exists. It costs nothing
+    // to keep alive: Room's flow is an invalidation tracker that only re-queries
+    // when the table actually changes.
     val allDownloads: StateFlow<List<DownloadEntity>> = repository.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val themeMode: StateFlow<ThemeMode> = settings.themeMode
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThemeMode.SYSTEM)
+        .stateIn(viewModelScope, SharingStarted.Lazily, ThemeMode.SYSTEM)
     val appTheme: StateFlow<AppTheme> = settings.appTheme
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppTheme.MINT)
+        .stateIn(viewModelScope, SharingStarted.Lazily, AppTheme.MINT)
     val downloadSettings: StateFlow<DownloadSettings> = settings.downloadSettings
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadSettings())
+        .stateIn(viewModelScope, SharingStarted.Lazily, DownloadSettings())
     val destinationTreeUri: StateFlow<String?> = settings.destinationTreeUri
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        .stateIn(viewModelScope, SharingStarted.Lazily, null)
     private val _downloaderVersion = MutableStateFlow(
         app.container.youtubeDownloader.currentVersion() ?: "Bundled"
     )
@@ -172,6 +188,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     private val query = MutableStateFlow("")
     private val filter = MutableStateFlow(DownloadFilter.ALL)
     private val categoryFilter = MutableStateFlow<DownloadCategory?>(null)
+    private val kindFilter = MutableStateFlow(LibraryKind.ALL)
     private val _selectedId = MutableStateFlow<String?>(null)
     private val _editorSeed = MutableStateFlow<EditorSeed?>(null)
     private val _pageScan = MutableStateFlow<PageScanState>(PageScanState.Idle)
@@ -183,26 +200,33 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     val pageScan: StateFlow<PageScanState> = _pageScan.asStateFlow()
     val currentFilter: StateFlow<DownloadFilter> = filter
     val currentCategory: StateFlow<DownloadCategory?> = categoryFilter
+    val currentKind: StateFlow<LibraryKind> = kindFilter
     val searchQuery: StateFlow<String> = query
 
     /**
-     * The Downloads tab never shows torrents: magnet and .torrent transfers live
-     * exclusively in the Torrents tab.
+     * The Downloads tab, narrowed to one kind of download.
+     *
+     * It used to draw a line through the whole list and show only what was not a
+     * torrent, which left YouTube downloads and ordinary links in one list of
+     * unrelated things. The kinds are now a filter with All as the default, so All
+     * still means the entire queue - torrents included - and the Torrents tab beside
+     * it is a shortcut rather than the only way to see one.
      */
     val visibleDownloads: StateFlow<List<DownloadEntity>> = combine(
         allDownloads,
         query,
         filter,
-        categoryFilter
-    ) { items, search, selectedFilter, selectedCategory ->
+        categoryFilter,
+        kindFilter
+    ) { items, search, selectedFilter, selectedCategory, selectedKind ->
         val normalized = search.trim().lowercase()
         items.filter { item ->
-            item.source != DownloadSource.TORRENT &&
+            selectedKind.matches(item.source.name) &&
                 matchesSearch(item, normalized) &&
                 matchesStatus(item, selectedFilter) &&
                 matchesCategory(item, selectedCategory)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val visibleTorrents: StateFlow<List<DownloadEntity>> = combine(
         allDownloads,
@@ -217,29 +241,44 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 matchesStatus(item, selectedFilter) &&
                 matchesCategory(item, selectedCategory)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    val mainSummary: StateFlow<TabSummary> = allDownloads
-        .map { list -> list.filter { it.source != DownloadSource.TORRENT }.toSummary() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TabSummary())
+    val mainSummary: StateFlow<TabSummary> = combine(allDownloads, kindFilter) { list, kind ->
+        list.filter { kind.matches(it.source.name) }.toSummary()
+    }.stateIn(viewModelScope, SharingStarted.Lazily, TabSummary())
 
     val torrentSummary: StateFlow<TabSummary> = allDownloads
         .map { list -> list.filter { it.source == DownloadSource.TORRENT }.toSummary() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TabSummary())
+        .stateIn(viewModelScope, SharingStarted.Lazily, TabSummary())
 
     /** Category counts for the filter sheet; torrents and files are counted apart. */
     val categoryCounts: StateFlow<Map<DownloadCategory, Int>> = allDownloads
         .map { list -> list.countCategories { it.source != DownloadSource.TORRENT } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
+
+    /**
+     * How many of each kind there are, for the row of kind chips.
+     *
+     * Counted over the whole queue rather than over the narrowed list, so a chip does
+     * not read zero merely because it is not the one being shown - a zero beside
+     * Torrents means there are no torrents, and a count has to be able to say that.
+     */
+    val kindCounts: StateFlow<Map<LibraryKind, Int>> = allDownloads
+        .map { list ->
+            LibraryKind.entries.associateWith { kind ->
+                list.count { kind.matches(it.source.name) }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
 
     /** Counts for the Torrents tab, whose categories are derived from the payload. */
     val torrentCategoryCounts: StateFlow<Map<DownloadCategory, Int>> = allDownloads
         .map { list -> list.countCategories { it.source == DownloadSource.TORRENT } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
 
     val selectedDownload: StateFlow<DownloadEntity?> = combine(allDownloads, _selectedId) { items, id ->
         items.firstOrNull { it.id == id }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    }.stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     fun setFilter(value: DownloadFilter) {
         filter.value = value
@@ -253,14 +292,26 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         categoryFilter.value = value
     }
 
+    fun setKindFilter(value: LibraryKind) {
+        kindFilter.value = value
+    }
+
     fun resetFilters() {
         filter.value = DownloadFilter.ALL
         categoryFilter.value = null
+        kindFilter.value = LibraryKind.ALL
     }
 
-    val hasActiveFilter: StateFlow<Boolean> = combine(filter, categoryFilter) { status, category ->
-        status != DownloadFilter.ALL || category != null
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    /**
+     * Whether anything is narrowing the list.
+     *
+     * Says yes for a kind that is not All, so choosing one and then hitting reset
+     * still looks like there is something to clear.
+     */
+    val hasActiveFilter: StateFlow<Boolean> = combine(filter, categoryFilter, kindFilter) {
+            status, category, kind ->
+        status != DownloadFilter.ALL || category != null || kind != LibraryKind.ALL
+    }.stateIn(viewModelScope, SharingStarted.Lazily, false)
 
     fun select(id: String?) {
         _selectedId.value = id

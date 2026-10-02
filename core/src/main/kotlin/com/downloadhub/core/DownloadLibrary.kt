@@ -79,6 +79,60 @@ enum class LibraryGroup(val label: String) {
 }
 
 /**
+ * Which kind of download a list is looking at.
+ *
+ * A queue holds three quite different things that happen to be called downloads: a
+ * torrent, a video pulled off YouTube, and an ordinary file from a link. They are
+ * not the same to live with. A torrent brings a swarm and a file list and a share
+ * limit; a YouTube download is chosen from a quality list and is really a video
+ * with a thumbnail; an ordinary download is just bytes arriving at a path. Asked
+ * for all at once they are a list nobody can read, and picking out the one kind you
+ * wanted meant picking through all of them.
+ *
+ * So they get their own lists, and [ALL] still means everything - the split adds
+ * ways to narrow, it does not take any away. A download is in exactly one of
+ * TORRENT, YOUTUBE and NORMAL, and the three together are the whole queue, which is
+ * what [LibraryCounts] is checked against.
+ *
+ * YouTube is separated from NORMAL rather than treated as a link that happens to
+ * play: it arrived from somewhere else, it can be several files from one paste, and
+ * it is downloaded by a different program. Grouping it with ordinary links left it
+ * invisible in the only list people looked at.
+ */
+enum class LibraryKind(val label: String) {
+    ALL("All Downloads"),
+    TORRENT("Torrents"),
+    YOUTUBE("YouTube"),
+    NORMAL("Downloads");
+
+    fun matches(item: DownloadItem): Boolean = matches(item.source.name)
+
+    /**
+     * The same rule, for a source that is not this module's [DownloadSource].
+     *
+     * Android keeps its own copy of the source enum - it has its own entity, its own
+     * database and its own serialisation, and sharing one enum with this module would
+     * mean the JVM one on an Android classpath. So the rule is expressed against the
+     * name, which both copies spell the same way, rather than written out a second
+     * time on each platform where the two could quietly disagree about which downloads
+     * count as YouTube.
+     */
+    fun matches(sourceName: String): Boolean = when (this) {
+        ALL -> true
+        TORRENT -> sourceName == "TORRENT"
+        YOUTUBE -> sourceName == "YOUTUBE"
+        // The remainder, said as a subtraction rather than as its own test, so a
+        // download arriving from somewhere new lands in a list rather than in
+        // nowhere. A source added later and not added to this enum is a download
+        // that exists and cannot be seen.
+        NORMAL -> sourceName != "TORRENT" && sourceName != "YOUTUBE"
+    }
+
+    /** The three real kinds, for the rail - [ALL] is the row above them. */
+    val isFilter: Boolean get() = this != ALL
+}
+
+/**
  * One entry in the sidebar.
  *
  * The rail is built from this rather than assembled inside each platform's composable, so
@@ -92,8 +146,15 @@ sealed interface RailEntry {
     /** A file category. */
     data class Category(val category: LibraryCategory) : RailEntry
 
-    /** Torrents only. A filter rather than a status, so it is its own kind. */
-    data object Torrents : RailEntry
+    /**
+     * A kind of download: torrents, YouTube, or ordinary downloads.
+     *
+     * Its own kind of entry because it is a third axis, not a fourth status or a
+     * fifth category - it says where the bytes came from, while the others say how
+     * far along they are and what the file is. It was [Torrents] alone, and the
+     * other two kinds had nowhere to go.
+     */
+    data class Kind(val kind: LibraryKind) : RailEntry
 
     /**
      * Find something to download.
@@ -145,17 +206,29 @@ fun sidebarEntries(): List<RailEntry> = buildList {
     LibraryCategory.entries
         .filter { it != LibraryCategory.ALL }
         .forEach { add(RailEntry.Category(it)) }
-    // No heading above Torrents. A heading reading "Torrents" above a row reading
-    // "Torrents" is the same duplication the rail is being fixed for, and it is the one
-    // the list itself would have let back in.
-    add(RailEntry.Torrents)
+    // The three kinds, under a heading, after the categories.
+    //
+    // The kinds used to be one unlabelled row at the very bottom called Torrents, with
+    // nothing to say what it was a kind of and no way to ask for the other two. A
+    // heading here is worth it because the rows under it do not repeat it: the heading
+    // says "Kinds" and the rows say Torrents, YouTube and Downloads.
+    //
+    // All Downloads is not repeated here either. It is the top row, and it is the
+    // whole queue - which is the point of the split, not a thing it takes away.
+    add(RailEntry.Heading("Kinds"))
+    LibraryKind.entries
+        .filter { it.isFilter }
+        .forEach { add(RailEntry.Kind(it)) }
 }
 
 /** How many downloads an entry holds, out of what the current tab is showing. */
 fun railCount(entry: RailEntry, items: List<DownloadItem>): Int = when (entry) {
     is RailEntry.Status -> items.count(entry.group::matches)
     is RailEntry.Category -> items.count(entry.category::matches)
-    RailEntry.Torrents -> items.count { it.isTorrent }
+    // Counted over everything rather than over the already-narrowed list, or choosing
+    // Torrents would leave YouTube and Downloads reading zero - and a count of zero
+    // beside a row means "there are none", not "not the one you are looking at".
+    is RailEntry.Kind -> items.count(entry.kind::matches)
     // Search holds no downloads: it is a box to type in, and a count beside it would be a
     // count of something it does not contain.
     RailEntry.Search -> 0
@@ -193,13 +266,23 @@ data class LibraryQuery(
     val category: LibraryCategory = LibraryCategory.ALL,
     val group: LibraryGroup = LibraryGroup.ALL,
     val search: String = "",
-    val torrentsOnly: Boolean = false,
+    val kind: LibraryKind = LibraryKind.ALL,
     val sort: LibrarySort = LibrarySort.RECENT
 ) {
+    /**
+     * Whether this query is scoped to torrents alone.
+     *
+     * Kept as a read-only view of [kind] rather than a second field, so the two can
+     * never disagree: a query saying "torrents only" and a query saying "torrents,
+     * finished" were once separate booleans, and only one of them was consulted.
+     */
+    val torrentsOnly: Boolean get() = kind == LibraryKind.TORRENT
+
     fun matches(item: DownloadItem): Boolean {
-        // Only narrows when it is on. `torrentsOnly != item.isTorrent` would exclude
-        // torrents from the main list, which is a queue silently missing downloads.
-        if (torrentsOnly && !item.isTorrent) return false
+        // Only narrows when it is on. `kind != ALL` with the branches the wrong way
+        // round would exclude torrents from the main list, which is a queue silently
+        // missing downloads.
+        if (!kind.matches(item)) return false
         if (!category.matches(item)) return false
         if (!group.matches(item)) return false
         if (search.isNotBlank()) {
@@ -231,7 +314,20 @@ object DownloadLibrary {
      * before.
      */
     fun scopedFor(items: List<DownloadItem>, torrentsOnly: Boolean): List<DownloadItem> =
-        if (torrentsOnly) items.filter { it.isTorrent } else items
+        scopedFor(items, if (torrentsOnly) LibraryKind.TORRENT else LibraryKind.ALL)
+
+    /**
+     * The whole queue, or one kind of it.
+     *
+     * [LibraryKind.ALL] hands back the same list it was given rather than a filtered
+     * copy, so a caller that is not filtering pays nothing.
+     */
+    fun scopedFor(items: List<DownloadItem>, kind: LibraryKind): List<DownloadItem> =
+        if (kind == LibraryKind.ALL) items else items.filter(kind::matches)
+
+    /** How many downloads of one kind there are, which is what the rail counts. */
+    fun kindCount(items: List<DownloadItem>, kind: LibraryKind): Int =
+        if (kind == LibraryKind.ALL) items.size else items.count(kind::matches)
 
     /** How many torrents there are, which is what the Torrents entry exists to say. */
     fun torrentCount(items: List<DownloadItem>): Int = items.count { it.isTorrent }

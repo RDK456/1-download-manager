@@ -130,7 +130,7 @@ class DownloadLibraryTest {
             DownloadLibrary.visible(mixed, LibraryQuery()).any { it.isTorrent }
         )
         // The Torrents tab narrows to it, rather than being the only place it can be seen.
-        val torrents = DownloadLibrary.visible(mixed, LibraryQuery(torrentsOnly = true))
+        val torrents = DownloadLibrary.visible(mixed, LibraryQuery(kind = LibraryKind.TORRENT))
         assertEquals(1, torrents.size)
         assertEquals("ubuntu.torrent", torrents.first().fileName)
     }
