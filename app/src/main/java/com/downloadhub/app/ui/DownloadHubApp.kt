@@ -155,6 +155,17 @@ fun DownloadHubApp(
         // The stack is persisted as one string ("ROOT>CHILD>GRANDCHILD") so it
         // survives rotation and process death through the default saver.
         var navKey by rememberSaveable { mutableStateOf(AppDestination.DOWNLOADS.name) }
+        // The current search, held above the destination switch.
+        //
+        // The screen keeps its own query, results and filter, but the state belonged to
+        // the screen's place in the composition - so queuing a download navigated away,
+        // the screen left the composition, and everything went with it. Coming back to
+        // Search showed an empty box, which made the one thing this screen is for -
+        // reading several results and choosing between them - impossible to do across a
+        // single download. Holding it here survives navigation, and `remember` rather
+        // than `rememberSaveable` is deliberate: a `Job` cannot be put in a bundle, and
+        // a search worth keeping across a rotation is the recent one.
+        val searchState = remember { SearchScreenState() }
         val nav = remember(navKey) { decodeNav(navKey) }
         val rootDestination = nav.root
         val destination = nav.current
@@ -408,6 +419,13 @@ fun DownloadHubApp(
                         onPickTorrent = viewModel::addTorrentFile
                     )
                     AppDestination.SEARCH -> SearchScreen(
+                        // The search itself is held above the destination switch, so
+                        // queuing a download and coming back finds the same query and
+                        // the same results rather than an empty box. Comparing one
+                        // torrent against the next few is the whole use of this screen,
+                        // and navigating to the downloads list to queue one used to end
+                        // the comparison.
+                        state = searchState,
                         // Straight into the add sheet, the same one a pasted magnet goes
                         // through, so a search result gets the file list and the folder
                         // picker without any of it being written twice.

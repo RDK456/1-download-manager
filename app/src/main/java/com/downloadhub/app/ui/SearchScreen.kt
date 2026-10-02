@@ -44,9 +44,14 @@ import com.downloadhub.core.SearchResult
 import com.downloadhub.core.defaultSearchSources
 import com.downloadhub.core.isSearchable
 import com.downloadhub.core.searchSources
+import com.downloadhub.core.SearchFilter
+import com.downloadhub.core.SearchSourceCount
 import com.downloadhub.core.sortSearchResults
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.TextButton
 
 /**
  * Find something to download.
@@ -56,44 +61,104 @@ import kotlinx.coroutines.launch
  * its magnet to the add sheet, which is the same sheet a pasted magnet goes through, so the
  * file list and the folder are already handled.
  */
+/**
+ * A search, kept outside the screen that shows it.
+ *
+ * The state used to be `remember`ed inside [SearchScreen], which meant it belonged to
+ * the screen's place in the composition rather than to the search. Tapping Download on
+ * a result navigated to the downloads list, the search screen left the composition, and
+ * the query and every result went with it - so coming back to Search showed an empty
+ * box, and a person comparing five releases had to search again to get back to them.
+ *
+ * This is held by the app's destination state instead, so navigating away and back
+ * costs nothing. That matters more here than on the desktop, because the add sheet
+ * takes over the screen and puts back exactly the way a person gets to compare one
+ * torrent against the four next to it.
+ */
+class SearchScreenState {
+    var query by mutableStateOf("")
+    var group by mutableStateOf(SearchGroup.MOVIES)
+    var results by mutableStateOf(emptyList<SearchResult>())
+    var outcome by mutableStateOf<SearchOutcome?>(null)
+    var busy by mutableStateOf(false)
+    var message by mutableStateOf<String?>(null)
+    var job by mutableStateOf<Job?>(null)
+
+    /** Which sources are being shown. Empty means all of them. */
+    var sources by mutableStateOf(emptySet<String>())
+
+    /** The rows actually listed: [results] narrowed to [sources]. */
+    val visible: List<SearchResult> get() = SearchFilter.apply(results, sources)
+
+    /** Whether there is anything to clear. */
+    val hasAnything: Boolean
+        get() = query.isNotBlank() || results.isNotEmpty() || sources.isNotEmpty() ||
+            message != null
+
+    /**
+     * Puts the screen back to how it looks before anything was searched for.
+     *
+     * An explicit clear, because the search used to empty itself on navigating away and
+     * nobody could tell which parts of that were deliberate.
+     */
+    fun clear() {
+        job?.cancel()
+        query = ""
+        results = emptyList()
+        outcome = null
+        busy = false
+        message = null
+        sources = emptySet()
+    }
+
+    /** Toggles one source, dropping to "all" when the last one is switched off. */
+    fun toggleSource(id: String) {
+        sources = if (id in sources) sources - id else sources + id
+    }
+}
+
 @Composable
 fun SearchScreen(
+    state: SearchScreenState,
     onPick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var query by remember { mutableStateOf("") }
-    var group by remember { mutableStateOf(SearchGroup.MOVIES) }
-    var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
-    var outcome by remember { mutableStateOf<SearchOutcome?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var job by remember { mutableStateOf<Job?>(null) }
+    val query = state.query
+    val group = state.group
+    val results = state.results
+    val outcome = state.outcome
+    val busy = state.busy
+    val message = state.message
     val scope = rememberCoroutineScope()
     val sources = remember { defaultSearchSources() }
 
     fun run() {
-        val trimmed = query.trim()
+        val trimmed = state.query.trim()
         if (!isSearchable(trimmed)) {
-            message = "Type at least two characters to search."
+            state.message = "Type at least two characters to search."
             return
         }
         // A new search replaces the old one. Two searches' answers arriving into one list
         // is a list belonging to neither.
-        job?.cancel()
-        message = null
-        busy = true
-        results = emptyList()
-        outcome = null
-        job = scope.launch {
+        state.job?.cancel()
+        state.message = null
+        state.busy = true
+        state.results = emptyList()
+        state.outcome = null
+        // A filter from the previous search is not carried over. Someone who was looking
+        // at one site and now searches for something else wants results, not the empty
+        // list that site happens to have for a word it does not index.
+        state.sources = emptySet()
+        state.job = scope.launch {
             val answer = searchSources(
                 sources = sources,
                 query = trimmed,
-                group = group,
-                onPartial = { partial -> results = sortSearchResults(partial) }
+                group = state.group,
+                onPartial = { partial -> state.results = sortSearchResults(partial) }
             )
-            outcome = answer
-            results = sortSearchResults(answer.results)
-            busy = false
+            state.outcome = answer
+            state.results = sortSearchResults(answer.results)
+            state.busy = false
         }
     }
 
@@ -101,7 +166,7 @@ fun SearchScreen(
         Column(Modifier.padding(16.dp)) {
             OutlinedTextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = { state.query = it },
                 label = { Text("Search") },
                 placeholder = { Text("What are you looking for?") },
                 singleLine = true,
@@ -111,11 +176,15 @@ fun SearchScreen(
             CategoryAndSearchRow(
                 group = group,
                 onGroup = { entry ->
-                    group = entry
-                    if (isSearchable(query)) run()
+                    state.group = entry
+                    if (isSearchable(state.query)) run()
                 },
                 busy = busy,
-                onSearch = { run() }
+                onSearch = { run() },
+                // Present only once there is something to throw away. This is what the
+                // search used to do by itself, quietly, on navigating away.
+                canClear = state.hasAnything,
+                onClear = { state.clear() }
             )
         }
 
@@ -138,18 +207,96 @@ fun SearchScreen(
             )
         }
 
+        // Which sources are being shown. Only once there are results - a filter listing sites
+        // that have not been asked yet is a row of tabs on an empty page - and each chip
+        // carries its own count, so switching one off is a decision about how many rows
+        // are being hidden, made before it is made.
+        val visible = state.visible
+        val facets = remember(results) { SearchFilter.sources(results, SOURCE_LABELS) }
+        if (facets.size > 1) {
+            SourceFilterRow(
+                facets = facets,
+                selected = state.sources,
+                hidden = results.size - visible.size,
+                onToggle = { state.toggleSource(it) }
+            )
+        }
+
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 results.isEmpty() && busy -> Centre("Asking every source...")
                 results.isEmpty() && message == null && outcome == null ->
                     Centre("Search the sources for something to download.")
                 results.isEmpty() -> Centre("Nothing found for \"${query.trim()}\".")
+                visible.isEmpty() -> Centre(
+                    "Nothing from the chosen sources. All ${results.size} results are hidden."
+                )
                 else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(results, key = { it.source + it.infoHash }) { result ->
-                        SearchResultCard(result) { onPick(result.magnet) }
+                    items(visible, key = { it.source + it.infoHash }) { result ->
+                        SearchResultCard(result, SOURCE_LABELS[result.source]) {
+                            onPick(result.magnet)
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Source id to the name shown on a filter chip.
+ *
+ * Taken from the sources themselves rather than typed out again, so a source that
+ * renames itself does not end up with two spellings - one in its results and one on its
+ * chip.
+ */
+private val SOURCE_LABELS: Map<String, String> = defaultSearchSources()
+    .associate { it.id to it.label }
+
+/** The source chips, horizontally scrollable so a long list of sites is still one row. */
+@Composable
+private fun SourceFilterRow(
+    facets: List<SearchSourceCount>,
+    selected: Set<String>,
+    hidden: Int,
+    onToggle: (String) -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "Sources",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(8.dp))
+        Row(
+            Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            facets.forEach { facet ->
+                // Selected is "in the filter", so with nothing chosen every chip reads
+                // as on - and that means "all of them", which is what it does.
+                val on = facet.id in selected || selected.isEmpty()
+                FilterChip(
+                    selected = on,
+                    onClick = { onToggle(facet.id) },
+                    label = { Text("${facet.label} ${facet.count}", fontSize = 11.sp) }
+                )
+            }
+        }
+        if (hidden > 0) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "$hidden hidden",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -162,7 +309,11 @@ private fun Centre(text: String) {
 }
 
 @Composable
-private fun SearchResultCard(result: SearchResult, onDownload: () -> Unit) {
+private fun SearchResultCard(
+    result: SearchResult,
+    sourceLabel: String?,
+    onDownload: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -209,8 +360,11 @@ private fun SearchResultCard(result: SearchResult, onDownload: () -> Unit) {
                         }
                     )
                     Spacer(Modifier.width(10.dp))
+                    // The source's own name, not its id: `thepiratebay` is a label for a
+                    // database column and not something to read on a card, and it matches
+                    // the spelling on the filter chip above.
                     Text(
-                        result.source,
+                        sourceLabel ?: result.source,
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -240,7 +394,9 @@ private fun CategoryAndSearchRow(
     group: SearchGroup,
     onGroup: (SearchGroup) -> Unit,
     busy: Boolean,
-    onSearch: () -> Unit
+    onSearch: () -> Unit,
+    canClear: Boolean,
+    onClear: () -> Unit
 ) {
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
@@ -270,6 +426,11 @@ private fun CategoryAndSearchRow(
             } else {
                 Text("Search")
             }
+        }
+        // Only once there is something to clear. The search used to empty itself on its
+        // own when a download was queued, which is exactly what this makes deliberate.
+        if (canClear) {
+            TextButton(onClick = onClear) { Text("Clear", fontSize = 11.sp) }
         }
     }
 }

@@ -157,6 +157,17 @@ fun LibraryScreen(
      */
     var searchOpen by remember { mutableStateOf(false) }
     /**
+     * The current search, held here rather than inside the search panel.
+     *
+     * Queueing a download from a result used to close the panel, and closing the panel
+     * threw the query and every result away with it - so a person comparing releases
+     * had to search again to see the list they had just been reading. Holding the
+     * search beside the flag that shows it means the panel can be closed and reopened
+     * without costing anything, and the [searchOpen] flag goes back to meaning only
+     * whether it is on screen.
+     */
+    val searchState = remember { SearchPanelState() }
+    /**
      * Whether the YouTube section is open.
      *
      * A second flag beside [searchOpen] rather than one shared "panel" state,
@@ -296,12 +307,18 @@ fun LibraryScreen(
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                      if (searchOpen) {
                         SearchPanel(
+                            state = searchState,
                             // Straight into the same pre-download window every other magnet
                             // goes through, so a search result gets the file list, the
                             // folder and the stop condition without any of it being written
                             // twice.
+                            //
+                            // The panel stays open. It used to close, which threw the
+                            // query and every result away - and the results are the
+                            // point, since the pre-download window is for choosing files
+                            // out of one torrent and comparing it against the others is
+                            // how that choice gets made. The dialog is on top either way.
                             onPick = { magnet ->
-                                searchOpen = false
                                 onOpenAddForLink(magnet)
                             },
                             modifier = Modifier.fillMaxSize()
