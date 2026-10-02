@@ -3,6 +3,17 @@ package com.downloadhub.desktop
 import com.downloadhub.core.DownloadColumn
 
 /**
+ * What sits between the table's left edge and its first column.
+ *
+ * The header's own 8 dp of padding plus the 18 dp the checkbox column takes. Not the
+ * same thing as [ROW_CHROME_DP], which is what the *rows* spend - the rows carry
+ * their own leading and trailing padding, and the two are not required to agree
+ * because the rows are laid out by their own composable. This is the header's, and
+ * it is what a pointer x has to be measured past to be in column space.
+ */
+const val HEADER_LEADING_DP = 26f
+
+/**
  * Column widths the user has dragged, per column.
  *
  * The name column is stored as a *share of the table's width* rather than as a dp value.
@@ -174,6 +185,27 @@ object ColumnDividers {
         DownloadColumn.TIME_LEFT -> layout.showTimeLeft
         DownloadColumn.DATE_ADDED -> layout.showDateAdded
     }
+
+    /**
+     * Where a pointer x, in window coordinates, lands in the space the offsets above use.
+     *
+     * Three things sit between the window's left edge and the first column: the sidebar,
+     * the header's own padding, and the row of the checkbox in front of the columns. Only
+     * the first was ever taken off, so every handle was 26 dp to the right of where the
+     * arithmetic thought it was.
+     *
+     * That is not a cosmetic offset. A drag is a difference between where the divider is
+     * and where the pointer is, so a constant 26 dp error means *grabbing* a handle -
+     * pressing on it and moving a single pixel - snapped the column 26 dp sideways before
+     * the pointer had done anything. Dragging a column felt like it was fighting back,
+     * and for the columns nearest the right-hand edge the jump was enough to shove the
+     * following columns off the table, which reads as the column refusing to resize.
+     */
+    fun tableXOf(
+        windowX: Float,
+        sidebarDp: Float,
+        headerChromeDp: Float = HEADER_LEADING_DP
+    ): Float = windowX - sidebarDp - headerChromeDp
 
     /**
      * Which divider is within [grabDp] of this x position, if any.

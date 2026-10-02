@@ -239,15 +239,28 @@ class DesktopTorrentEngine(
                 // column and the status column disagreeing about the same row, with the
                 // speed the one that was right.
                 //
-                // Written as a promotion only: PAUSED, COMPLETED and FAILED are terminal
-                // for the poll's purposes and must not be moved back to RUNNING by a
-                // reading that arrives afterwards. A paused item does not reach here - the
-                // loop re-pauses it and delays - but the guard costs nothing and a torrent
-                // stopped by its own share limits has just ended its loop, so it depends on
-                // this.
+                // Mostly a promotion: a paused item is not moved by a reading, because
+                // the loop re-pauses it and waits, and a completed one is not either.
+                // FAILED used to be terminal as well, and that was wrong - see below.
                 status = when {
                     it.status == DownloadStatus.PAUSED -> it.status
                     it.status == DownloadStatus.COMPLETED -> it.status
+                    // All the data is on disk, so it is finished - whatever the error
+                    // field says.
+                    //
+                    // FAILED is terminal, and it was reached on any reading that carried
+                    // an error. libtorrent reports errors for things a torrent recovers
+                    // from by itself: a storage error that cleared, a tracker that went
+                    // away, a resume-data rewrite that raced a poll. So a torrent could
+                    // hit one mid-download, be marked Failed for good, go on to 100%, and
+                    // sit in the list saying Failed beside a full progress bar. Asking the
+                    // data first and the error only afterwards is what makes the row tell
+                    // the truth.
+                    snapshot.isFinished -> DownloadStatus.COMPLETED
+                    // Still moving is not failed, however the last reading looked. A
+                    // torrent that got itself going again says so, rather than sitting on
+                    // Failed until somebody presses retry.
+                    snapshot.downloadRate > 0 -> DownloadStatus.RUNNING
                     it.status == DownloadStatus.FAILED -> it.status
                     snapshot.error != null -> DownloadStatus.FAILED
                     // A magnet before the swarm sends its metadata is resolving, not
@@ -262,7 +275,14 @@ class DesktopTorrentEngine(
                 speedBytesPerSecond = snapshot.downloadRate,
                 torrentInfoHash = snapshot.infoHash.takeIf { hash -> hash.isNotBlank() },
                 fileName = snapshot.name?.takeIf { name -> name.isNotBlank() } ?: it.fileName,
-                errorMessage = snapshot.error,
+                // Only kept while the row is actually failed. Carried on a running or
+                // finished row, the message was a leftover from a reading that no longer
+                // described anything, shown beside a download that was plainly working.
+                errorMessage = if (it.status == DownloadStatus.FAILED && snapshot.error != null) {
+                    it.errorMessage
+                } else {
+                    snapshot.error
+                },
                 // Mirrored rather than read straight from the engine, so the detail pane
                 // and the status strip show the same numbers as the row. A pane that
                 // polled the engine separately would show figures that disagree with the

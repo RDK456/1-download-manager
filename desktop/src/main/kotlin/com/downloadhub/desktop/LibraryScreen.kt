@@ -344,11 +344,13 @@ fun LibraryScreen(
                                 columnWidths = ColumnDividers.dragged(
                                     widths = columnWidths,
                                     column = column,
-                                    // AWT reports the pointer's x from the left of the
-                                    // window, but the columns start after the sidebar. The
-                                    // sidebar's width comes off here; without it every
-                                    // drag jumped right by the width of the sidebar.
-                                    toX = toX - sidebar.value,
+                                    // Window coordinates to column coordinates: past the
+                                    // sidebar, and then past the header's own padding and
+                                    // its checkbox column. Only the sidebar used to come
+                                    // off, which left every handle 26 dp out from where
+                                    // the arithmetic believed it was - so pressing on one
+                                    // and moving a pixel snapped the column sideways.
+                                    toX = ColumnDividers.tableXOf(toX, sidebar.value),
                                     tableDp = contentDp,
                                     layout = table
                                 )
@@ -402,19 +404,30 @@ fun LibraryScreen(
                         }
                     }
 
-                    // Only on the Torrents tab: on the main list this would be two
-                    // thirds of the window given over to one download.
-                    if (state.torrentsTab) {
-                        // The selected download, as a store item rather than as the core
-                        // model the list is drawn from. The file list's per-file progress
-                        // and the id both actions need are on this one.
-                        val detailId = all.firstOrNull { it.id in selected }?.id
-                            ?: all.firstOrNull { it.source == com.downloadhub.core.DownloadSource.TORRENT }?.id
-                        val detailItem = state.items.firstOrNull { it.id == detailId }
+                    // The bottom pane, on every tab.
+                    //
+                    // It used to be drawn only on the Torrents tab, on the grounds that on
+                    // the main list it would be two thirds of the window given over to one
+                    // download. But the answer to "what is this actually doing, and which
+                    // of its files is stuck" then existed only after switching tabs and
+                    // finding the right row - which is the same as not having it. The pane
+                    // is resizable and remembers its height, and the window can be made
+                    // shorter to get the list back.
+                    //
+                    // It follows the selection, then whatever the list is actually showing,
+                    // then the whole queue. Falling back to "the first torrent" - which is
+                    // what it did - described a download that might not be on screen at
+                    // all, on a tab about something else.
+                    val detailItem = all.firstOrNull { it.id in selected }
+                        ?: visible.firstOrNull()
+                        ?: all.firstOrNull()
+                    if (detailItem != null) {
+                        // The store item rather than the core model, because the file
+                        // list's per-file progress and the id both actions need are on
+                        // this one.
+                        val detailRow = state.items.firstOrNull { it.id == detailItem.id }
                         TorrentDetailPanel(
-                            item = all.firstOrNull { it.id in selected }
-                                ?: all.firstOrNull { it.source == com.downloadhub.core.DownloadSource.TORRENT },
-
+                            item = detailItem,
                             tab = detailTab,
                             onTab = { detailTab = it },
                             paneHeight = detailPaneHeight,
@@ -422,9 +435,9 @@ fun LibraryScreen(
                             // A reading, not a setting: it changes every second and is
                             // worth nothing after a restart, so it is held on the store
                             // item rather than persisted in the queue file.
-                            fileProgress = detailItem?.torrentFileProgress ?: emptyMap(),
+                            fileProgress = detailRow?.torrentFileProgress ?: emptyMap(),
                             onFilePriority = { index, priority ->
-                                detailItem?.let { row ->
+                                detailRow?.let { row ->
                                     actions.setFilePriority(row.id, index, priority)
                                 }
                             }
