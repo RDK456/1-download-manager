@@ -26,12 +26,51 @@ import java.util.Locale
  * which is the same as not searching.
  */
 fun relevanceOf(name: String, query: String): Int {
+    val parts = splitQuery(query)
+    val base = if (parts.titleIsEmpty) {
+        // A query of nothing but specifications - "1080p dts". There is no title to
+        // ask about, so everything that mentions them is equally on topic and the
+        // quality bonus is the whole of the answer.
+        //
+        // This is not the same as a query of nothing but *common words*, which is
+        // handled below and scores zero. "The of a" identifies nothing and matches
+        // nothing; "1080p dts" says what is wanted of a copy and matches anything that
+        // offers it. Collapsing the two would mean either searching for common words
+        // returns everything, or searching by specification returns nothing.
+        BASE_FOR_SPECIFICATION_ONLY
+    } else {
+        relevanceOfTitle(name, parts.toAsk)
+    }
+    if (base <= 0) return 0
+    return (base + qualityBonus(name, parts.quality)).coerceAtMost(100)
+}
+
+/**
+ * What a result scores when the query named no film at all.
+ *
+ * Below every tier that involves a title matching, so a copy found by specification
+ * sorts under the right film rather than above it.
+ */
+private const val BASE_FOR_SPECIFICATION_ONLY = 30
+
+/**
+ * The score for the part of the query that identifies the thing.
+ *
+ * This is the original five tiers, unchanged, applied to the title alone. Keeping it
+ * whole is the point: the tiers are about identity, and a codec is not an identity.
+ */
+private fun relevanceOfTitle(name: String, titleQuery: String): Int {
     val nameWords = significantWords(name)
-    val queryWords = significantWords(query)
-    if (queryWords.isEmpty()) return 0
+    val queryWords = significantWords(titleQuery)
+    if (queryWords.isEmpty()) {
+        // A query of nothing but common words. It identifies nothing, so it matches
+        // nothing - which is the whole reason a list of stop words exists, and the
+        // reason this is not the same case as a query of pure specifications.
+        return 0
+    }
 
     val squashedName = squash(name)
-    val squashedQuery = squash(query)
+    val squashedQuery = squash(titleQuery)
     if (squashedQuery.isEmpty()) return 0
 
     if (squashedName == squashedQuery) return 100
@@ -60,6 +99,39 @@ fun relevanceOf(name: String, query: String): Int {
     val longest = queryWords.maxByOrNull { it.length }?.length ?: 0
     return if (hits > 0) (partial + longest).coerceAtMost(75) else 0
 }
+
+/**
+ * What the wanted copy is worth to a result that has it.
+ *
+ * A preference, never a requirement. Asking for 2160p and being shown 1080p is a
+ * reasonable answer - it ranks below the 2160p, and the reason is visible in the name
+ * - while refusing to show it at all means the search returns nothing whenever the
+ * wanted copy is not on offer. Someone on a metered connection asking for 1080p
+ * deserves to see that nothing at 1080p was found, not an empty list.
+ *
+ * So it is added to a score and never subtracted from the right to be listed. It is
+ * capped hard, because a long filename can carry ten of these and they would otherwise
+ * outweigh the title and put "Dune 2160p x265 dts 5.1 hdr proper repack" above the
+ * exact film it claims to be.
+ */
+private fun qualityBonus(name: String, quality: List<String>): Int {
+    if (quality.isEmpty()) return 0
+    val squashedName = squash(name)
+    val found = quality.count { term -> squashedName.contains(squash(term)) }
+    if (found == 0) return 0
+    return (QUALITY_BONUS_EACH * found).coerceAtMost(QUALITY_BONUS_MAX)
+}
+
+/** What one wanted quality term is worth when the result has it. */
+private const val QUALITY_BONUS_EACH = 6
+
+/**
+ * The most the quality terms can add.
+ *
+ * Twelve points: enough to lift a 2160p release above a 1080p one that matched the
+ * title slightly better, and not enough to outrank a clearly closer title.
+ */
+private const val QUALITY_BONUS_MAX = 12
 
 /** Whether a result is worth showing at all for a query. */
 fun matchesQuery(name: String, query: String): Boolean = relevanceOf(name, query) > 0

@@ -214,8 +214,19 @@ private fun SearchRow(result: SearchResult, onDownload: () -> Unit) {
                 result.name,
                 fontSize = 12.sp,
                 color = AppTheme.Palette.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                // The whole name, over as many lines as it takes.
+                //
+                // This was one line with an ellipsis, which is the worst of both: the
+                // part that identifies a release is at the *front* of the name and the
+                // part that says what it is - resolution, codec, audio, group - is at
+                // the back, so cutting the tail removed exactly the information that
+                // tells one result from another. Two releases of the same film with
+                // different encodes came out as the same row of text.
+                //
+                // It wraps rather than being selectable or hovering, because a person
+                // comparing results is reading them, not copying them.
+                softWrap = true,
+                overflow = TextOverflow.Clip
             )
             Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

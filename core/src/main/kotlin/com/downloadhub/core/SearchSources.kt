@@ -120,6 +120,45 @@ internal fun magnetHashFrom(link: String): String? =
         ?.lowercase()
         ?.takeIf { it.length >= 32 }
 
+/**
+ * The Pirate Bay's public API, which is what apibay.org serves.
+ *
+ * It is the one index found while looking for a RARBG replacement that answers a
+ * scripted request at all: RARBG's mirrors sit behind a Cloudflare JavaScript
+ * challenge - they answer a browser and return `403` with `cf-mitigated: challenge`
+ * to anything else - so a torrent client cannot read them. This returns JSON to
+ * an ordinary HTTP request, which is the whole requirement.
+ *
+ * Fields are `id`, `info_hash`, `name`, `size` in bytes, `seeds`, `leechs` and
+ * `category`.
+ */
+fun parseApibayFeed(json: String): List<SearchResult> {
+    val root = runCatching { parseJson(json) }.getOrElse { return emptyList() }
+    // A top-level array, not an object with a named list in it - so no path is walked.
+    // Reading it as an object is how this returned nothing at all while the site was
+    // answering perfectly: `array("torrents")` looks for a field that is not there, finds
+    // nothing, and reports an empty result rather than an error.
+    return root.array().mapNotNull { row ->
+        val hash = row.string("info_hash")?.lowercase()?.takeIf { it.length == 40 } ?: return@mapNotNull null
+        val name = row.string("name")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        SearchResult(
+            infoHash = hash,
+            name = name,
+            sizeBytes = row.number("size"),
+            // Empty rather than zero, because they *are* empty. The API returns no
+            // swarm counts at all, and writing 0 would put every row in this source
+            // alongside genuinely dead ones instead of apart from them - which is what
+            // reportsHealth is for.
+            seeders = row.string("seeds")?.trim()?.toIntOrNull() ?: 0,
+            leechers = row.string("leechs")?.trim()?.toIntOrNull() ?: 0,
+            source = "thepiratebay",
+            magnet = magnetFor(hash, name),
+            addedAtEpochMillis = row.string("time")?.trim()?.toLongOrNull()?.times(1000L)
+                ?: row.string("added")?.trim()?.toLongOrNull()?.times(1000L)
+                ?: 0L
+        )
+    }
+}
 // --- the sources ---------------------------------------------------------------------
 
 /**
@@ -336,11 +375,76 @@ fun parseMagnetRssFeed(xml: String, source: String): List<SearchResult> {
 
 private val MAGNET_IN_HREF = Regex("""href="(magnet:\?xt=urn:btih:[^"]+)""", RegexOption.IGNORE_CASE)
 
+/**
+ * The Pirate Bay, through its public API at apibay.org.
+ *
+ * This is the source for Movies and TV that came out of looking for a RARBG
+ * replacement. RARBG is gone: its mirrors answer a browser and return `403` with
+ * `cf-mitigated: challenge` to anything that is not one, and the hostnames that still
+ * resolve are either Cloudflare-blocked or domain-squatter parking pages that serve
+ * HTML with a 200. A torrent client cannot read any of them, and should not try to
+ * get round a bot challenge that a site has deliberately put in place.
+ *
+ * apibay.org answers a plain HTTP request with JSON, which is the only requirement
+ * that matters here, and it indexes a great deal more than RARBG did: a search for
+ * "witcher" returns the 2021 film and the fourth series from the same query.
+ *
+ * It carries no swarm counts. Not "no counts on some rows" - the `seeds` and
+ * `leechs` fields are empty on every row, checked across three unrelated queries.
+ * So this reports no health, which is the mechanism for a source that cannot tell a
+ * well-seeded torrent from a dead one: results from here sort after sources that know,
+ * rather than pretending to be full of torrents nobody is seeding.
+ *
+ * Movies and TV are two category codes and they hold genuinely different things -
+ * category 201 gave six rows for "witcher", all of them films, and 205 gave a hundred,
+ * all of them episodes - so both are asked for and the answers merged. Asking only one
+ * would mean a search for a series returning films, which is how a source ends up
+ * looking broken rather than narrow.
+ */
+class PirateBaySearchSource : SearchSource {
+    override val id = "thepiratebay"
+    override val label = "ThePirateBay"
+    override val groups = setOf(SearchGroup.MOVIES, SearchGroup.TV)
+
+    /** It publishes no seeders and no leechers, so it cannot be ranked on health. */
+    override val reportsHealth = false
+
+    override suspend fun search(query: String): List<SearchResult> {
+        val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+        val merged = LinkedHashMap<String, SearchResult>()
+        var lastReason = "unreachable"
+        // Movies first so that, where the same file somehow appears in both, the
+        // category that answered is the one kept.
+        for (category in CATEGORIES) {
+            val body = runCatching {
+                fetchText("$BASE/q.php?q=$encoded&cat=$category")
+            }.getOrElse { failure ->
+                lastReason = failure.message ?: "unreachable"
+                null
+            } ?: continue
+            parseApibayFeed(body).forEach { result ->
+                merged.putIfAbsent(result.infoHash, result)
+            }
+        }
+        if (merged.isEmpty() && lastReason != "unreachable") {
+            throw java.io.IOException("ThePirateBay unreachable: $lastReason")
+        }
+        return merged.values.toList()
+    }
+
+    private companion object {
+        const val BASE = "https://apibay.org"
+
+        /** 201 is Movies, 205 is TV in HD. */
+        val CATEGORIES = listOf(201, 205)
+    }
+}
 /** Every source this build ships with. */
 fun defaultSearchSources(): List<SearchSource> = listOf(
     FitGirlSearchSource(),
     EztvSearchSource(),
     YtsSearchSource(),
+        PirateBaySearchSource(),
     NyaaSearchSource(),
     SubsPleaseSearchSource()
 )

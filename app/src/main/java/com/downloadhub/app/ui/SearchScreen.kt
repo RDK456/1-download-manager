@@ -176,8 +176,12 @@ private fun SearchResultCard(result: SearchResult, onDownload: () -> Unit) {
                 Text(
                     result.name,
                     fontSize = 14.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    // The whole name. What identifies a release is at the front of the
+                    // name and what it *is* - resolution, codec, audio, group - is at the
+                    // back, so cutting the tail takes away exactly what tells one
+                    // result from another.
+                    softWrap = true,
+                    overflow = TextOverflow.Clip
                 )
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -129,6 +129,21 @@ suspend fun searchSources(
     val applicable = sources.filter { group == null || group in it.groups || it.groups.isEmpty() }
     val trimmed = query.trim()
 
+    // What the indexes are asked is the *title*, not the whole sentence.
+    //
+    // "Dune 2021 2160p x265 DTS-HD 5.1 Zendaya" asked whole asks every index for a
+    // film with a particular codec, a particular audio layout and a particular person
+    // in it. Every index ANDs its tokens or phrases them, so it comes back with
+    // nothing - and the film is sitting right there under "Dune 2021". Worse, the
+    // cast member is in no filename in any index, because a file is named after the
+    // release and not after who is in it, so that token could only ever cost results.
+    //
+    // The wanted copy is not thrown away. It is applied to the answers by
+    // [relevanceOf], where it lifts the rows that have it above the rows that do not
+    // without ever hiding them - so a search for 2160p shows the 1080p when that is
+    // all there is, ranked below it, which is a more useful answer than nothing.
+    val ask = splitQuery(trimmed).toAsk
+
     val deferred = applicable.map { source ->
         async {
             // Its own failure, caught here rather than left to escape.
@@ -137,7 +152,7 @@ suspend fun searchSources(
             // would lose the other sources' results too - which is the exact opposite of
             // what a search over four sources should do when one of them is down.
             try {
-                Answer.Ok(source, askLeniently(source, trimmed))
+                Answer.Ok(source, askLeniently(source, ask))
             } catch (cancellation: kotlinx.coroutines.CancellationException) {
                 // Real cancellation - the user closed the window - is not a failed source,
                 // and swallowing it would leave the search hanging after nobody wants it.
