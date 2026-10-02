@@ -233,6 +233,16 @@ const val PANE_MAX_DP = 900f
 /** Where the pane starts, which is tall enough for a heading and about six rows. */
 const val PANE_DEFAULT_DP = 300f
 
+    /**
+     * The height the download list is guaranteed whatever the pane is doing.
+     *
+     * Two rows plus the divider between them, so a list that still has some room
+     * shows what it holds. The pane is capped against this rather than the other
+     * way round: a detail pane exists to say more about a download, not to replace
+     * the list of them, and on a short window an uncapped pane took the lot.
+     */
+    const val LIST_MIN_DP = 110f
+
 @Composable
 private fun TorrentTabContent(
     item: DownloadItem,

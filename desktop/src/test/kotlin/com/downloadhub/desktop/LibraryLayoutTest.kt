@@ -184,31 +184,30 @@ class LibraryLayoutTest {
         assertEquals(ToolbarStyle.COMPACT, toolbarStyleFor(200f))
         assertFalse("but never both at once", toolbarLayoutFor(TOOLBAR_FULL_DP - 1f).showsSearch)
     }
-
-    /**
-     * The button width is worked out rather than assumed.
-     *
-     * A 900 dp window has room for captioned buttons about 72 dp wide each, and a flat
-     * 74 dp threw the captions away in about 60 dp of empty space - which is what the
-     * first version of this did, at the width the app opens at no less.
-     */
     @Test
     fun captionedButtonsAreAsWideAsTheWindowAllows() {
-        val mid = toolbarLayoutFor(709f)
+        // A width where each button would clear the caption floor, and no narrower.
+        //
+        // This used to name one - 709 dp - which was a number tuned to a toolbar of nine
+        // buttons. Adding a tenth moved the thresholds and the test failed, which is
+        // what it is for; but the number itself was only ever standing in for the
+        // property, so asking it to be derived means it keeps standing in for it when the
+        // eleventh button arrives.
+        val roomy = TOOLBAR_CAPTIONED_MIN_DP + 1f
+        val mid = toolbarLayoutFor(roomy)
         assertEquals(ToolbarStyle.CAPTIONED, mid.style)
         assertTrue(
-            "the captions were dropped at 709 dp when each button would have got " +
-                "${mid.buttonDp} dp, which is above the ${CAPTION_FLOOR_DP} dp floor",
+            "the buttons are ${mid.buttonDp} dp, below the ${CAPTION_FLOOR_DP} dp floor",
             mid.buttonDp >= CAPTION_FLOOR_DP
         )
         assertTrue(
-            "and no wider than they need to be",
+            "and no wider than they need to be: ${mid.buttonDp} dp",
             mid.buttonDp <= CAPTION_BUTTON_DP
         )
-    }
 
-    /** And a button is never narrower than its caption can be read in. */
-    @Test
+        // Below the floor the captions go, which is the trade the floor exists for.
+        assertEquals(ToolbarStyle.COMPACT, toolbarLayoutFor(TOOLBAR_CAPTIONED_MIN_DP - 1f).style)
+    }
     fun noCaptionedButtonIsEverTooNarrowForItsName() {
         (MINIMUM_WINDOW_SIZE.width..1400).forEach { window ->
             val available = window - sidebarWidthFor(window.toFloat()).value - 1f

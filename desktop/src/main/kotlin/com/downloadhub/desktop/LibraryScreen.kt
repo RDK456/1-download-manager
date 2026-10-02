@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -256,6 +257,8 @@ fun LibraryScreen(
                 val sidebar = sidebarWidthFor(maxWidth.value)
                 // What is left for everything beside the sidebar and its rule.
                 val contentDp = maxWidth.value - sidebar.value - 1f
+                // The window's own height, kept for the pane to be capped against.
+                val windowHeight = maxHeight.value
                 val table = tableLayoutFor(contentDp)
                 val toolbar = toolbarLayoutFor(contentDp)
                 Row(Modifier.fillMaxSize()) {
@@ -456,7 +459,22 @@ fun LibraryScreen(
                             item = detailItem,
                             tab = detailTab,
                             onTab = { detailTab = it },
-                            paneHeight = detailPaneHeight,
+                        // The pane never takes the list's room.
+                        //
+                        // The pane draws at a fixed height and the list takes what is
+                        // left, so a short window - or a window where the user had made
+                        // the pane taller once - left the list with nothing at all. The
+                        // download list then disappeared entirely, which is the opposite
+                        // of what a detail pane is for: it is meant to say more about a
+                        // download, not to replace the list of downloads.
+                        //
+                        // Capped against the window rather than against the user's
+                        // chosen height, so the height they set is remembered and comes
+                        // back on a taller window, but cannot starve the list on a short
+                        // one.
+                        paneHeight = detailPaneHeight.coerceAtMost(
+                            (windowHeight - LIST_MIN_DP).coerceAtLeast(PANE_MIN_DP)
+                        ),
                             onPaneHeightChange = { detailPaneHeight = it },
                             // A reading, not a setting: it changes every second and is
                             // worth nothing after a restart, so it is held on the store
@@ -983,7 +1001,6 @@ private fun LibraryToolbar(
         ToolbarButton("New Download", Icons.Default.Add, highlighted = true, onClick = onNew, compact = compact, buttonWidth = layout.buttonDp)
         ToolbarButton("Resume", Icons.Default.PlayArrow, enabled = hasSelection, badge = selectedCount, onClick = onResume, compact = compact, buttonWidth = layout.buttonDp)
         ToolbarButton("Pause", DlmIcons.Pause, enabled = hasSelection, badge = selectedCount, onClick = onPause, compact = compact, buttonWidth = layout.buttonDp)
-    ToolbarButton("Pause", DlmIcons.Pause, enabled = hasSelection, badge = selectedCount, onClick = onPause, compact = compact, buttonWidth = layout.buttonDp)
     // Stop, for the selection only. Beside Pause because the two are the pair everybody
     // reaches for, and beside Stop All because that is the one it mirrors: Stop All stops
     // everything, this stops what is ticked. It needed its own button because pausing a
@@ -997,22 +1014,45 @@ private fun LibraryToolbar(
         // Next to the search box rather than with the transfer actions: it is about the
         // destination, not about the queue.
         ToolbarButton("Downloads", DlmIcons.Folder, onClick = onOpenFolder, compact = compact, buttonWidth = layout.buttonDp)
-        if (layout.showsSearch) {
-            // A weight with a ceiling, not a fixed width. The fixed 260 dp was the one
-            // thing in this row that could not give way, so it was what pushed Settings
-            // off the end of a window at the size the app opens at.
-            OutlinedTextField(
-                value = search,
-                onValueChange = onSearch,
-                singleLine = true,
-                placeholder = { Text("Search in the list", fontSize = 12.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(15.dp)) },
-                textStyle = MaterialTheme.typography.bodySmall,
-                modifier = Modifier
-                    .weight(1f)
-                    .widthIn(min = SEARCH_MIN_DP.dp, max = SEARCH_MAX_DP.dp)
+      if (layout.showsSearch) {
+        // A weight with a ceiling, not a fixed width. The fixed 260 dp was the one
+        // thing in this row that could not give way, so it was what pushed Settings
+        // off the end of a window at the size the app opens at.
+        //
+        // The floor is the important half, and the field is given one that Compose will
+        // not go below: `layout.showsSearch` is meant to guarantee this box has room,
+        // and when that guarantee was wrong - the button count was stale, so the row was
+        // measured as though a tenth button did not exist - the box was handed the
+        // leftover, which was nothing. It collapsed to a couple of dozen pixels and its
+        // placeholder wrapped one letter per line down the whole window, which dragged
+        // the toolbar to nearly half the height of the screen and left the download list
+        // with no room at all.
+        //
+        // So the placeholder cannot wrap and cannot make the field taller than one line,
+        // and the field is given a height it will keep whatever the width does.
+        OutlinedTextField(
+          value = search,
+          onValueChange = onSearch,
+          singleLine = true,
+          placeholder = {
+            Text(
+              "Search in the list",
+              fontSize = 12.sp,
+              maxLines = 1,
+              softWrap = false,
+              overflow = TextOverflow.Ellipsis
             )
-        } else {
+          },
+          leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(15.dp)) },
+          textStyle = MaterialTheme.typography.bodySmall,
+          modifier = Modifier
+            .weight(1f)
+            .widthIn(min = SEARCH_MIN_DP.dp, max = SEARCH_MAX_DP.dp)
+            // The ceiling the field must not grow past, so that a narrow window costs
+            // the box its width and never the toolbar its height.
+            .heightIn(max = SEARCH_MAX_HEIGHT_DP.dp)
+        )
+      } else {
             Spacer(Modifier.weight(1f))
         }
         ToolbarButton("Settings", Icons.Default.Settings, onClick = onSettings, compact = compact, buttonWidth = layout.buttonDp)

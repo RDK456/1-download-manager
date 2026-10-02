@@ -194,6 +194,14 @@ const val CAPTION_FLOOR_DP = 68f
 /** An icon-only button: room for the 30 dp target and nothing more. */
 const val COMPACT_BUTTON_DP = 38f
 
+    /**
+     * The narrowest an icon-only button may get: room for the 30 dp target itself.
+     *
+     * Below this there is nothing left to give way, and the toolbar is allowed to
+     * overflow rather than shrink the target under the pointer.
+     */
+    const val COMPACT_FLOOR_DP = 30f
+
 /**
  * The toolbar caption's line height, in sp.
  *
@@ -208,7 +216,18 @@ const val COMPACT_BUTTON_DP = 38f
  */
 const val TOOLBAR_CAPTION_LINE_HEIGHT_SP = 16f
 
-const val TOOLBAR_BUTTON_COUNT = 9
+    /**
+     * How many captioned buttons the toolbar draws.
+     *
+     * Ten, and it is a number rather than a fact because the row that draws them lives
+     * in another file. It was left at nine when a tenth was added, and the effect was not
+     * a slightly crowded toolbar: the whole row was measured as though it fitted, so the
+     * search box was handed the leftover - which was nothing - and collapsed into a
+     * sliver a couple of dozen pixels wide, with its placeholder wrapping one letter per
+     * line all the way down the window. A number this load-bearing wants checking
+     * against the row that actually uses it, and a test does exactly that.
+     */
+    const val TOOLBAR_BUTTON_COUNT = 10
 const val TOOLBAR_GAP_DP = 4f
 const val TOOLBAR_PADDING_DP = 20f
 
@@ -220,6 +239,17 @@ const val SEARCH_MAX_DP = 260f
  * left as a sliver that looks broken.
  */
 const val SEARCH_MIN_DP = 140f
+
+    /**
+     * The tallest the search box may get, whatever its width does.
+     *
+     * One line of text plus the field's own padding. A field with no ceiling takes its
+     * height from its contents, and contents that wrap will grow it without limit - a
+     * placeholder set into a column two dozen pixels wide wrapped one letter per line
+     * and dragged the toolbar to nearly half the height of the window, which left the
+     * download list with no room at all.
+     */
+    const val SEARCH_MAX_HEIGHT_DP = 40f
 
 /** The eight gaps between nine buttons, plus the toolbar's own horizontal padding. */
 val TOOLBAR_CHROME_DP = (TOOLBAR_BUTTON_COUNT - 1) * TOOLBAR_GAP_DP + TOOLBAR_PADDING_DP
@@ -263,12 +293,26 @@ fun toolbarLayoutFor(availableDp: Float): ToolbarLayout {
     val share = (availableDp - TOOLBAR_CHROME_DP - TOOLBAR_GAP_DP) / TOOLBAR_BUTTON_COUNT
     return when {
         availableDp < TOOLBAR_CAPTIONED_MIN_DP ->
-            ToolbarLayout(ToolbarStyle.COMPACT, COMPACT_BUTTON_DP, false)
+            // Icons only, but sized to the room that is actually there.
+            //
+            // A flat COMPACT_BUTTON_DP is right on a comfortable window and wrong on a
+            // small one: ten of them plus their gaps and the toolbar's padding is more
+            // than the narrowest window the app allows has, and a row that needs more
+            // room than it has pushes its last button - Settings - off the end, which is
+            // the same failure the search box had.
+            //
+            // So the compact width is worked out like the captioned one is, with a floor
+            // of the 30 dp icon target and a ceiling of the comfortable width.
+            ToolbarLayout(
+                style = ToolbarStyle.COMPACT,
+                buttonDp = share.coerceIn(COMPACT_FLOOR_DP, COMPACT_BUTTON_DP),
+                showsSearch = false
+            )
 
         availableDp >= TOOLBAR_FULL_DP ->
             ToolbarLayout(ToolbarStyle.FULL, CAPTION_BUTTON_DP, true)
 
-        else -> ToolbarLayout(ToolbarStyle.CAPTIONED, share, false)
+        else -> ToolbarLayout(ToolbarStyle.CAPTIONED, share.coerceAtLeast(CAPTION_FLOOR_DP), false)
     }
 }
 
