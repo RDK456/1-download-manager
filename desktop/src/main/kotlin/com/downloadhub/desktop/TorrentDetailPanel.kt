@@ -185,9 +185,10 @@ fun TorrentDetailPanel(
                 .background(AppTheme.Palette.surface)
         ) {
             when {
-                item == null -> PanelNote("Select a torrent to see its details.")
-                item.source != DownloadSource.TORRENT ->
-                    PanelNote("That is not a torrent, so it has none of these.")
+                // The pane is drawn only for a selected row, so there is always
+                // something to describe. The guard is here for the moment there is not,
+                // not as a way of turning away a download that is not a torrent.
+                item == null -> PanelNote("Select a download to see its details.")
                 else -> TorrentTabContent(item, tab, onFilePriority, fileProgress)
             }
         }
@@ -297,6 +298,19 @@ private fun TorrentTabContent(
     val value = AppTheme.Palette.onSurface
     when (tab) {
         TorrentTab.GENERAL -> Column(Modifier.padding(10.dp)) {
+            // What this download actually is, and what is actually happening to it.
+            //
+            // This pane used to refuse to open for anything that was not a torrent - "That
+            // is not a torrent, so it has none of these" - and that was the whole of the
+            // Details tab for every ordinary link and every YouTube video. So ticking a
+            // finished download told you it was not a torrent, which is the one thing you
+            // had not asked.
+            //
+            // And the fields it did have were a torrent's: seeds, peers, a share ratio
+            // and an upload rate, all of which are zero or meaningless for a file being
+            // fetched from a web server. They are shown for a torrent and left out
+            // otherwise, and what is left out is replaced with what that kind of download
+            // actually has instead.
             Row {
                 Field("Name", item.fileName, label, value, Modifier.weight(1f))
                 Field(
@@ -304,6 +318,11 @@ private fun TorrentTabContent(
                     item.status.name.lowercase().replaceFirstChar { it.uppercase() },
                     label, value, Modifier.weight(1f)
                 )
+            }
+            Row {
+                Field("Kind", kindOf(item), label, value, Modifier.weight(1f))
+                Field("Category", item.category.name.lowercase().replaceFirstChar { it.uppercase() },
+                    label, value, Modifier.weight(1f))
             }
             Field("Size", DisplayFormat.bytes(item.totalBytes), label, value)
             Field(
@@ -317,15 +336,94 @@ private fun TorrentTabContent(
                     DisplayFormat.bytes(item.speedBytesPerSecond) + "/s",
                     label, value, Modifier.weight(1f)
                 )
-                Field("Upload speed", DisplayFormat.bytes(item.uploadRate) + "/s", label, value, Modifier.weight(1f))
+                // A row that is finished has no speed, and saying 0 B/s about it is
+                // noise rather than information - the status above already says it is
+                // done. So the time it took is put in the space instead.
+                if (item.status == DownloadStatus.COMPLETED && item.completedAt > 0L) {
+                    Field(
+                        "Took",
+                        elapsedBetween(item.createdAt, item.completedAt),
+                        label, value, Modifier.weight(1f)
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
             }
-            Row {
-                Field("Seeds", item.seeds.toString(), label, value, Modifier.weight(1f))
-                Field("Peers", item.peerCount.toString(), label, value, Modifier.weight(1f))
+
+            // --- what a torrent has, and nothing else does -----------------------
+            if (item.isTorrent) {
+                Row {
+                    Field("Upload speed", DisplayFormat.bytes(item.uploadRate) + "/s",
+                        label, value, Modifier.weight(1f))
+                    Field("Uploaded", DisplayFormat.bytes(item.uploadedBytes),
+                        label, value, Modifier.weight(1f))
+                }
+                Row {
+                    Field("Seeds", item.seeds.toString(), label, value, Modifier.weight(1f))
+                    Field("Peers", item.peerCount.toString(), label, value, Modifier.weight(1f))
+                }
+                Field("Ratio", ratioOf(item), label, value)
+                // Only while it is actually sharing, or has stopped. A torrent that was
+                // never seeded has nothing to report and zero would read as a fact.
+                if (item.seedingSinceEpochMillis > 0L) {
+                    Field(
+                        "Sharing since",
+                        timeOf(item.seedingSinceEpochMillis) +
+                            if (item.seedingStoppedAtEpochMillis > 0L) {
+                                ", stopped " + timeOf(item.seedingStoppedAtEpochMillis)
+                            } else {
+                                ""
+                            },
+                        label, value
+                    )
+                }
+                if (item.shareRatioLimit > 0.0 || item.seedTimeLimitMinutes > 0) {
+                    Field(
+                        "Stop sharing at",
+                        listOfNotNull(
+                            if (item.shareRatioLimit > 0.0) "ratio ${item.shareRatioLimit}" else null,
+                            if (item.seedTimeLimitMinutes > 0) "${item.seedTimeLimitMinutes} min" else null
+                        ).joinToString(" or "),
+                        label, value
+                    )
+                }
             }
-            Field("Ratio", ratioOf(item), label, value)
+
+            // --- what a YouTube download has --------------------------------------
+            if (item.source == DownloadSource.YOUTUBE) {
+                // Blank for anything not chosen, because a row reading "Quality: null"
+                // is a bug report rather than a detail.
+                item.quality?.takeIf { it.isNotBlank() }?.let {
+                    Field("Quality", it, label, value)
+                }
+                item.audioFormat?.takeIf { it.isNotBlank() }?.let {
+                    Field("Audio", it, label, value)
+                }
+                if (item.playlist) {
+                    Field("Part of a playlist", "yes - one row per video", label, value)
+                }
+            }
+
+            // --- where it came from, and where it went ---------------------------
             Field("Added on", timeOf(item.createdAt), label, value)
-            Field("Save to", item.outputPath ?: "(not chosen yet)", label, value)
+            if (item.completedAt > 0L) {
+                Field("Finished on", timeOf(item.completedAt), label, value)
+            }
+            // Where the finished file is, falling back through the three places a path
+            // can be. A finished download whose Save to reads "(not chosen yet)" is
+            // wrong in the way that matters: the file exists somewhere.
+            Field(
+                "Save to",
+                item.location ?: item.outputPath ?: "(not chosen yet)",
+                label, value
+            )
+            item.speedLimitBytesPerSecond.takeIf { it > 0L }?.let {
+                Field("Speed limit", DisplayFormat.bytes(it) + "/s", label, value)
+            }
+            item.startAfterEpochMillis.takeIf { it > 0L }?.let {
+                Field("Scheduled for", timeOf(it), label, value)
+            }
+            Field("From", item.url, label, value)
             val error = item.errorMessage
             if (!error.isNullOrBlank()) Field("Error", error, label, MaterialTheme.colorScheme.error)
         }
@@ -475,6 +573,43 @@ private fun ratioOf(item: DownloadItem): String = if (item.bytesDownloaded > 0) 
 } else {
     "-"
 }
+
+    /**
+     * What kind of download this is, in the words the rest of the app uses.
+     *
+     * The Details tab opens for every download now, and this is the first thing worth
+     * knowing about one: a magnet, a video pulled off YouTube and a zip from a web
+     * server are fetched in entirely different ways, and the fields below differ to
+     * match.
+     */
+    private fun kindOf(item: DownloadItem): String = when (item.source) {
+        DownloadSource.TORRENT -> "Torrent"
+        DownloadSource.YOUTUBE -> "YouTube"
+        DownloadSource.HTTP -> if (item.url.startsWith("magnet:", ignoreCase = true)) {
+            "Magnet"
+        } else {
+            "Link"
+        }
+    }
+
+    /**
+     * How long a download took, as a phrase rather than two timestamps to subtract.
+     *
+     * "Added 20:14:03, finished 20:41:55" is work for the reader; "27m 41s" is the
+     * answer. Shown against a finished download, where a speed of 0 B/s has nothing
+     * left to say.
+     */
+    private fun elapsedBetween(fromMillis: Long, toMillis: Long): String {
+        if (fromMillis <= 0L || toMillis <= fromMillis) return "-"
+        val seconds = (toMillis - fromMillis) / 1000L
+        val hours = seconds / 3600L
+        val minutes = (seconds % 3600L) / 60L
+        return when {
+            hours > 0L -> "${hours}h ${minutes}m"
+            minutes > 0L -> "${minutes}m ${seconds % 60L}s"
+            else -> "${seconds}s"
+        }
+    }
 
 private fun timeOf(epochMillis: Long): String = if (epochMillis <= 0L) {
     "-"

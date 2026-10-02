@@ -2,7 +2,6 @@ package com.downloadhub.desktop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
@@ -62,8 +61,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DisplayFormat
 import com.downloadhub.core.DownloadColumn
@@ -362,6 +361,9 @@ fun LibraryScreen(
                             layout = table,
                             widths = columnWidths,
                             tableDp = contentDp,
+                            visible = visible,
+                            selected = selected,
+                            onSelectedChange = { selected = it },
                             onDragStart = { column ->
                                 dragColumn = column
                                 dragStartWidth = ColumnDividers.resolvedWidthOf(
@@ -1156,16 +1158,21 @@ private fun ToolbarButton(
 }
 
 @Composable
-private fun ColumnHeader(
-    sort: LibrarySort,
-    onSort: (LibrarySort) -> Unit,
-    layout: TableLayout,
-    widths: ColumnWidths,
-    tableDp: Float,
-    /** Called when a handle is grabbed: notes the width to measure the drag from. */
-    onDragStart: (DownloadColumn) -> Unit,
-    onDrag: (DownloadColumn, Float) -> Unit
-) {
+    private fun ColumnHeader(
+        sort: LibrarySort,
+        onSort: (LibrarySort) -> Unit,
+        layout: TableLayout,
+        widths: ColumnWidths,
+        tableDp: Float,
+        /** The rows the list is showing, which is what Select all covers. */
+        visible: List<DownloadItem>,
+        /** The ticked row ids. */
+        selected: Set<String>,
+        onSelectedChange: (Set<String>) -> Unit,
+        /** Called when a handle is grabbed: notes the width to measure the drag from. */
+        onDragStart: (DownloadColumn) -> Unit,
+        onDrag: (DownloadColumn, Float) -> Unit
+    ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1178,7 +1185,36 @@ private fun ColumnHeader(
             .padding(start = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.width(18.dp))
+        // Select all, over every row the list is actually showing.
+        //
+        // The rows can be picked one at a time from a tick box in the first column, and
+        // there was no way to pick all of them - so acting on a whole queue meant
+        // clicking every row, or Shift-clicking, which the row's own click handler knows
+        // nothing about. Acting on a selection is the point of the tick boxes, and the
+        // button that starts one is the one that was missing.
+        //
+        // It covers what is on screen rather than the whole queue, and says so when the
+        // two differ: a button labelled "select all" that quietly selected a filtered
+        // subset is worse than none, because the count in the badge afterwards does not
+        // add up to the queue.
+        SelectionBox(
+            state = when {
+                visible.isEmpty() -> SelectionBoxState.OFF
+                // Every row on screen is ticked. Compared against the rows shown rather
+                // than the selection, because a selection can hold ids from a filter that
+                // has since changed, and those must not make the box look full.
+                visible.all { it.id in selected } -> SelectionBoxState.ON
+                selected.none { id -> visible.any { it.id == id } } -> SelectionBoxState.OFF
+                else -> SelectionBoxState.MIXED
+            },
+            enabled = visible.isNotEmpty(),
+            onClick = {
+                // Already everything on screen means the next press is the one that
+                // clears, which is the same two-state behaviour as a tick box.
+                val allTicked = visible.isNotEmpty() && visible.all { it.id in selected }
+                onSelectedChange(if (allTicked) emptySet() else visible.map { it.id }.toSet())
+            }
+        )
         // Every visible column, in order, at the width the user has set. The header and
         // the rows read the same numbers out of [ColumnWidths], which is the only way they
         // can stay lined up: a version that laid the two out independently had them
@@ -1306,6 +1342,74 @@ private fun ColumnHeader(
             }
         }
     }
+    /**
+     * Whether a tick box is on, off, or neither - which is a third state and not a
+     * decoration.
+     *
+     * A header over a partly-selected list needs to say so. Showing it empty says
+     * "none of these are selected" while a third of them are, and showing it full says
+     * the opposite. The mark in the middle is the only honest answer, and it is also the
+     * one that tells you pressing it will select the rest rather than clear the lot.
+     */
+    private enum class SelectionBoxState { OFF, ON, MIXED }
+
+    /**
+     * A tick box in the header, over every row the list is showing.
+     *
+     * The same 26 by 16 box the rows draw, so the two line up and the header reads as the
+     * column it heads rather than as a control sitting next to one.
+     */
+    @Composable
+    private fun SelectionBox(
+        state: SelectionBoxState,
+        enabled: Boolean,
+        onClick: () -> Unit
+    ) {
+        Box(
+            Modifier
+                .width(26.dp)
+                .height(16.dp)
+                .background(
+                    when {
+                        !enabled -> AppTheme.Palette.surface
+                        state == SelectionBoxState.OFF -> AppTheme.Palette.surface
+                        // A partly-selected box is drawn filled but without the tick,
+                        // so it cannot be read as "all of them".
+                        else -> AppTheme.Palette.accent
+                    },
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
+                )
+                .then(
+                    if (enabled) {
+                        Modifier.clickable(onClick = onClick)
+                    } else {
+                        Modifier
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            when (state) {
+                SelectionBoxState.ON ->
+                    Icon(
+                        Icons.Default.Check, null, Modifier.size(11.dp),
+                        tint = AppTheme.Palette.accentContainer
+                    )
+
+                SelectionBoxState.MIXED -> Box(
+                    Modifier
+                        .width(7.dp)
+                        .height(2.dp)
+                        .background(
+                            AppTheme.Palette.accentContainer,
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(1.dp)
+                        )
+                )
+
+                SelectionBoxState.OFF -> Unit
+            }
+        }
+    }
+
     @Composable
 private fun ColumnHeaderCell(
     label: String,
