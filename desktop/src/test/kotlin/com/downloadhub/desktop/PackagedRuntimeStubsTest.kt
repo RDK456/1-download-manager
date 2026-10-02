@@ -178,6 +178,42 @@ class PackagedRuntimeStubsTest {
     }
 
     /**
+     * The build must actually run the launcher, not just compare files.
+     *
+     * Everything else in this file compares the package against what we meant to ship.
+     * That is a different claim from "the package can start", and 1.4.30 is the proof:
+     * its jli.dll was exactly the right length and completely the wrong file, and every
+     * comparison the build had was satisfied by it. Running `java.exe -version` is the
+     * smallest thing that has to work for the package to be useful, it takes about a
+     * second, and it is the only check that cannot be fooled by a file of the right size.
+     */
+    @Test
+    fun theBuildRunsThePackagedLauncherBeforeShippingIt() {
+        val source = File("build.gradle.kts").readText()
+        val task = source.substringAfter("val prepareDistributable")
+            .substringBefore("val packageZip")
+        assertTrue(
+            "the build must run the packaged java.exe; comparing files cannot tell a " +
+                "valid DLL from one of the right size that is not a DLL",
+            task.contains("ProcessBuilder") && task.contains("\"-version\"")
+        )
+        assertTrue(
+            "and a non-zero exit must stop the build",
+            task.contains("probe.exitValue() != 0")
+        )
+        assertTrue(
+            "with a timeout, so a launcher that hangs is reported as a hang rather " +
+                "than stalling the build forever",
+            task.contains("waitFor(60L")
+        )
+        assertTrue(
+            "and the output has to go somewhere nobody is reading, or the child blocks " +
+                "on a full pipe and the timeout reports the wrong thing",
+            task.contains("redirectOutput")
+        )
+    }
+
+    /**
      * The build must refuse to strip anything that is not plausibly a forwarder stub.
      * A future JDK could ship a real component with a name starting "api-ms-", and
      * deleting it would ship a JVM that cannot start.

@@ -1,4 +1,5 @@
 import java.net.URI
+import java.util.concurrent.TimeUnit
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -488,6 +489,62 @@ val prepareDistributable by tasks.registering {
         val missing = required.filterNot { File(runtimeBin, it).isFile }
         if (missing.isNotEmpty()) {
             error("The runtime is missing ${missing.joinToString()}; the JVM cannot start without it.")
+        }
+
+        // --- and prove the launcher actually runs -------------------------------
+        // Everything above compares files. Comparing files says the package carries the
+        // two we meant to ship; it does not say the package can start. Those are not the
+        // same claim, and 1.4.30 is the proof: its jli.dll was 89,720 bytes - exactly
+        // the right length, so the size check, the file-count check and a size
+        // comparison against the JDK all passed - and 89,720 bytes of machine code with
+        // no PE header. Nothing that read the file could tell.
+        //
+        // So the launcher is run. `java.exe -version` is the smallest thing that has to
+        // work for the package to be useful, and it fails in about a second.
+        //
+        // This is the whole point of shipping java.exe at all. It is not there so
+        // someone can run a program; it is there so that when the jpackage stub says
+        // "Failed to launch JVM" and nothing else, there is a second way in that says
+        // what actually happened. A diagnostic that cannot run is worse than no
+        // diagnostic, because it turns "the package is fine, your machine is odd" into
+        // a fresh mystery. So the build proves it runs before the package leaves.
+        //
+        // Output goes to a file rather than a pipe, because a pipe nobody is reading
+        // fills and deadlocks the child - which would look like a hang rather than a
+        // failure, and the timeout below would then report the wrong thing.
+        val launcher = File(runtimeBin, "java.exe")
+        val probeLog = File.createTempFile("dlm-launcher-probe", ".txt")
+        try {
+            val probe = ProcessBuilder(listOf(launcher.absolutePath, "-version"))
+                .directory(appImage)
+                .redirectErrorStream(true)
+                .redirectOutput(probeLog)
+                .start()
+            val finished = probe.waitFor(60L, TimeUnit.SECONDS)
+            if (!finished) {
+                probe.destroyForcibly()
+                error(
+                    "The packaged java.exe did not exit within 60 seconds. It is hanging " +
+                        "rather than failing, which means the package would hang for " +
+                        "anyone who ran the startup check. Output so far:\n" +
+                        probeLog.readText().trim()
+                )
+            }
+            val probeOutput = probeLog.readText().trim()
+            if (probe.exitValue() != 0) {
+                val hex = "0x" + Integer.toHexString(probe.exitValue()).uppercase()
+                error(
+                    "The packaged java.exe exited ${probe.exitValue()} ($hex). The package " +
+                        "cannot report a real startup error, which is the only reason it " +
+                        "carries a launcher at all, and jli.dll is the file most likely " +
+                        "to be the cause - it is unsigned and security software rewrites " +
+                        "it in place rather than removing it. Output:\n$probeOutput"
+                )
+            }
+            val firstLine = probeOutput.lineSequence().firstOrNull { it.isNotBlank() } ?: "(no output)"
+            logger.lifecycle("The packaged launcher runs: $firstLine")
+        } finally {
+            probeLog.delete()
         }
     }
 }
