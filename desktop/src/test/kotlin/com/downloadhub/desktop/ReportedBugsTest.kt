@@ -87,38 +87,40 @@ class ReportedBugsTest {
     }
 
     /**
-     * The pane with Details, Content, Peers and Trackers was only on the Torrents tab.
+     * The pane with Details and Content was only on the Torrents tab.
      *
      * So the answer to "what is this doing, and which file is stuck" existed only
-     * after switching tabs and finding the right row.
+     * after switching tabs and finding the right row - which is the same as not having
+     * it. It is now drawn for whatever is selected, on any tab.
+     *
+     * And for nothing at all when nothing is, which is the other half of the fix and the
+     * half that matters more. It had briefly been given a fallback of "whatever the list
+     * contains", so a pane sat permanently on screen describing a download nobody had
+     * chosen; and before that, of "the first torrent", which on the main list described a
+     * download that might not be on screen at all.
      */
     @Test
-    fun theBottomPaneIsNotHiddenBehindTheTorrentsTab() {
+    fun theBottomPaneFollowsTheSelectionAndNotTheTorrentsTab() {
         val screen = File("src/main/kotlin/com/downloadhub/desktop/LibraryScreen.kt").readText()
-        val pane = screen.substringAfter("TorrentDetailPanel(").let {
-            screen.substring(0, screen.indexOf("TorrentDetailPanel("))
-        }
+        val before = screen.substring(0, screen.indexOf("TorrentDetailPanel("))
         assertTrue(
-            "the pane must not be inside `if (state.torrentsTab)`",
-            !pane.contains("if (state.torrentsTab) {")
+            "the pane must not be inside `if (state.torrentsTab) {`",
+            !before.contains("if (state.torrentsTab) {")
         )
         assertTrue(
-            "the pane is drawn unconditionally now",
+            "its subject is the selection",
             screen.contains("val detailItem = all.firstOrNull { it.id in selected }")
         )
-        // And it must describe something the user can see. It used to fall back to the
-        // first torrent whatever tab was open, which on the main list was a row that
-        // might not be on screen at all.
         assertTrue(
-            "the pane should follow the list it sits under",
-            screen.contains("?: visible.firstOrNull()")
+            "and it is drawn only when the selection found something",
+            screen.contains("if (detailItem != null) {")
         )
         assertTrue(
-            "and must not fall back to a torrent chosen by kind:\n",
-            !screen.substringAfter("val detailItem =").substringBefore("TorrentStatusBar")
-                .contains("DownloadSource.TORRENT")
+            "with no fallback to a row nobody chose",
+            !screen.contains("?: all.firstOrNull()") && !screen.contains("?: visible.firstOrNull()")
         )
     }
+
     @Test
     fun theNameColumnIsCappedByTheRoomTheOthersLeave() {
         val layout = fullLayout()

@@ -433,23 +433,19 @@ fun LibraryScreen(
                         }
                     }
 
-                    // The bottom pane, on every tab.
+                    // The bottom pane, but only when a download is actually selected.
                     //
-                    // It used to be drawn only on the Torrents tab, on the grounds that on
-                    // the main list it would be two thirds of the window given over to one
-                    // download. But the answer to "what is this actually doing, and which
-                    // of its files is stuck" then existed only after switching tabs and
-                    // finding the right row - which is the same as not having it. The pane
-                    // is resizable and remembers its height, and the window can be made
-                    // shorter to get the list back.
+                    // It was drawn for whatever the list happened to contain when nothing
+                    // was ticked, which meant the pane was usually describing a download
+                    // nobody had chosen - and on a queue of one it was a permanent
+                    // reminder of a pane with nothing to say. It belongs to the
+                    // selection: tick a row, get the details for that row; untick, get
+                    // the room back.
                     //
-                    // It follows the selection, then whatever the list is actually showing,
-                    // then the whole queue. Falling back to "the first torrent" - which is
-                    // what it did - described a download that might not be on screen at
-                    // all, on a tab about something else.
+                    // Falling back to "the first torrent", as it once did, was worse
+                    // still: on the main list it described a download that might not be
+                    // on screen at all.
                     val detailItem = all.firstOrNull { it.id in selected }
-                        ?: visible.firstOrNull()
-                        ?: all.firstOrNull()
                     if (detailItem != null) {
                         // The store item rather than the core model, because the file
                         // list's per-file progress and the id both actions need are on
@@ -457,24 +453,20 @@ fun LibraryScreen(
                         val detailRow = state.items.firstOrNull { it.id == detailItem.id }
                         TorrentDetailPanel(
                             item = detailItem,
-                            tab = detailTab,
+                            tab = TorrentTab.forDownload(detailItem.isTorrent, detailTab),
                             onTab = { detailTab = it },
-                        // The pane never takes the list's room.
-                        //
-                        // The pane draws at a fixed height and the list takes what is
-                        // left, so a short window - or a window where the user had made
-                        // the pane taller once - left the list with nothing at all. The
-                        // download list then disappeared entirely, which is the opposite
-                        // of what a detail pane is for: it is meant to say more about a
-                        // download, not to replace the list of downloads.
-                        //
-                        // Capped against the window rather than against the user's
-                        // chosen height, so the height they set is remembered and comes
-                        // back on a taller window, but cannot starve the list on a short
-                        // one.
-                        paneHeight = detailPaneHeight.coerceAtMost(
-                            (windowHeight - LIST_MIN_DP).coerceAtLeast(PANE_MIN_DP)
-                        ),
+                            // Never the list's room. The pane draws at a fixed height and
+                            // the list takes what is left, so a short window - or a pane
+                            // the user had once made taller - left the list with nothing
+                            // at all. The download list then disappeared entirely, which
+                            // is the opposite of what a detail pane is for.
+                            //
+                            // Capped against the window rather than against the chosen
+                            // height, so the height is remembered and comes back on a
+                            // taller window, but cannot starve the list on a short one.
+                            paneHeight = detailPaneHeight.coerceAtMost(
+                                (windowHeight - LIST_MIN_DP).coerceAtLeast(PANE_MIN_DP)
+                            ),
                             onPaneHeightChange = { detailPaneHeight = it },
                             // A reading, not a setting: it changes every second and is
                             // worth nothing after a restart, so it is held on the store

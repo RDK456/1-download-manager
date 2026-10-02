@@ -650,7 +650,33 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun pause(id: String) = sendAction(DownloadService.ACTION_PAUSE, id)
-    fun resume(id: String) = sendAction(DownloadService.ACTION_RESUME, id)
+    /**
+     * Resumes a download, unless it is already finished.
+     *
+     * Resume handed the row straight to the service, which started the transfer again -
+     * so resuming something that had just finished re-fetched it from the beginning,
+     * which is not what anyone pressing Resume on a finished download means and is an
+     * expensive way to find out. A finished download says so instead.
+     */
+    fun resume(id: String) {
+        viewModelScope.launch {
+            val item = repository.get(id) ?: return@launch
+            if (item.status == DownloadStatus.COMPLETED) {
+                _events.emit(
+                    DownloadEvent.Message(
+                        if (item.outputPath.isNullOrBlank()) {
+                            "That one is already finished."
+                        } else {
+                            "That one is already finished. Its file is at ${item.outputPath}."
+                        }
+                    )
+                )
+                return@launch
+            }
+            sendAction(DownloadService.ACTION_RESUME, id)
+        }
+    }
+
     fun retry(id: String) = sendAction(DownloadService.ACTION_RETRY, id)
 
     fun delete(id: String) {

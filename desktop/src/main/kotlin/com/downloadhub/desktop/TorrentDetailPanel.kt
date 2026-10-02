@@ -40,17 +40,45 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.OutlinedTextField
 import java.io.File
 
-/** The panes along the bottom of the torrent view. */
+/** The panes along the bottom of the download view. */
 enum class TorrentTab(val label: String) {
-    GENERAL("General"),
-    TRACKERS("Trackers"),
-    PEERS("Peers"),
-    HTTP_SOURCES("HTTP Sources"),
+    /**
+     * What the download is and how it is doing: size, speed, peers, ratio, where it is.
+     *
+     * The only tab there is for everything. A download that is not a torrent has no
+     * tracker list, no peer list, no web seeds and no file list, so the tabs for those
+     * had nothing behind them and sat on screen regardless - four buttons out of five
+     * that could only ever answer "nothing yet", and on an ordinary link that is the
+     * whole story the pane has to tell.
+     */
+    GENERAL("Details"),
+
+    /** Every file in a torrent, with its own progress and priority. Torrents only. */
     CONTENT("Content");
 
     companion object {
         fun fromName(name: String?): TorrentTab =
             values().firstOrNull { it.name == name } ?: GENERAL
+
+        /**
+         * The tabs there is anything behind, for this kind of download.
+         *
+         * A torrent has a file list, so it gets Content as well as Details. An ordinary
+         * download and a YouTube video are one file - or, for a playlist, one queue row
+         * per video, which the list above already shows - so Details is the whole of it.
+         */
+        fun forDownload(isTorrent: Boolean): List<TorrentTab> =
+            if (isTorrent) values().toList() else listOf(GENERAL)
+
+        /**
+         * The tab to actually show, never one this download has no tab for.
+         *
+         * Ticking a torrent and then an ordinary download would otherwise leave the pane
+         * showing a file list with no file list tab to highlight - a pane displaying
+         * something with no way back out of it.
+         */
+        fun forDownload(isTorrent: Boolean, wanted: TorrentTab): TorrentTab =
+            if (wanted in forDownload(isTorrent)) wanted else GENERAL
     }
 }
 
@@ -116,17 +144,19 @@ fun TorrentDetailPanel(
     Column(modifier.fillMaxWidth()) {
         PaneResizeHandle(height = paneHeight, onHeight = onPaneHeightChange)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            TorrentTab.entries.forEach { entry ->
-                TorrentTabButton(
-                    label = entry.label,
-                    selected = entry == tab,
-                    // Greyed out rather than hidden for something that is not a torrent: a
-                    // tab that vanishes changes the pane's shape depending on the
-                    // selection, which is disorienting in a way a greyed-out tab is not.
-                    enabled = item != null && item.source == DownloadSource.TORRENT,
-                    onClick = { onTab(entry) }
-                )
-            }
+        // Only the tabs there is something behind, for this download.
+        //
+        // They used to all five be drawn and greyed out for anything that was not a
+        // torrent. A greyed tab is still a tab: it says there is something here, it takes
+        // up the width, and four of the five could only ever answer "nothing yet".
+        TorrentTab.forDownload(item?.isTorrent == true).forEach { entry ->
+            TorrentTabButton(
+                label = entry.label,
+                selected = entry == tab,
+                enabled = item != null,
+                onClick = { onTab(entry) }
+            )
+        }
             Spacer(Modifier.weight(1f))
             // Speed, right-aligned, because it is the number being watched. It is given a
             // fixed width and no more, because a row that overflows its pane clips the
@@ -300,22 +330,6 @@ private fun TorrentTabContent(
             if (!error.isNullOrBlank()) Field("Error", error, label, MaterialTheme.colorScheme.error)
         }
 
-        TorrentTab.TRACKERS -> PanelNote(
-            "This app does not collect the tracker list yet.\n\n" +
-                "A torrent's trackers come out of its .torrent file, and reading them is a " +
-                "separate job from downloading."
-        )
-
-        TorrentTab.PEERS -> PanelNote(
-            "This app does not collect the peer list yet.\n\n" +
-                "${item.seeds} seeds and ${item.peerCount} peers are connected, but not who " +
-                "they are."
-        )
-
-        TorrentTab.HTTP_SOURCES -> PanelNote(
-            "Nothing yet.\n\nWeb seed addresses come from a torrent's url-list, and are only " +
-                "used when the swarm cannot supply a file by itself."
-        )
 
         TorrentTab.CONTENT -> {
             // The .torrent when there is one, and the saved file list when there is

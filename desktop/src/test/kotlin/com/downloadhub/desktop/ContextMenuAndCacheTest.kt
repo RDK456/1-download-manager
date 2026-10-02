@@ -286,18 +286,38 @@ class ContextMenuAndCacheTest {
         )
     }
 
+    /**
+     * The pane offers only what there is something behind.
+     *
+     * It used to have five tabs, three of which existed to answer "this app does not
+     * collect that yet" - which is a fact about the app, not about the download, and is
+     * the same answer whatever is selected. They were drawn and greyed out rather than
+     * hidden so the pane's shape would not change with the selection, and the cost of
+     * that was a strip where four buttons in five could only ever decline.
+     *
+     * Now there are two, and which of them is offered depends on the download. A torrent
+     * has a file list; an ordinary link and a YouTube video do not.
+     */
     @Test
-    fun theTabBarAlwaysHasTheSameFivePanes() {
-        // A tab that vanishes changes the pane's shape with the selection, which is
-        // disorienting; every pane is always there and some are greyed out.
-        assertEquals(5, TorrentTab.values().size)
+    fun thePaneOffersOnlyWhatThereIsSomethingBehind() {
         assertEquals(
-            listOf("General", "Trackers", "Peers", "HTTP Sources", "Content"),
+            listOf("Details", "Content"),
             TorrentTab.values().map { it.label }
         )
+        assertEquals(
+            listOf(TorrentTab.GENERAL),
+            TorrentTab.forDownload(isTorrent = false)
+        )
+        assertEquals(
+            listOf(TorrentTab.GENERAL, TorrentTab.CONTENT),
+            TorrentTab.forDownload(isTorrent = true)
+        )
+        // A saved name from an older build still resolves to something real.
         assertEquals(TorrentTab.GENERAL, TorrentTab.fromName(null))
-        assertEquals(TorrentTab.PEERS, TorrentTab.fromName("PEERS"))
+        assertEquals(TorrentTab.CONTENT, TorrentTab.fromName("CONTENT"))
         assertEquals(TorrentTab.GENERAL, TorrentTab.fromName("NONSENSE"))
+        // And a name for a tab that no longer exists falls back rather than throwing.
+        assertEquals(TorrentTab.GENERAL, TorrentTab.fromName("PEERS"))
     }
 
     /**

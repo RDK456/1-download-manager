@@ -778,7 +778,27 @@ class DesktopController(
         },
         resume = { id ->
             val item = store.get(id)
-            if (item?.source == DownloadSource.TORRENT) torrents.resume(id) else engine.resume(id)
+            // A finished download says so instead of starting again.
+            //
+            // Resume on a completed row used to hand it straight to the engine, which
+            // re-fetched the file from the beginning - or, for a torrent, put it back in
+            // the session and started seeding it again - because from the engine's point
+            // of view a download that has stopped is a download that has been paused.
+            // Nothing about the button said "unless this is already done", and re-
+            // downloading four gigabytes because someone pressed Resume on something
+            // they had just finished watching download was not a reasonable outcome.
+            //
+            // So the one state where resuming is meaningless is answered in words. The
+            // message is the answer, not an error: the file is there, the row is
+            // Finished, and there is nothing to do.
+            if (item?.status == DownloadStatus.COMPLETED) {
+                _messages.value = "That one is already finished. Its file is " +
+                    (item.location ?: "in the downloads folder") + "."
+            } else if (item?.source == DownloadSource.TORRENT) {
+                torrents.resume(id)
+            } else {
+                engine.resume(id)
+            }
         },
         stop = { id ->
             val item = store.get(id)
