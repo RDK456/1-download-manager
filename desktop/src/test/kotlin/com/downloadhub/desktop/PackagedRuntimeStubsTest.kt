@@ -83,6 +83,101 @@ class PackagedRuntimeStubsTest {
     }
 
     /**
+     * jli.dll is what java.exe loads first, and a bad one kills the diagnostic
+     * instantly.
+     *
+     * The 1.4.30 zip shipped a jli.dll that was 89,720 bytes of x86-64 machine code
+     * with no PE header at all - the right length, so the file-count and size checks
+     * above all passed and every version of that file was 89,720 bytes, so a size
+     * comparison would have passed too. The packaged java.exe died with
+     * 0xC000012F, STATUS_INVALID_IMAGE_FORMAT, which is the Windows loader saying
+     * this is not a DLL.
+     *
+     * The app itself was fine - the launcher loads server/jvm.dll and never touches
+     * jli.dll - so the only casualty was the tool added to diagnose startup failures.
+     * jli.dll is an unsigned launcher DLL and the file security software most often
+     * flags; a flagged file can be rewritten in place rather than removed, which is
+     * exactly what the bytes looked like.
+     */
+    @Test
+    fun thePackagedJliIsARealDll() {
+        val bin = runtimeBin() ?: return
+        val jli = File(bin, "jli.dll")
+        assertTrue("runtime/bin/jli.dll is missing", jli.isFile)
+        assertTrue("jli.dll is empty", jli.length() > 0L)
+        assertTrue(
+            "jli.dll has no PE header, so it is not a DLL and the Windows loader will " +
+                "refuse it with STATUS_INVALID_IMAGE_FORMAT. This is what shipped in " +
+                "1.4.30; see the prepareDistributable task, which now rewrites it from " +
+                "the build JDK every build.",
+            startsWithMz(jli)
+        )
+    }
+
+    /**
+     * java.exe and jli.dll must be the same build of the JDK.
+     *
+     * They are copied together now, and the reason to say so is that a mismatched pair
+     * fails at load time rather than at run time, with nothing in the app's own code to
+     * point at - which is the failure mode this whole file exists to catch.
+     */
+    @Test
+    fun theLauncherAndItsJliAreTheSameBuild() {
+        val bin = runtimeBin() ?: return
+        val java = File(bin, "java.exe")
+        val jli = File(bin, "jli.dll")
+        if (!java.isFile || !jli.isFile) return
+        val jdkBins = listOfNotNull(System.getProperty("jdk.home"), System.getProperty("java.home"))
+            .map { File(it, "bin") }
+            .filter { it.isDirectory }
+        listOf("java.exe", "jli.dll").forEach { name ->
+            val packaged = File(bin, name)
+            val jdk = jdkBins.map { File(it, name) }.firstOrNull { it.isFile } ?: return@forEach
+            assertTrue(
+                "$name in the package differs from the build JDK's copy, so the two " +
+                    "were not written by the same build",
+                packaged.length() == jdk.length() &&
+                    packaged.readBytes().contentEquals(jdk.readBytes())
+            )
+        }
+    }
+
+    /**
+     * The build must not trust whatever is on disk for these two files.
+     *
+     * It rewrote them only when they were missing, which is why a file that was present
+     * but had been replaced with something the right size went straight out in a release.
+     */
+    @Test
+    fun theBuildVerifiesTheLauncherFilesItShips() {
+        val source = File("build.gradle.kts").readText()
+        val task = source.substringAfter("val prepareDistributable")
+            .substringBefore("val packageZip")
+        assertTrue(
+            "the build must copy jli.dll as well as java.exe; they are a pair and one " +
+                "without the other is a launcher that cannot start",
+            task.contains("\"jli.dll\"")
+        )
+        assertTrue(
+            "and it must check for a PE header, or a file of the right size that is not " +
+                "a DLL passes every other check",
+            task.contains("0x4D.toByte()") && task.contains("0x5A.toByte()")
+        )
+        assertTrue(
+            "and it must compare against the build JDK rather than only testing for " +
+                "absence, which is what let the bad file through",
+            task.contains("contentEquals")
+        )
+    }
+
+    /** Whether a file begins with the two bytes every Windows executable starts with. */
+    private fun startsWithMz(file: File): Boolean {
+        if (!file.isFile || file.length() < 2L) return false
+        val head = file.inputStream().use { input -> ByteArray(2).also { input.read(it) } }
+        return head[0] == 0x4D.toByte() && head[1] == 0x5A.toByte()
+    }
+
+    /**
      * The build must refuse to strip anything that is not plausibly a forwarder stub.
      * A future JDK could ship a real component with a name starting "api-ms-", and
      * deleting it would ship a JVM that cannot start.

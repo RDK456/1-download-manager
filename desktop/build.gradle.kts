@@ -368,32 +368,76 @@ val prepareDistributable by tasks.registering {
         shipped.forEach { it.copyTo(File(appImage, it.name), overwrite = true) }
         logger.lifecycle("Shipped ${shipped.size} startup-check file(s) beside the launcher.")
 
-        // --- a real java.exe ---------------------------------------------------
+        // --- a real java.exe, and the jli.dll that goes with it ---------------
         // jlink strips the launchers, so the packaged app has no java.exe and the
         // jpackage stub is the only way into the JVM. When the stub cannot create
-        // the JVM it can say nothing except "Failed to launch JVM", which is why the
-        // error is so useless: it does not say which file was blocked or which path
-        // was denied.
+        // the JVM it can say nothing except "Failed to launch JVM", which is why
+        // the error is so useless: it does not say which file was blocked or which
+        // path was denied.
         //
-        // java.exe is 50 KB and the rest of what it needs - jli.dll, the module
-        // image, the other runtime libraries - is already in the image. Adding it
-        // back gives the package a second way in that reports the actual error, and
-        // that is what Start 1DownloadManager.bat uses. Verified by launching the
-        // packaged app through it: same window, same behaviour.
+        // java.exe is 50 KB and the module image and the other runtime libraries are
+        // already in the image. Adding java.exe back gives the package a second way in
+        // that reports the actual error, and that is what Start 1DownloadManager.bat
+        // uses. Verified by launching the packaged app through it: same window, same
+        // behaviour.
+        //
+        // jli.dll has to be copied from the same JDK, every build, and this is not
+        // belt-and-braces. The 1.4.30 zip shipped a jli.dll that was 89,720 bytes of
+        // x86-64 machine code with no PE header at all: the right length, so every
+        // file-count and size check passed, and every version of the file was
+        // 89,720 bytes, so a size comparison would have passed too. The packaged
+        // java.exe died instantly with 0xC000012F, STATUS_INVALID_IMAGE_FORMAT - the
+        // Windows loader refusing a file that is not a DLL.
+        //
+        // The app itself was fine. The launcher loads runtime/bin/server/jvm.dll
+        // directly and never touches jli.dll, so what was broken was the very tool
+        // added to diagnose startup failures, and the only symptom was a jli.dll error
+        // from the script a person runs when something else has already gone wrong.
+        // jli.dll is also the file security software most often flags - it is an
+        // unsigned launcher DLL - and a flagged file can be rewritten in place rather
+        // than removed, which is exactly what the bytes looked like.
+        //
+        // So neither file is trusted. The build JDK's copies are written over them
+        // every build, and both are checked for a PE header afterwards. A build that
+        // cannot get a working pair stops: shipping this package without it is worse
+        // than not shipping it, because the package's diagnostic cannot run.
         val runtimeBinDir = packagedRuntimeBin
-        val javaExe = File(runtimeBinDir, "java.exe")
-        if (!javaExe.isFile) {
-            val candidates = listOf(
-                File(System.getProperty("java.home") ?: "", "bin/java.exe"),
-                File(System.getProperty("jdk.home") ?: "", "bin/java.exe")
-            )
-            val source = candidates.firstOrNull { it.isFile }
+        val jdkBins = listOfNotNull(
+            System.getProperty("jdk.home"),
+            System.getProperty("java.home")
+        ).map { File(it, "bin") }.filter { it.isDirectory }
+
+        fun peHeaderIsIntact(file: File): Boolean {
+            if (!file.isFile || file.length() < 2L) return false
+            val head = file.inputStream().use { input -> ByteArray(2).also { input.read(it) } }
+            return head[0] == 0x4D.toByte() && head[1] == 0x5A.toByte()
+        }
+
+        listOf("java.exe", "jli.dll").forEach { name ->
+            val target = File(runtimeBinDir, name)
+            val source = jdkBins.map { File(it, name) }.firstOrNull { it.isFile && peHeaderIsIntact(it) }
                 ?: error(
-                    "No java.exe to add to the package; looked in ${candidates.joinToString()}. " +
-                        "Without it the package cannot report a real startup error."
+                    "No usable $name in the build JDK; looked in ${jdkBins.joinToString()}. " +
+                        "Without it the package cannot report a real startup error, and a " +
+                        "java.exe without a matching jli.dll dies with STATUS_INVALID_IMAGE_FORMAT."
                 )
-            source.copyTo(javaExe, overwrite = true)
-            logger.lifecycle("Added java.exe (${javaExe.length()} bytes) so the package can report real startup errors.")
+            val alreadyGood = target.isFile &&
+                peHeaderIsIntact(target) &&
+                target.length() == source.length() &&
+                target.readBytes().contentEquals(source.readBytes())
+            if (!alreadyGood) {
+                val hadHeader = target.isFile && peHeaderIsIntact(target)
+                val why = when {
+                    !target.isFile -> "it was missing"
+                    !hadHeader -> "it had no PE header - ${target.length()} bytes that were not a DLL"
+                    else -> "it did not match the build JDK"
+                }
+                source.copyTo(target, overwrite = true)
+                logger.lifecycle(
+                    "Replaced runtime\\bin\\$name ($why); the package now carries the build " +
+                        "JDK's copy, so java.exe and jli.dll are the same build."
+                )
+            }
         }
 
         // --- the API set stubs ------------------------------------------------
