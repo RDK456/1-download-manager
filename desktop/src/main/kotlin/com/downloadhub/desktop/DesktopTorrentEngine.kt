@@ -62,18 +62,56 @@ class DesktopTorrentEngine(
 
     private suspend fun driveOne() {
         val limit = settingsState.value.maxConcurrent.coerceIn(1, 16)
-        val live = store.snapshot().filter { it.source == DownloadSource.TORRENT }
-        if (live.size >= limit) return
+        val torrents = store.snapshot().filter { it.source == DownloadSource.TORRENT }
+        // Only what is actually moving counts against the limit. Counting every
+        // torrent ever queued does, so after three downloads had finished no new
+        // one could ever start - the limit was spent on history.
+        val active = torrents.count { it.isTransferring() || running.containsKey(it.id) }
+        if (active >= limit) return
 
-        val next = live.firstOrNull { it.status == DownloadStatus.QUEUED } ?: return
-        runCatching { transfer(next) }
-            .onFailure { error ->
-                store.update(next.id) {
-                    it.copy(status = DownloadStatus.FAILED, errorMessage = error.message ?: "Torrent failed")
+        val next = torrents.firstOrNull { it.status == DownloadStatus.QUEUED } ?: return
+        // Started, not awaited.
+        //
+        // transfer() polls for the whole life of the torrent, so awaiting it here
+        // meant this loop sat inside the first download for its entire duration and
+        // never came back to start a second one: the first torrent showed progress
+        // and everything added after it sat on "Queued" for ever, whatever the
+        // concurrency setting said.
+        scope.launch {
+            runCatching { transfer(next) }
+                .onFailure { error ->
+                    store.update(next.id) {
+                        it.copy(status = DownloadStatus.FAILED, errorMessage = error.message ?: "Torrent failed")
+                    }
+                    onChange()
                 }
-                onChange()
-            }
+        }
     }
+
+    /** Whether this row is one that is moving, or about to be. */
+    private fun QueuedDownload.isTransferring(): Boolean =
+        status == DownloadStatus.RESOLVING || status == DownloadStatus.RUNNING
+
+    /**
+     * Saves a magnet's file list the first time the swarm sends it, and never again.
+     *
+     * Once per item, not once per poll: this sits in a loop that runs every few
+     * hundred milliseconds, and reading the metadata costs a second libtorrent
+     * session and a trip to the swarm.
+     */
+    private fun saveFileListOnce(item: QueuedDownload) {
+        if (!item.url.startsWith("magnet:", ignoreCase = true)) return
+        if (com.downloadhub.core.TorrentMetainfoStore.read(AppPaths.home, item.id) != null) return
+        if (fileListSaves.putIfAbsent(item.id, true) != null) return
+        scope.launch(Dispatchers.IO) {
+            val fetched = com.downloadhub.core.TorrentMetadataReader.read(item.url).getOrNull()
+            com.downloadhub.core.TorrentMetainfoStore.write(AppPaths.home, item.id, fetched)
+            onChange()
+        }
+    }
+
+    /** Items whose file list has already been looked for, so it is looked for once. */
+    private val fileListSaves = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
     private suspend fun transfer(item: QueuedDownload) {
         if (running.put(item.id, true) == true) return
@@ -119,6 +157,12 @@ class DesktopTorrentEngine(
                             delay(POLL_MILLIS)
                         } else {
                             applySnapshot(item.id, snapshot)
+                            // A magnet that resolved without passing through the
+                            // pre-download dialog - from the browser extension, or a
+                            // magnet opened in Explorer - has just been handed its file
+                            // list by the swarm and has nowhere to keep it. This is the
+                            // only moment it can be saved, so it is taken once.
+                            if (snapshot.hasMetadata) saveFileListOnce(item)
                             if (snapshot.isFinished) {
                                 publish(item.id, snapshot)
                                 // Keep watching only while there is a limit to enforce.

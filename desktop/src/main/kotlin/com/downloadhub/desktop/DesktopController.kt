@@ -1056,6 +1056,21 @@ class DesktopController(
                 torrentContentFolder = torrentRequest?.contentFolder.orEmpty()
             )
         )
+        // Keep the file list for a magnet.
+        //
+        // The pre-download dialog has just fetched it from the swarm, and it is the
+        // only copy that will ever exist: libtorrent4j cannot write a magnet's
+        // metadata back out as a .torrent file, and the Content tab reads one. So a
+        // torrent that arrived as a magnet - which is every torrent found by
+        // searching - had a file list drawn in the dialog and then nothing at all
+        // afterwards. Saved here, where the item's id can find it again.
+        if (source == DownloadSource.TORRENT) {
+            com.downloadhub.core.TorrentMetainfoStore.write(
+                AppPaths.home,
+                id,
+                torrentRequest?.metainfo?.takeIf { it.files.isNotEmpty() }
+            )
+        }
         store.persist()
         refresh()
 

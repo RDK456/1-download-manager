@@ -312,9 +312,61 @@ class YouTubeListingTest {
         }
     }
 
+    /**
+     * Only the first torrent ever ran; everything added after it sat on "Queued".
+     *
+     * transfer() polls for the whole life of a torrent, so awaiting it inside the
+     * loop that starts transfers meant the loop never came back to start a second
+     * one. And the limit was counted against every torrent ever queued, so three
+     * finished downloads used it all up.
+     */
     @Test
-    fun theSectionFetchesFlatListings() {
-        val engine = File("src/main/kotlin/com/downloadhub/desktop/YtDlpEngine.kt").readText()
+    fun transfersAreStartedRatherThanAwaited() {
+        val engine = File("src/main/kotlin/com/downloadhub/desktop/DesktopTorrentEngine.kt").readText()
+        val drive = engine.substringAfter("private suspend fun driveOne()")
+            .substringBefore("private suspend fun transfer(")
+        assertTrue(
+            "the loop must not await the transfer, or it sits inside the first " +
+                "torrent for its whole duration and never starts another:\n$drive",
+            drive.contains("scope.launch")
+        )
+        assertTrue(
+            "the limit must count what is moving, not what has ever been queued:\n$drive",
+            drive.contains("isTransferring()")
+        )
+        assertFalse(
+            "counting every torrent ever queued spends the limit on history",
+            drive.contains("live.size >= limit")
+        )
+    }
+
+    /**
+     * A magnet's file list was drawn in the pre-download dialog and then thrown
+     * away, because the Content tab reads a .torrent and a magnet has none - and
+     * libtorrent4j cannot write one back out from fetched metadata. Every torrent
+     * found by searching is a magnet, so every one of them had no file list.
+     */
+    @Test
+    fun aMagnetFileListIsKeptRatherThanThrownAway() {
+        val controller = File("src/main/kotlin/com/downloadhub/desktop/DesktopController.kt").readText()
+        assertTrue(
+            "the fetched list must be saved when the torrent is queued",
+            controller.contains("TorrentMetainfoStore.write(")
+        )
+        val engine = File("src/main/kotlin/com/downloadhub/desktop/DesktopTorrentEngine.kt").readText()
+        assertTrue(
+            "a magnet that resolves without the dialog must have its list saved too",
+            engine.contains("saveFileListOnce")
+        )
+        val panel = File("src/main/kotlin/com/downloadhub/desktop/TorrentDetailPanel.kt").readText()
+        assertTrue(
+            "the Content tab must read the saved list when there is no .torrent",
+            panel.contains("TorrentMetainfoStore.read(")
+        )
+    }
+
+    @Test
+    fun theSectionFetchesFlatListings() {        val engine = File("src/main/kotlin/com/downloadhub/desktop/YtDlpEngine.kt").readText()
         val fetch = engine.substringAfter("fun fetchPlaylist(").substringBefore("data class PlaylistFetch")
         assertTrue("no flat playlist fetch:\n$fetch", fetch.contains("--dump-single-json"))
         assertTrue("entries must stay small:\n$fetch", fetch.contains("--flat-playlist"))

@@ -304,13 +304,18 @@ private fun TorrentTabContent(
         )
 
         TorrentTab.CONTENT -> {
-            // Re-read from the .torrent rather than keeping the whole metainfo in every
-            // queue row. The file is already on disk - it is copied there when the torrent
-            // is added - and a nine-thousand-file metainfo in a JSON queue is a queue that
-            // is slow to read for a list the user only opens occasionally.
+            // The .torrent when there is one, and the saved file list when there is
+            // not.
+            //
+            // A magnet has no .torrent file, and libtorrent4j cannot write one from
+            // the metadata it fetches, so a torrent that arrived as a magnet - every
+            // torrent found by searching - had no file list here at all even though
+            // the pre-download dialog had just drawn one from the same metadata. The
+            // list is saved as it arrives and read back here.
             val meta = item.torrentFilePath?.let(::File)
                 ?.takeIf { it.isFile }
                 ?.let { runCatching { com.downloadhub.core.TorrentParser.parse(it) }.getOrNull() }
+                ?: com.downloadhub.core.TorrentMetainfoStore.read(AppPaths.home, item.id)
             if (meta == null || meta.files.isEmpty()) {
                 PanelNote(
                     "The file list is not available for this one.\n\nA magnet only gets a " +
