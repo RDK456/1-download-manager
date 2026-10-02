@@ -59,7 +59,23 @@ fun DownloadCategory.destinationFolder(): String = when (this) {
 enum class LibraryGroup(val label: String) {
     ALL("All Downloads"),
     DOWNLOADING("Downloading"),
-    COMPLETED("Completed"),
+    /**
+     * Everything that has all its bytes.
+     *
+     * Called Finished rather than Completed, because that is the word people use for a
+     * download that is done with, and because a torrent is only ever finished - it has
+     * no separate completed state to confuse it with.
+     */
+    FINISHED("Finished"),
+
+    /**
+     * Everything that has not, which is most of the queue at any moment.
+     *
+     * Its own row because "not finished" is the question actually being asked most of
+     * the time, and listing every unfinished download meant reading the four status rows
+     * and adding them up.
+     */
+    UNFINISHED("Unfinished"),
     PAUSED("Paused"),
     FAILED("Failed");
 
@@ -71,7 +87,10 @@ enum class LibraryGroup(val label: String) {
             item.status == DownloadStatus.RESOLVING ||
             item.status == DownloadStatus.QUEUED
 
-        COMPLETED -> item.status == DownloadStatus.COMPLETED
+        FINISHED -> item.status == DownloadStatus.COMPLETED
+        // A subtraction rather than a list of statuses, so a download that fails in some
+        // new way is unfinished rather than invisible.
+        UNFINISHED -> item.status != DownloadStatus.COMPLETED
         PAUSED -> item.status == DownloadStatus.PAUSED
         FAILED -> item.status == DownloadStatus.FAILED
         ALL -> true

@@ -56,7 +56,7 @@ class DownloadLibraryTest {
 
     @Test
     fun completedHoldsOnlyCompletedItems() {
-        val done = DownloadLibrary.visible(sample, LibraryQuery(group = LibraryGroup.COMPLETED))
+        val done = DownloadLibrary.visible(sample, LibraryQuery(group = LibraryGroup.FINISHED))
         assertEquals(2, done.size)
         assertTrue(done.all { it.status == DownloadStatus.COMPLETED })
     }
@@ -75,7 +75,7 @@ class DownloadLibraryTest {
             LibraryGroup.DOWNLOADING,
             LibraryGroup.PAUSED,
             LibraryGroup.FAILED,
-            LibraryGroup.COMPLETED
+            LibraryGroup.FINISHED
         )
         val total = states.sumOf { DownloadLibrary.visible(sample, LibraryQuery(group = it)).size }
         assertEquals(sample.size, total)
@@ -100,7 +100,7 @@ class DownloadLibraryTest {
         assertEquals(1, DownloadLibrary.countFor(sample, LibraryCategory.DOCUMENTS))
         assertEquals(1, DownloadLibrary.countFor(sample, LibraryCategory.COMPRESSED))
         assertEquals(6, DownloadLibrary.countFor(sample, LibraryCategory.ALL))
-        assertEquals(2, DownloadLibrary.countFor(sample, LibraryGroup.COMPLETED))
+        assertEquals(2, DownloadLibrary.countFor(sample, LibraryGroup.FINISHED))
         assertEquals(1, DownloadLibrary.countFor(sample, LibraryGroup.FAILED))
     }
 

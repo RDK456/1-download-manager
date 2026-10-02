@@ -116,6 +116,19 @@ data class DesktopActions(
     val pause: (String) -> Unit,
     val resume: (String) -> Unit,
     /**
+     * Stops one download, keeping what it has already fetched.
+     *
+     * Not the same as [pause]. Pausing asks libtorrent to stop sending and to remember
+     * exactly where it was, so resuming carries on from the same piece. Stopping takes
+     * the torrent out of the session altogether: nothing is holding it, nothing is
+     * uploading, and resuming starts it afresh. That is what someone wants when a
+     * download is going wrong and they would rather it let go than keep limping.
+     *
+     * Its own action rather than a second name for [pause] because the toolbar has both
+     * - Pause for what might be temporary, Stop for what is finished with.
+     */
+    val stop: (String) -> Unit,
+    /**
      * Sets one file of one torrent's priority, and tells libtorrent at once.
      *
      * Takes the file index and the priority rather than a whole map, because the only
@@ -766,6 +779,27 @@ class DesktopController(
         resume = { id ->
             val item = store.get(id)
             if (item?.source == DownloadSource.TORRENT) torrents.resume(id) else engine.resume(id)
+        },
+        stop = { id ->
+            val item = store.get(id)
+            // A torrent is taken out of libtorrent, which is what stops it for good. An
+            // ordinary download has no session to be removed from, so it is paused and
+            // its row says plainly that it was stopped - rather than being left looking
+            // like it is still going.
+            if (item?.source == DownloadSource.TORRENT) {
+                torrents.stop(id)
+            } else {
+                engine.pause(id)
+                store.update(id) {
+                    it.copy(
+                        status = DownloadStatus.PAUSED,
+                        speedBytesPerSecond = 0L,
+                        errorMessage = "Stopped"
+                    )
+                }
+                store.persist()
+                refresh()
+            }
         },
         retry = { id ->
             val item = store.get(id)

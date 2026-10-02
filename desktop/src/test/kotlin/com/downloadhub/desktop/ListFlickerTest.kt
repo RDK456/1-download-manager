@@ -119,7 +119,7 @@ class ListFlickerTest {
         val completedYouTube = com.downloadhub.core.DownloadLibrary.visible(
             items,
             com.downloadhub.core.LibraryQuery(
-                group = com.downloadhub.core.LibraryGroup.COMPLETED,
+                group = com.downloadhub.core.LibraryGroup.FINISHED,
                 kind = com.downloadhub.core.LibraryKind.YOUTUBE
             )
         )
@@ -143,7 +143,7 @@ class ListFlickerTest {
             com.downloadhub.core.DownloadLibrary.visible(
                 items,
                 com.downloadhub.core.LibraryQuery(
-                    group = com.downloadhub.core.LibraryGroup.COMPLETED
+                    group = com.downloadhub.core.LibraryGroup.FINISHED
                 )
             ).map { it.id }
         )

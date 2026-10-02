@@ -201,11 +201,49 @@ object ColumnDividers {
      * and for the columns nearest the right-hand edge the jump was enough to shove the
      * following columns off the table, which reads as the column refusing to resize.
      */
-    fun tableXOf(
-        windowX: Float,
-        sidebarDp: Float,
-        headerChromeDp: Float = HEADER_LEADING_DP
-    ): Float = windowX - sidebarDp - headerChromeDp
+    /**
+     * Widens or narrows a column by how far the pointer has travelled, not to where it is.
+     *
+     * Two things were wrong with working from an absolute position, and both of them are
+     * why dragging a header never felt right.
+     *
+     * First, the handle is 14 dp wide and sits at the column's right edge, so pressing it
+     * in the middle starts the drag 7 dp behind the divider. An absolute calculation
+     * therefore shrank the column by 7 dp before the pointer had moved at all. A delta
+     * from the press point cancels that out exactly, wherever inside the handle you
+     * happened to land.
+     *
+     * Second, and worse, the header has to place the pointer's x against a table measured
+     * in dp - which means the sidebar's width, the header's own padding and the checkbox
+     * column all have to come off it, each in the right units, or every drag lands in the
+     * wrong place. A delta needs none of that: it is the difference between two numbers
+     * read the same way, so nothing outside the drag can affect it.
+     */
+    fun draggedBy(
+        widths: ColumnWidths,
+        column: DownloadColumn,
+        proposedWidth: Float,
+        tableDp: Float,
+        layout: TableLayout
+    ): ColumnWidths = when (column) {
+        DownloadColumn.NAME -> {
+            // Two floors, and the stricter one wins.
+            //
+            // The share floor keeps the name from being squeezed out on a wide window; the
+            // absolute floor keeps it readable on a narrow one, where a fifth of a 300 dp
+            // table is 60 dp - one truncated character. Clamping the share alone satisfied
+            // the first and silently failed the second.
+            val shareCeiling = 0.9f
+            val absoluteFloor = (ColumnWidths.MIN_NAME_DP / tableDp).coerceAtMost(shareCeiling)
+            val floor = maxOf(ColumnWidths.MIN_NAME_SHARE, absoluteFloor)
+            widths.copy(nameShare = (proposedWidth / tableDp).coerceIn(floor, shareCeiling))
+        }
+
+        else -> widths.copy(
+            overrides = widths.overrides + (column to
+                proposedWidth.coerceAtLeast(ColumnWidths.MIN_COLUMN_DP))
+        )
+    }
 
     /**
      * Which divider is within [grabDp] of this x position, if any.
@@ -234,11 +272,12 @@ object ColumnDividers {
     }
 
     /**
-     * Applies a drag.
+     * Applies a drag to an absolute position.
      *
-     * Clamped rather than accepted as given, because the divider can be dragged past
-     * either end: past the far side it would push the following columns off the table
-     * entirely, and below its own minimum the header would stop saying what the column is.
+     * Kept as the bridge to [draggedBy] for callers that know where the pointer is in the
+     * table's own coordinates. The header does not use this - it drags by delta, because
+     * it cannot reliably know the pointer's position in the table's space and does not
+     * need to.
      */
     fun dragged(
         widths: ColumnWidths,
@@ -249,25 +288,6 @@ object ColumnDividers {
     ): ColumnWidths {
         val current = resolvedWidthOf(layout, widths, tableDp, column)
         val startOffset = offsets(layout, widths, tableDp)[column] ?: current
-        val proposed = current + (toX - startOffset)
-
-        return if (column == DownloadColumn.NAME) {
-            // Two floors, and the stricter one wins.
-            //
-            // The share floor keeps the name from being squeezed out on a wide window; the
-            // absolute floor keeps it readable on a narrow one, where a fifth of a 300 dp
-            // table is 60 dp - one truncated character. Clamping the share alone satisfied
-            // the first and silently failed the second.
-            val shareFloor = ColumnWidths.MIN_NAME_SHARE
-            val shareCeiling = 0.9f
-            val absoluteFloor = (ColumnWidths.MIN_NAME_DP / tableDp).coerceAtMost(shareCeiling)
-            val floor = maxOf(shareFloor, absoluteFloor)
-            widths.copy(nameShare = (proposed / tableDp).coerceIn(floor, shareCeiling))
-        } else {
-            widths.copy(
-                overrides = widths.overrides + (column to
-                    proposed.coerceAtLeast(ColumnWidths.MIN_COLUMN_DP))
-            )
-        }
+        return draggedBy(widths, column, current + (toX - startOffset), tableDp, layout)
     }
 }

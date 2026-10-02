@@ -7,6 +7,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -466,7 +470,20 @@ fun TorrentStatusBar(items: List<DownloadItem>, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("${strip.torrentCount} torrents", fontSize = 10.sp, color = muted)
+        // The whole queue, not just the torrents.
+        //
+        // It counted torrents and only appeared on the Torrents tab, so on every other
+        // tab there was no indication of anything at all - a strip that vanishes with a
+        // tab is a strip nobody learns to read.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.List,
+                contentDescription = null,
+                modifier = Modifier.size(12.dp),
+                tint = muted
+            )
+            Text(" ${items.size}", fontSize = 10.sp, color = muted)
+        }
         Text(
             "↓ " + DisplayFormat.bytes(strip.downloadRate) + "/s",
             fontSize = 10.sp,

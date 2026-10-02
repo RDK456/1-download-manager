@@ -119,66 +119,6 @@ class ReportedBugsTest {
                 .contains("DownloadSource.TORRENT")
         )
     }
-
-    /**
-     * Every column has a handle, and pressing one does not move the column.
-     *
-     * The handles are drawn inside the header, which is 8 dp of padding plus an 18 dp
-     * checkbox column in from the table's edge. The drag conversion took the sidebar
-     * off the pointer's x and nothing else, so every handle sat 26 dp to the right of
-     * where the arithmetic thought it was. A drag is a difference, so a constant 26 dp
-     * error meant pressing a handle and moving one pixel snapped the column 26 dp
-     * sideways - which is a header that feels like it is fighting back, and for the
-     * columns nearest the right edge pushes the rest off the table.
-     */
-    @Test
-    fun aHeaderIsInTheSameSpaceAsTheArithmeticThatMovesIt() {
-        assertEquals(26f, HEADER_LEADING_DP, 0.01f)
-        assertEquals(
-            "the sidebar and the header's own chrome both have to come off",
-            400f,
-            ColumnDividers.tableXOf(windowX = 656f, sidebarDp = 230f),
-            0.01f
-        )
-
-        val layout = fullLayout()
-        val widths = ColumnWidths.DEFAULT
-        // Wide enough that the name column is not already pinned against the cap. It is
-        // capped by whatever the fixed columns leave over, so on a narrow table it
-        // cannot grow at all - by design, and checked separately below.
-        val table = 1600f
-
-        // The invariant: a pointer resting exactly on a divider, moved nowhere, must
-        // leave every column exactly as it was. Under the old conversion this moved
-        // every column by the width of the header's chrome.
-        DownloadColumn.entries
-            .filter { ColumnDividers.isShown(it, layout) }
-            .forEach { column ->
-                val divider = ColumnDividers.offsets(layout, widths, table)[column]!!
-                val unchanged = ColumnDividers.dragged(
-                    widths = widths,
-                    column = column,
-                    toX = divider,
-                    tableDp = table,
-                    layout = layout
-                )
-                assertEquals(
-                    "grabbing $column and not moving must not resize it",
-                    ColumnDividers.resolvedWidthOf(layout, widths, table, column),
-                    ColumnDividers.resolvedWidthOf(layout, unchanged, table, column),
-                    0.01f
-                )
-            }
-    }
-
-    /**
-     * The name column stops growing when the fixed columns have taken all that is left.
-     *
-     * Not a bug - a name wider than the room available would push the row's pause and
-     * options buttons off the end of the table, taking the row's controls with them.
-     * Pinned here because the resize test has to use a table wide enough not to hit it,
-     * and that is only safe to assume if the cap is a fact.
-     */
     @Test
     fun theNameColumnIsCappedByTheRoomTheOthersLeave() {
         val layout = fullLayout()

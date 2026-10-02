@@ -101,7 +101,7 @@ class SidebarTest {
         // Downloading, Completed, Paused and Failed are the four questions worth asking of
         // a download manager. There was no way to ask three of them before.
         assertTrue(LibraryGroup.DOWNLOADING in groups)
-        assertTrue(LibraryGroup.COMPLETED in groups)
+        assertTrue(LibraryGroup.FINISHED in groups)
         assertTrue(LibraryGroup.PAUSED in groups)
         assertTrue(LibraryGroup.FAILED in groups)
         assertEquals(LibraryGroup.ALL, groups.first())
@@ -128,14 +128,14 @@ class SidebarTest {
         assertEquals(2, counts[LibraryGroup.PAUSED])
         assertEquals(1, counts[LibraryGroup.FAILED])
         // h, i and t2 - the completed torrent counts too.
-        assertEquals(3, counts[LibraryGroup.COMPLETED])
+        assertEquals(3, counts[LibraryGroup.FINISHED])
         assertEquals(mixed.size, counts[LibraryGroup.ALL])
         // The four states partition the list, which is what makes the rail navigable
         // rather than decorative.
         assertEquals(
             mixed.size,
             counts[LibraryGroup.DOWNLOADING]!! + counts[LibraryGroup.PAUSED]!! +
-                counts[LibraryGroup.FAILED]!! + counts[LibraryGroup.COMPLETED]!!
+                counts[LibraryGroup.FAILED]!! + counts[LibraryGroup.FINISHED]!!
         )
     }
 

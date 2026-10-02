@@ -443,6 +443,36 @@ class DesktopTorrentEngine(
         onChange()
     }
 
+    /**
+     * Stops a torrent outright, keeping every byte it has already fetched.
+     *
+     * Pause asks libtorrent to stop sending and to remember exactly where it was, so
+     * resuming carries on from the same piece. This takes the torrent out of the
+     * session instead: nothing holds it, nothing is uploading, and resuming starts it
+     * afresh. That is what someone wants when a download is going wrong and they would
+     * rather it let go than keep limping - and it is the per-selection counterpart to
+     * Stop All, which is why it needed to exist as its own action rather than as a
+     * second name for pause.
+     *
+     * The files are kept. Stopping is not deleting, and a download that has taken four
+     * hours to fetch most of a file does not lose that because someone pressed the wrong
+     * button.
+     */
+    fun stop(id: String) {
+        val item = store.get(id) ?: return
+        runCatching { engine.remove(item.toCoreItem(), deleteFiles = false) }
+        store.update(id) {
+            it.copy(
+                status = DownloadStatus.PAUSED,
+                speedBytesPerSecond = 0L,
+                uploadRate = 0L,
+                errorMessage = null
+            )
+        }
+        store.persist()
+        onChange()
+    }
+
     fun resume(id: String) {
         store.update(id) { it.copy(status = DownloadStatus.QUEUED, errorMessage = null) }
         onChange()

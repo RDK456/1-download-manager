@@ -1,12 +1,17 @@
 package com.downloadhub.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +33,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -43,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -193,6 +201,15 @@ fun LibraryScreen(
      * back to the default without editing a file.
      */
     var columnWidths by remember { mutableStateOf(ColumnWidths.DEFAULT) }
+    /**
+     * The width a column had when its handle was grabbed, and which column that was.
+     *
+     * Held so the drag can be a movement rather than a position. The width is read once,
+     * at the press, and every move after that is added to it - which is why where the
+     * pointer is in the window no longer has to be worked out at all.
+     */
+    var dragColumn by remember { mutableStateOf<com.downloadhub.core.DownloadColumn?>(null) }
+    var dragStartWidth by remember { mutableFloatStateOf(0f) }
 
     val all = state.items.map { it.toCoreItem() }
     /**
@@ -320,10 +337,12 @@ fun LibraryScreen(
                      }
                         LibraryToolbar(
                             hasSelection = selected.isNotEmpty(),
+                            selectedCount = selected.size,
                             activeCount = DownloadLibrary.activeCount(all),
                             onNew = onOpenAdd,
                             onResume = { selected.forEach { actions.resume(it) } },
                             onPause = { selected.forEach { actions.pause(it) } },
+                            onStop = { selected.forEach { actions.stop(it) } },
                             onStartQueue = actions.resumeAll,
                             onStopQueue = actions.pauseAll,
                             onStopAll = actions.pauseAll,
@@ -340,17 +359,24 @@ fun LibraryScreen(
                             layout = table,
                             widths = columnWidths,
                             tableDp = contentDp,
-                            onDrag = { column, toX ->
-                                columnWidths = ColumnDividers.dragged(
+                            onDragStart = { column ->
+                                dragColumn = column
+                                dragStartWidth = ColumnDividers.resolvedWidthOf(
+                                    table, columnWidths, contentDp, column
+                                )
+                            },
+                            onDrag = { column, deltaDp ->
+                                // By how far the pointer has travelled, not by where it
+                                // is. A delta from the press point is the only form that
+                                // cannot be thrown off by the header's own padding, the
+                                // checkbox column, or the display's pixel-to-dp scale -
+                                // and it cancels out landing anywhere inside the 14 dp
+                                // handle, so a column no longer shrinks under the cursor
+                                // before you have moved at all.
+                                columnWidths = ColumnDividers.draggedBy(
                                     widths = columnWidths,
                                     column = column,
-                                    // Window coordinates to column coordinates: past the
-                                    // sidebar, and then past the header's own padding and
-                                    // its checkbox column. Only the sidebar used to come
-                                    // off, which left every handle 26 dp out from where
-                                    // the arithmetic believed it was - so pressing on one
-                                    // and moving a pixel snapped the column sideways.
-                                    toX = ColumnDividers.tableXOf(toX, sidebar.value),
+                                    proposedWidth = dragStartWidth + deltaDp,
                                     tableDp = contentDp,
                                     layout = table
                                 )
@@ -442,10 +468,15 @@ fun LibraryScreen(
                                 }
                             }
                         )
-                        TorrentStatusBar(all)
                     }
 
                     StatusBar(state, all)
+
+        // The transfer readout, on every tab and whether or not anything is
+        // selected. It used to live inside the Torrents-only detail pane, so it
+        // was drawn only on that tab and only when there was a pane to draw it in -
+        // and it said "N torrents" while sitting under a list of everything.
+        TorrentStatusBar(all)
                 }
                 }
             }
@@ -676,24 +707,61 @@ private fun CategoryRail(
     // queue, because a count of zero beside Torrents when the list is already scoped to
     // YouTube says "there are none" when it means "not this list".
     val scoped = DownloadLibrary.scopedFor(items, kind)
-    Column(
-        modifier = Modifier
-            .width(width)
-            .fillMaxHeight()
-            .background(AppTheme.Palette.band)
-            .verticalScroll(rememberScrollState())
-            .padding(vertical = 6.dp)
-    ) {
-        // Built from the shared list rather than assembled here. The rail used to print
-        // "Finished" as a heading and again as a row underneath it, and "Unfinished" the
-        // same way, because the two halves were written separately. One list cannot
-        // produce a heading and a row with the same word, because a heading is a
-        // RailEntry.Heading and a row is a RailEntry.Status, and the list has each
-        // exactly once.
-        sidebarEntries().forEach { entry ->
-            when (entry) {
-                is RailEntry.Heading -> GroupHeader(entry.label)
-
+        // Which rail sections are folded away.
+        //
+        // A set rather than a flag per section, so adding a section to the rail does not
+        // also mean adding a variable to remember whether it is open. Everything starts
+        // open: a section nobody has touched should show its rows, and folding one is a
+        // deliberate act that lasts for the session.
+        var collapsedSections by remember { mutableStateOf(emptySet<String>()) }
+        val entries = sidebarEntries()
+        Column(
+            modifier = Modifier
+                .width(width)
+                .fillMaxHeight()
+                .background(AppTheme.Palette.band)
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 6.dp)
+        ) {
+            // Built from the shared list rather than assembled here. The rail used to print
+            // "Finished" as a heading and again as a row underneath it, and "Unfinished" the
+            // same way, because the two halves were written separately. One list cannot
+            // produce a heading and a row with the same word, because a heading is a
+            // RailEntry.Heading and a row is a RailEntry.Status, and the list has each
+            // exactly once.
+            //
+            // A heading owns every row up to the next one, and folding it folds them with
+            // it - so the set of rows belonging to a section is worked out by walking the
+            // list, not by each entry knowing what follows it.
+            val ownerOf = remember(entries) {
+                val owners = mutableMapOf<RailEntry, String>()
+                var owner: String? = null
+                entries.forEach { entry ->
+                    if (entry is RailEntry.Heading) owner = entry.label
+                    owner?.let { owners[entry] = it }
+                }
+                owners
+            }
+            entries.forEach { entry ->
+                // A row in a folded section is not drawn at all, rather than drawn and
+                // greyed: the point of folding is that it takes less room.
+                if (ownerOf[entry]?.let { it in collapsedSections } == true &&
+                    entry !is RailEntry.Heading
+                ) {
+                    return@forEach
+                }
+                when (entry) {
+                    is RailEntry.Heading -> GroupHeader(
+                        label = entry.label,
+                        expanded = entry.label !in collapsedSections,
+                        onToggle = {
+                            collapsedSections = if (entry.label in collapsedSections) {
+                                collapsedSections - entry.label
+                            } else {
+                                collapsedSections + entry.label
+                            }
+                        }
+                    )
                 is RailEntry.Status -> RailRow(
                     label = entry.group.label,
                     count = railCount(entry, scoped),
@@ -762,23 +830,62 @@ private object StatusIcons {
     fun of(group: LibraryGroup): androidx.compose.ui.graphics.vector.ImageVector? = when (group) {
         LibraryGroup.ALL -> null
         LibraryGroup.DOWNLOADING -> Icons.Default.PlayArrow
-        LibraryGroup.COMPLETED -> Icons.Default.Check
+        LibraryGroup.FINISHED -> Icons.Default.Check
+        LibraryGroup.UNFINISHED -> DlmIcons.ArrowDownward
         LibraryGroup.PAUSED -> DlmIcons.Pause
         LibraryGroup.FAILED -> DlmIcons.Stop
     }
 }
 
-@Composable
-private fun GroupHeader(label: String) {
-    Text(
-        label,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = AppTheme.Palette.faint,
-        modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 2.dp)
-    )
-}
-
+    @Composable
+    private fun GroupHeader(
+        label: String,
+        expanded: Boolean = true,
+        onToggle: (() -> Unit)? = null
+    ) {
+        // A chevron, and the whole header is the target.
+        //
+        // Collapsible because the rail has outgrown the window it was arranged for: with
+        // the states, the categories and the kinds all listed, Finished and Unfinished
+        // are four rows nobody reads every time, and the section headings are what let
+        // them be folded away without losing the rows that matter.
+        //
+        // The count travels with the heading, so a folded section still says how much is
+        // in it - a collapsed section that says nothing is one you cannot tell apart from
+        // an empty one.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (onToggle != null) {
+                        Modifier.clickable(onClick = onToggle)
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(start = 10.dp, end = 8.dp, top = 10.dp, bottom = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (onToggle != null) {
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                    contentDescription = if (expanded) "Collapse $label" else "Expand $label",
+                    modifier = Modifier.size(15.dp),
+                    tint = AppTheme.Palette.faint
+                )
+            } else {
+                Spacer(Modifier.width(15.dp))
+            }
+            Text(
+                label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = AppTheme.Palette.faint,
+                maxLines = 1
+            )
+        }
+    }
 @Composable
 private fun RailRow(
     label: String,
@@ -835,9 +942,19 @@ private fun RailRow(
 private fun LibraryToolbar(
     hasSelection: Boolean,
     activeCount: Int,
+    /**
+     * How many rows are ticked. Shown on the buttons that act on the
+     * selection, because "which ones did I mean" is a question the buttons
+     * should answer without a glance back down the list.
+     */
+    selectedCount: Int,
     onNew: () -> Unit,
     onResume: () -> Unit,
     onPause: () -> Unit,
+    /**
+     * Stops what is ticked. Not Stop All, which stops everything.
+     */
+    onStop: () -> Unit,
     onStartQueue: () -> Unit,
     onStopQueue: () -> Unit,
     onStopAll: () -> Unit,
@@ -864,8 +981,15 @@ private fun LibraryToolbar(
     ) {
         val compact = layout.style == ToolbarStyle.COMPACT
         ToolbarButton("New Download", Icons.Default.Add, highlighted = true, onClick = onNew, compact = compact, buttonWidth = layout.buttonDp)
-        ToolbarButton("Resume", Icons.Default.PlayArrow, enabled = hasSelection, onClick = onResume, compact = compact, buttonWidth = layout.buttonDp)
-        ToolbarButton("Pause", DlmIcons.Pause, enabled = hasSelection, onClick = onPause, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Resume", Icons.Default.PlayArrow, enabled = hasSelection, badge = selectedCount, onClick = onResume, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Pause", DlmIcons.Pause, enabled = hasSelection, badge = selectedCount, onClick = onPause, compact = compact, buttonWidth = layout.buttonDp)
+    ToolbarButton("Pause", DlmIcons.Pause, enabled = hasSelection, badge = selectedCount, onClick = onPause, compact = compact, buttonWidth = layout.buttonDp)
+    // Stop, for the selection only. Beside Pause because the two are the pair everybody
+    // reaches for, and beside Stop All because that is the one it mirrors: Stop All stops
+    // everything, this stops what is ticked. It needed its own button because pausing a
+    // broken download keeps it in the session, still holding its slot, still holding the
+    // swarm open - which is not what someone means when they press stop.
+    ToolbarButton("Stop", DlmIcons.Stop, enabled = hasSelection, badge = selectedCount, onClick = onStop, compact = compact, buttonWidth = layout.buttonDp)
         ToolbarButton("Start Queue", Icons.Default.PlayArrow, enabled = activeCount > 0, onClick = onStartQueue, compact = compact, buttonWidth = layout.buttonDp)
         ToolbarButton("Stop Queue", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopQueue, compact = compact, buttonWidth = layout.buttonDp)
         ToolbarButton("Stop All", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopAll, compact = compact, buttonWidth = layout.buttonDp)
@@ -910,7 +1034,16 @@ private fun ToolbarButton(
      */
     compact: Boolean = false,
     /** The captioned width the caller worked out for this window. */
-    buttonWidth: Float = CAPTION_BUTTON_DP
+        buttonWidth: Float = CAPTION_BUTTON_DP,
+    /**
+     * A number in the corner of the icon, for a button that acts on a selection.
+     *
+     * The count is on the button rather than in the caption, because the caption is
+     * already the width the window worked out and a number added to it changes that. It
+     * answers "which rows did I mean" without anybody having to look back down at the
+     * list to count the ticks.
+     */
+    badge: Int = 0,
 ) {
     val tint = when {
         !enabled -> AppTheme.Palette.faint
@@ -938,17 +1071,39 @@ private fun ToolbarButton(
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 5.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(30.dp)
-                .background(
-                    if (highlighted && enabled) AppTheme.Palette.accent else Color.Transparent,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, null, Modifier.size(17.dp), tint = tint)
-        }
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .background(
+                            if (highlighted && enabled) AppTheme.Palette.accent else Color.Transparent,
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, null, Modifier.size(17.dp), tint = tint)
+                    // The count, in the icon's top-right corner and drawn over it.
+                    //
+                    // Over the icon rather than beside the caption because the caption
+                    // already has a width worked out from the window, and putting a number
+                    // in it would change that arithmetic for every other button.
+                    if (badge > 0) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(13.dp)
+                                .background(AppTheme.Palette.accent, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (badge > 99) "99+" else badge.toString(),
+                                fontSize = 8.sp,
+                                lineHeight = 9.sp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
         if (!compact) {
             Text(
                 text = label,
@@ -975,6 +1130,8 @@ private fun ColumnHeader(
     layout: TableLayout,
     widths: ColumnWidths,
     tableDp: Float,
+    /** Called when a handle is grabbed: notes the width to measure the drag from. */
+    onDragStart: (DownloadColumn) -> Unit,
     onDrag: (DownloadColumn, Float) -> Unit
 ) {
     Row(
@@ -1008,7 +1165,8 @@ private fun ColumnHeader(
                 // The handle sits on the column's right edge, in the padding, so it does
                 // not eat any of the caption's own width.
                 ResizeHandle(
-                    onDrag = { toX -> onDrag(column, toX) },
+                  onPress = { onDragStart(column) },
+                  onDelta = { delta -> onDrag(column, delta) },
                     modifier = Modifier.align(Alignment.CenterEnd)
                 )
             }
@@ -1026,51 +1184,97 @@ private fun ColumnHeader(
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-private fun ResizeHandle(onDrag: (Float) -> Unit, modifier: Modifier = Modifier) {
-    var dragging by remember { mutableStateOf(false) }
-    // AWT reports pointer positions in pixels; the columns are in dp.
-    val density = LocalDensity.current.density
-    Box(
-        modifier
-            .width(14.dp)
-            // The full height of the header, so the target does not depend on where in
-            // the 1 dp line the pointer happens to be.
-            .fillMaxHeight()
-            .onPointerEvent(PointerEventType.Press) { event ->
-                val mouse = event.nativeEvent as? java.awt.event.MouseEvent
-                if (mouse != null && mouse.button == java.awt.event.MouseEvent.BUTTON1) {
-                    dragging = true
-                    // The press must not also reach the header cell, or every attempt to
-                    // resize sorts the table instead.
-                    event.changes.forEach { it.consume() }
-                }
-            }
-            .onPointerEvent(PointerEventType.Move) { event ->
-                if (!dragging) return@onPointerEvent
-                val x = (event.nativeEvent as? java.awt.event.MouseEvent)?.x
-                if (x != null) {
-                    onDrag(x / density)
-                    event.changes.forEach { it.consume() }
-                }
-            }
-            .onPointerEvent(PointerEventType.Release) { event ->
-                if (dragging) {
-                    dragging = false
-                    event.changes.forEach { it.consume() }
-                }
-            },
-        contentAlignment = Alignment.CenterEnd
+    private fun ResizeHandle(
+        /** Called once, when the button goes down: the width to measure the drag from. */
+        onPress: () -> Unit,
+        /** How far the pointer has travelled since that press, in dp. */
+        onDelta: (Float) -> Unit,
+        modifier: Modifier = Modifier
     ) {
+        // AWT reports pointer positions in pixels; the columns are in dp. Reading one and
+        // setting a column by the other is how a drag ends up overshooting by the
+        // display's scale factor on anything not sitting at 100%.
+        val density = LocalDensity.current.density
         Box(
-            Modifier
-                .width(1.dp)
+            modifier
+                .width(14.dp)
+                // The full height of the header, so the target does not depend on where in
+                // the 1 dp line the pointer happens to be.
                 .fillMaxHeight()
-                .background(AppTheme.Palette.outlineVariant)
-        )
-    }
-}
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val press = awaitPointerEvent()
+                            if (!press.changes.any { it.changedToDown() }) continue
+                            val mouse = press.nativeEvent as? java.awt.event.MouseEvent
+                                ?: continue
+                            if (mouse.button != java.awt.event.MouseEvent.BUTTON1) continue
+                            val startX = mouse.x / density
+                            // The press must not also reach the header cell, or every
+                            // attempt to resize sorts the table instead.
+                            press.changes.forEach { it.consume() }
+                            onPress()
 
-@Composable
+                            // Then track until the button comes up, wherever the pointer
+                            // has gone.
+                            //
+                            // This is the whole fix, and it is why a plain
+                            // onPointerEvent(Move) never felt right: that only fires while
+                            // the pointer is inside these 14 dp. A drag is faster than its
+                            // own handle, so the cursor left the target within a few
+                            // milliseconds and the resize stopped dead part-way across -
+                            // which is what "the drag is not proper" looks like. Having
+                            // captured the press, this loop keeps receiving moves for as
+                            // long as the button is down, inside the handle or not.
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.any { it.changedToUp() }) {
+                                    event.changes.forEach { it.consume() }
+                                    break
+                                }
+                                val moved = event.nativeEvent as? java.awt.event.MouseEvent
+                                if (moved != null) {
+                                    onDelta(moved.x / density - startX)
+                                    event.changes.forEach { it.consume() }
+                                }
+                            }
+                        }
+                    }
+                },
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            // A grip, so the handle is something you can see rather than a line you have
+            // to guess at. Three ticks and a rule, inside the target's own 14 dp - the
+            // target keeps its full width either way, so this costs nothing to grab.
+            Row(
+                modifier = Modifier.width(10.dp).fillMaxHeight(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    repeat(3) {
+                        Box(
+                            Modifier
+                                .width(4.dp)
+                                .height(1.dp)
+                                .background(AppTheme.Palette.outlineVariant)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(2.dp))
+                Box(
+                    Modifier
+                        .width(1.dp)
+                        .height(HEADER_HEIGHT_DP.dp)
+                        .background(AppTheme.Palette.outlineVariant)
+                )
+            }
+        }
+    }
+    @Composable
 private fun ColumnHeaderCell(
     label: String,
     modifier: Modifier = Modifier,
