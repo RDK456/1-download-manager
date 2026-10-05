@@ -164,16 +164,6 @@ fun main(args: Array<String>) {
             hideWindow = { visible = false }
             requestExit = { controller.close(); exitApplication() }
 
-            // Minimising hides to the tray rather than leaving a taskbar button that
-            // suggests the app is still sitting there waiting for attention.
-            LaunchedEffect(windowState.isMinimized) {
-                if (windowState.isMinimized) {
-                    windowState.isMinimized = false
-                    if (state.settings.closeToTray && tray.available) {
-                        visible = false
-                    }
-                }
-            }
 
             // A magnet link or a .torrent opened while the app was already running is
             // handed over by the copy Windows started for it. Polled rather than pushed,

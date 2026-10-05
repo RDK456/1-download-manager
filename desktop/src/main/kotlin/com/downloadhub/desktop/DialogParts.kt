@@ -23,6 +23,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+
+/**
+ * Enter (either one) runs [action] while focus is on this element or inside it.
+ *
+ * A preview handler, so it runs before a single-line text field gets to swallow the key.
+ */
+internal fun Modifier.onEnter(enabled: Boolean = true, action: () -> Unit): Modifier = onPreviewKeyEvent { e ->
+    val enter = e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.NumPadEnter)
+    if (enter && enabled) action()
+    enter && enabled
+}
 
 /**
  * A small heading inside the options column.

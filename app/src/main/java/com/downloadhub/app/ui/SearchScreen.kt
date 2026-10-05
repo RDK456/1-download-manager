@@ -170,6 +170,10 @@ fun SearchScreen(
                 label = { Text("Search") },
                 placeholder = { Text("What are you looking for?") },
                 singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                ),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { if (!busy) run() }),
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))
@@ -346,7 +350,7 @@ private fun SearchResultCard(
                     // no counts. A zero there means the site does not say, and writing it as
                     // a number invites skipping a live release.
                     Text(
-                        if (result.reportsHealth) "${result.seeders} seeders" else "seeders unknown",
+                        if (result.reportsHealth) "${result.seeders} seeds · ${result.leechers} peers" else "seeds/peers unknown",
                         fontSize = 11.sp,
                         fontWeight = if (result.reportsHealth && result.seeders > 0) {
                             FontWeight.SemiBold

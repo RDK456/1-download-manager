@@ -554,6 +554,14 @@ fun DownloadHubApp(
                 onScanPage = viewModel::scanPageForMedia
             )
         }
+        val torrentPreview by viewModel.torrentPreview.collectAsStateWithLifecycle()
+        torrentPreview?.let { preview ->
+            TorrentPreviewSheet(
+                preview = preview,
+                onConfirm = viewModel::confirmTorrentPreview,
+                onDismiss = viewModel::dismissTorrentPreview
+            )
+        }
         if (scanState is PageScanState.Found || scanState is PageScanState.Failed) {
             MediaScanSheet(
                 state = scanState,

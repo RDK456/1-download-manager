@@ -88,6 +88,11 @@ class TorrentEngine(
 
     private val sessionManager: SessionManager
     private val handles = ConcurrentHashMap<String, TorrentHandle>()
+    /**
+     * Downloads whose file choices have reached libtorrent. A magnet has no file list at
+     * [start], so its choices are applied by [poll] once the metadata arrives.
+     */
+    private val selectionApplied = ConcurrentHashMap.newKeySet<String>()
     private val lock = Any()
 
     /** When each torrent was first seen complete, keyed by info hash. */
@@ -107,7 +112,7 @@ class TorrentEngine(
         // Applied after the handle exists, not before: libtorrent needs the piece layout
         // to know which pieces a file covers, and only has that once the torrent is in
         // the session.
-        applyFileSelection(item, handle)
+        if (applyFileSelection(item, handle)) selectionApplied += item.id
         handles[item.id] = handle
         return snapshot(item, handle)
     }
@@ -125,10 +130,10 @@ class TorrentEngine(
      * needs every file's offset, and doing it per file is how you end up raising only the
      * pieces of the first file.
      */
-    private fun applyFileSelection(item: DownloadItem, handle: TorrentHandle) {
-        val info = runCatching { handle.torrentFile() }.getOrNull() ?: return
+    private fun applyFileSelection(item: DownloadItem, handle: TorrentHandle): Boolean {
+        val info = runCatching { handle.torrentFile() }.getOrNull() ?: return false
         val fileCount = runCatching { info.numFiles() }.getOrDefault(0)
-        if (fileCount <= 0) return
+        if (fileCount <= 0) return false
         val pieceCount = runCatching { info.numPieces() }.getOrDefault(0)
         val pieceLength = runCatching { info.pieceLength().toLong() }.getOrDefault(0L)
 
@@ -158,6 +163,7 @@ class TorrentEngine(
                 }
             }
         }
+        return true
     }
 
     /**
@@ -220,7 +226,7 @@ class TorrentEngine(
      */
     fun setFilePriorities(item: DownloadItem): Boolean {
         val handle = handles[item.id] ?: start(item)?.let { handles[item.id] } ?: return false
-        applyFileSelection(item, handle)
+        if (applyFileSelection(item, handle)) selectionApplied += item.id
         return true
     }
 
@@ -231,6 +237,7 @@ class TorrentEngine(
         val handle = sessionManager.find(Sha1Hash.parseHex(hash))
             ?: return handles[item.id]?.let { snapshot(item, it) }
         handles[item.id] = handle
+        if (item.id !in selectionApplied && applyFileSelection(item, handle)) selectionApplied += item.id
         return snapshot(item, handle)
     }
 
@@ -385,6 +392,7 @@ class TorrentEngine(
             )
         }
         handles.remove(item.id)
+        selectionApplied.remove(item.id)
     }
 
     fun shutdown() {

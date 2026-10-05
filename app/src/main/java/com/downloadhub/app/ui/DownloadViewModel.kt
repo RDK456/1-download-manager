@@ -199,6 +199,9 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     val selectedId: StateFlow<String?> = _selectedId
     val editorSeed: StateFlow<EditorSeed?> = _editorSeed
     val pageScan: StateFlow<PageScanState> = _pageScan.asStateFlow()
+    private val _torrentPreview = MutableStateFlow<TorrentPreview?>(null)
+    /** The torrent waiting in the pre-download sheet, with its file list once known. */
+    val torrentPreview: StateFlow<TorrentPreview?> = _torrentPreview.asStateFlow()
     val currentFilter: StateFlow<DownloadFilter> = filter
     val currentCategory: StateFlow<DownloadCategory?> = categoryFilter
     val currentKind: StateFlow<LibraryKind> = kindFilter
@@ -339,6 +342,10 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
      * screen the user came to leave.
      */
     fun prepareSearchResult(magnet: String) {
+        if (magnet.startsWith("magnet:", ignoreCase = true)) {
+            previewMagnet(magnet)
+            return
+        }
         openEditor(
             EditorSeed(
                 link = magnet,
@@ -585,6 +592,12 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                     return@launch
                 }
             }
+            // A magnet is looked at before it is queued, as on the desktop.
+            if (source == DownloadSource.TORRENT && link.startsWith("magnet:", ignoreCase = true)) {
+                closeEditor()
+                previewMagnet(link)
+                return@launch
+            }
             if (source != DownloadSource.TORRENT && !link.startsWith("http", ignoreCase = true)) {
                 _events.emit(DownloadEvent.Message("Enter a valid http or https link"))
                 return@launch
@@ -650,13 +663,18 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                         target.outputStream().use { output -> input.copyTo(output) }
                     } ?: error("Could not read the selected torrent")
                     if (target.length() <= 0L) error("The selected .torrent file is empty")
-                    requestFromTorrent(name, target.absolutePath)
+                    val meta = com.downloadhub.core.TorrentParser.parse(target)
+                    TorrentPreview(
+                        link = target.absolutePath,
+                        torrentFile = target.absolutePath,
+                        name = meta.name.ifBlank { name.removeSuffix(".torrent") },
+                        metainfo = meta,
+                        loading = false
+                    )
                 }
-            }.onSuccess { request ->
-                repository.create(request)
-                    .also { DownloadService.start(getApplication(), listOf(it.id)) }
+            }.onSuccess { preview ->
                 closeEditor()
-                _events.emit(DownloadEvent.Message("Torrent added to the queue"))
+                _torrentPreview.value = preview
             }.onFailure {
                 _events.emit(DownloadEvent.Message(it.message ?: "Could not read the torrent"))
             }
@@ -1121,6 +1139,53 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
     private fun sendAction(action: String, id: String) {
         DownloadService.action(getApplication(), action, id)
+    }
+
+    /** Opens the pre-download sheet on a magnet and asks the swarm for its file list. */
+    private fun previewMagnet(link: String) {
+        val guess = Regex("[?&]dn=([^&]+)").find(link)?.groupValues?.get(1)
+            ?.let { runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrNull() }
+        _torrentPreview.value = TorrentPreview(link, null, guess ?: "Magnet link", null, loading = true)
+        viewModelScope.launch {
+            val meta = withContext(Dispatchers.IO) {
+                com.downloadhub.core.TorrentMetadataReader.read(link).getOrNull()
+            }
+            _torrentPreview.value = _torrentPreview.value?.takeIf { it.link == link }?.let {
+                it.copy(metainfo = meta, loading = false, name = meta?.name?.ifBlank { null } ?: it.name)
+            }
+        }
+    }
+
+    fun dismissTorrentPreview() {
+        _torrentPreview.value = null
+    }
+
+    /**
+     * Queues the previewed torrent with only [selected] files. The choice is written
+     * before the service starts, so the engine sees it on the first pass.
+     */
+    fun confirmTorrentPreview(selected: Set<Int>) {
+        val preview = _torrentPreview.value ?: return
+        _torrentPreview.value = null
+        viewModelScope.launch {
+            val request = preview.torrentFile?.let { requestFromTorrent(preview.name, it) }
+                ?: DownloadCreateRequest(source = DownloadSource.TORRENT, url = preview.link, fileName = preview.name)
+            runCatching { repository.create(request) }
+                .onSuccess { created ->
+                    val all = preview.metainfo?.files?.size ?: 0
+                    if (selected.isNotEmpty() && selected.size < all) {
+                        app.container.database.downloadDao().updateTorrentFileChoices(
+                            created.id,
+                            com.downloadhub.core.FileChoiceCodec.encodeSelected(selected),
+                            null,
+                            System.currentTimeMillis()
+                        )
+                    }
+                    DownloadService.start(getApplication(), listOf(created.id))
+                    _events.emit(DownloadEvent.Message("Torrent added to the queue"))
+                }
+                .onFailure { _events.emit(DownloadEvent.Message(it.message ?: "Could not add the torrent")) }
+        }
     }
 
     private fun requestFromTorrent(name: String, path: String): DownloadCreateRequest =

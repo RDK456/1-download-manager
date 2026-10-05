@@ -69,7 +69,7 @@ internal fun RssPanel(
                 singleLine = true,
                 placeholder = { Text("Feed address, e.g. https://nyaa.si/?page=rss", fontSize = 12.sp) },
                 textStyle = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).onEnter(newFeed.isNotBlank()) { actions.addRssFeed(newFeed); newFeed = "" }
             )
             Spacer(Modifier.width(8.dp))
             Button(enabled = newFeed.isNotBlank(), onClick = { actions.addRssFeed(newFeed); newFeed = "" }) { Text("Subscribe") }

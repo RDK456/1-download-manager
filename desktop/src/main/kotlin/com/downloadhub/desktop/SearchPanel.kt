@@ -173,7 +173,7 @@ fun SearchPanel(
                 label = { Text("Search", fontSize = 12.sp) },
                 placeholder = { Text("What are you looking for?", fontSize = 12.sp, color = AppTheme.Palette.faint) },
                 singleLine = true,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).onEnter(!busy) { run() }
             )
             Spacer(Modifier.width(8.dp))
             Button(onClick = { run() }, enabled = !busy) {
@@ -394,9 +394,9 @@ private fun SearchRow(result: SearchResult, onDownload: () -> Unit) {
                 // writing 0 next to it invites the user to skip a live release.
                 Text(
                     if (result.reportsHealth) {
-                        "${result.seeders} seeders"
+                        "${result.seeders} seeds · ${result.leechers} peers"
                     } else {
-                        "seeders unknown"
+                        "seeds/peers unknown"
                     },
                     fontSize = 10.sp,
                     color = if (result.reportsHealth && result.seeders > 0) {

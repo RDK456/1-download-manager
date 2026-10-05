@@ -1,4 +1,4 @@
-package com.downloadhub.desktop
+package com.downloadhub.core
 
 import java.util.Locale
 

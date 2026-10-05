@@ -159,7 +159,7 @@ fun YouTubePanel(
                     )
                 },
                 singleLine = true,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).onEnter(!busy) { run() }
             )
             Spacer(Modifier.width(8.dp))
             Button(onClick = { run() }, enabled = !busy) {

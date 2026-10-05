@@ -180,7 +180,13 @@ fun YouTubeScreen(
             label = { Text("YouTube link") },
             placeholder = { Text("Video, playlist, album or channel") },
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Uri,
+                imeAction = androidx.compose.ui.text.input.ImeAction.Go
+            ),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                onGo = { if (!busy && trimmed.isNotEmpty()) run() }
+            )
         )
         Button(
             onClick = { run() },

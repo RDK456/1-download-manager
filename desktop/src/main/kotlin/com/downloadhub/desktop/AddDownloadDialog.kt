@@ -1,5 +1,9 @@
 package com.downloadhub.desktop
 
+import com.downloadhub.core.ContentNode
+import com.downloadhub.core.ContentRow
+import com.downloadhub.core.contentTree
+import com.downloadhub.core.visibleContentNodes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +44,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,6 +89,16 @@ fun NewDownloadDialog(
     // Set when a picked file turns out not to be a torrent, so the reason sits under the
     // box rather than replacing the whole dialog.
     var problem by remember { mutableStateOf<String?>(null) }
+    val linkFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { linkFocus.requestFocus() } }
+    fun next() {
+        val pending = PendingDownload.forLink(link)
+        if (pending == null) {
+            problem = "That is not a link, a magnet or a file on this computer."
+        } else {
+            onSubmit(pending)
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -100,7 +118,7 @@ fun NewDownloadDialog(
                     onValueChange = { link = it; problem = null },
                     label = { Text("Link or magnet") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().focusRequester(linkFocus).onEnter(link.isNotBlank()) { next() }
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
@@ -131,17 +149,7 @@ fun NewDownloadDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    val pending = PendingDownload.forLink(link)
-                    if (pending == null) {
-                        problem = "That is not a link, a magnet or a file on this computer."
-                    } else {
-                        onSubmit(pending)
-                    }
-                },
-                enabled = link.isNotBlank()
-            ) { Text("Next") }
+            Button(onClick = { next() }, enabled = link.isNotBlank()) { Text("Next") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
@@ -316,7 +324,45 @@ fun AddDownloadDialog(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+    val canConfirm = pending.link.isNotBlank() &&
+        (metainfo.files.isEmpty() || selected.value.isNotEmpty())
+    fun confirm() {
+        val request = TorrentSelection.validated(
+            meta = metainfo,
+            link = pending.link,
+            saveDirectory = File(directory),
+            selected = selected.value,
+            metainfoFile = pending.file,
+            sequential = sequential,
+            firstLastPiecesFirst = firstLastPieces,
+            startImmediately = startNow,
+            stopCondition = stopConditionFrom(stopWhen, stopValue),
+            chosenFolder = folder
+        )?.copy(
+            http = com.downloadhub.core.HttpRequestOptions(
+                headers = com.downloadhub.core.HttpRequestOptions.parseHeaders(headersText),
+                cookies = cookies.trim(),
+                username = username.trim(),
+                password = password
+            )
+        )
+        if (request != null) onConfirm(request)
+    }
+    // Enter is OK from anywhere in the window, except the request fields, where the
+    // headers box needs it for new lines. The root takes focus on open so Enter works
+    // before anything has been clicked.
+    var typingRequest by remember(pending.link) { mutableStateOf(false) }
+    val rootFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { rootFocus.requestFocus() } }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .onEnter(canConfirm && !typingRequest) { confirm() }
+            .focusRequester(rootFocus)
+            .focusable()
+    ) {
         // ---- the heading, with the buttons on the same line --------------------
         Row(
             Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 14.dp),
@@ -471,16 +517,18 @@ fun AddDownloadDialog(
                         color = DIALOG_SECONDARY
                     )
                 } else if (!pending.isTorrent) {
-                    HttpRequestFields(
-                        headers = headersText,
-                        onHeaders = { headersText = it },
-                        cookies = cookies,
-                        onCookies = { cookies = it },
-                        username = username,
-                        onUsername = { username = it },
-                        password = password,
-                        onPassword = { password = it }
-                    )
+                    Box(Modifier.onFocusChanged { typingRequest = it.hasFocus }) {
+                        HttpRequestFields(
+                            headers = headersText,
+                            onHeaders = { headersText = it },
+                            cookies = cookies,
+                            onCookies = { cookies = it },
+                            username = username,
+                            onUsername = { username = it },
+                            password = password,
+                            onPassword = { password = it }
+                        )
+                    }
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         // A magnet's list is being fetched, and a plain link's genuinely
@@ -539,35 +587,10 @@ fun AddDownloadDialog(
         ) {
             TextButton(onClick = onDismiss) { Text("Cancel", color = DIALOG_SECONDARY) }
             Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = {
-                    val request = TorrentSelection.validated(
-                        meta = metainfo,
-                        link = pending.link,
-                        saveDirectory = File(directory),
-                        selected = selected.value,
-                        metainfoFile = pending.file,
-                        sequential = sequential,
-                        firstLastPiecesFirst = firstLastPieces,
-                        startImmediately = startNow,
-                        stopCondition = stopConditionFrom(stopWhen, stopValue),
-                        chosenFolder = folder
-                    )?.copy(
-                        http = com.downloadhub.core.HttpRequestOptions(
-                            headers = com.downloadhub.core.HttpRequestOptions.parseHeaders(headersText),
-                            cookies = cookies.trim(),
-                            username = username.trim(),
-                            password = password
-                        )
-                    )
-                    if (request != null) onConfirm(request)
-                },
-                // Disabled rather than silently doing nothing when nothing is selected:
-                // a button that looks live and then adds nothing is the bug this dialog
-                // was built to avoid.
-                enabled = pending.link.isNotBlank() &&
-                    (metainfo.files.isEmpty() || selected.value.isNotEmpty())
-            ) { Text(if (pending.isTorrent) "OK" else "Add") }
+            // Disabled rather than silently doing nothing when nothing is selected:
+            // a button that looks live and then adds nothing is the bug this dialog
+            // was built to avoid.
+            Button(onClick = { confirm() }, enabled = canConfirm) { Text(if (pending.isTorrent) "OK" else "Add") }
         }
     }
 }

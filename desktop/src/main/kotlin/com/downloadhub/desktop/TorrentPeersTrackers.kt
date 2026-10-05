@@ -62,7 +62,10 @@ internal fun TrackersTab(id: String, read: (String) -> List<TrackerRow>, onAdd: 
                 singleLine = true,
                 placeholder = { Text("Add trackers: paste one or more announce URLs", fontSize = 11.sp) },
                 textStyle = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).onEnter(adding.isNotBlank()) {
+                    onAdd(adding.split(' ', '\n', ',').filter { it.contains("://") })
+                    adding = ""
+                }
             )
             Spacer(Modifier.width(8.dp))
             OutlinedButton(

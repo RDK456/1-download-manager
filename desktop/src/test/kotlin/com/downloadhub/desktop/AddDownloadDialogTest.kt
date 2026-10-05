@@ -1,5 +1,9 @@
 package com.downloadhub.desktop
 
+import com.downloadhub.core.ContentNode
+import com.downloadhub.core.ContentRow
+import com.downloadhub.core.contentTree
+import com.downloadhub.core.visibleContentNodes
 import com.downloadhub.core.DownloadItem
 import com.downloadhub.core.DownloadStatus
 import java.io.File
