@@ -375,6 +375,13 @@ fun DownloadHubApp(
                     .fillMaxSize()
                     .padding(padding)
             ) {
+                // A short crossfade between tabs, so switching reads as a change of place
+                // rather than a flash.
+                androidx.compose.animation.Crossfade(
+                    targetState = destination,
+                    animationSpec = androidx.compose.animation.core.tween(180),
+                    label = "tab"
+                ) { destination ->
                 when (destination) {
                     AppDestination.DOWNLOADS -> DownloadsScreen(
                         items = visibleItems,
@@ -530,6 +537,7 @@ fun DownloadHubApp(
                         onOpenRepo = { openExternal(BuildConfig.GITHUB_URL) },
                         onOpenUrl = ::openExternal
                     )
+                }
                 }
             }
         }
@@ -788,15 +796,18 @@ private fun DownloadsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(items, key = { it.id }) { item ->
-                    DownloadCard(
-                        item = item,
-                        loader = loader,
-                        onClick = { onSelect(item.id) },
-                        onPause = { onPause(item.id) },
-                        onResume = { onResume(item.id) },
-                        onRetry = { onRetry(item.id) },
-                        onDelete = { onDelete(item.id) }
-                    )
+                    // Slides into place on add, remove and re-sort instead of jumping.
+                    Box(Modifier.animateItem()) {
+                        DownloadCard(
+                            item = item,
+                            loader = loader,
+                            onClick = { onSelect(item.id) },
+                            onPause = { onPause(item.id) },
+                            onResume = { onResume(item.id) },
+                            onRetry = { onRetry(item.id) },
+                            onDelete = { onDelete(item.id) }
+                        )
+                    }
                 }
             }
         }

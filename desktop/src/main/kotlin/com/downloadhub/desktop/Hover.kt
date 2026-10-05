@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,19 +76,18 @@ internal fun StatusCell(item: DownloadItem, width: Dp, colour: Color) {
         val fraction = (item.progressPercent / 100f).coerceIn(0f, 1f)
         val running = item.status == DownloadStatus.RUNNING
         val shape = RoundedCornerShape(4.dp)
+        // Eased between updates and drawn rather than laid out, so a tick repaints the bar
+        // without re-measuring the row.
+        val shown by androidx.compose.animation.core.animateFloatAsState(fraction, label = "progress")
+        val fill = if (running) AppTheme.Palette.accent else AppTheme.Palette.faint
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(16.dp)
                 .clip(shape)
                 .background(AppTheme.Palette.raised, shape)
+                .drawBehind { drawRect(fill, size = size.copy(width = size.width * shown)) }
         ) {
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(fraction)
-                    .background(if (running) AppTheme.Palette.accent else AppTheme.Palette.faint)
-            )
             Text(
                 if (running) "${item.progressPercent}%" else "${DisplayFormat.status(item)} · ${item.progressPercent}%",
                 fontSize = 10.sp,

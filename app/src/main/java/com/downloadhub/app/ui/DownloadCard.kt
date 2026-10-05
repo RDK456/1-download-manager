@@ -75,7 +75,8 @@ fun DownloadCard(
     onDelete: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val progress = progressFor(item)
+    // Eased between the 400 ms progress writes, so the bar glides instead of stepping.
+    val progress by androidx.compose.animation.core.animateFloatAsState(progressFor(item), label = "progress")
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -216,11 +217,16 @@ private fun DownloadThumbnail(
     item: DownloadEntity,
     modifier: Modifier = Modifier
 ) {
-    val localPath = remember(item) { localThumbnailFor(item) }
-    var bitmap by remember(localPath, item.thumbnailUrl) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(localPath, item.thumbnailUrl) {
-        val loaded = runCatching { loader.load(localPath, item.thumbnailUrl) }.getOrNull()
-        bitmap = loaded?.asImageBitmap()
+    // Keyed on what the lookup reads, not the whole row: the row changes on every progress
+    // write, and the lookup touches the disk (for a finished torrent it walks the folder),
+    // so it runs off the main thread and only when something it depends on changed.
+    var bitmap by remember(item.id) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(item.thumbnailPath, item.thumbnailUrl, item.status, item.outputPath, item.category, item.mimeType) {
+        val loaded = runCatching {
+            val localPath = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { localThumbnailFor(item) }
+            loader.load(localPath, item.thumbnailUrl)
+        }.getOrNull()
+        if (loaded != null) bitmap = loaded.asImageBitmap()
     }
     val shape = MaterialTheme.shapes.small
     Box(

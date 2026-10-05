@@ -27,8 +27,8 @@ android {
         applicationId = "com.downloadhub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 46
-        versionName = "1.5.1"
+        versionCode = 47
+        versionName = "1.5.2"
 
         // Single source of truth for the About page and the in-app updater.
         buildConfigField("String", "GITHUB_OWNER", "\"RDK456\"")
@@ -160,4 +160,9 @@ dependencies {
     testImplementation("com.fasterxml.jackson.core:jackson-databind:2.11.1")
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.espresso)
+}
+
+// Lets unchanged list rows skip recomposition; see the file for why.
+composeCompiler {
+    stabilityConfigurationFile.set(rootProject.layout.projectDirectory.file("compose-stability.conf"))
 }

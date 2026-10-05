@@ -539,12 +539,10 @@ fun LibraryScreen(
                         } else {
                           val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                           Box(Modifier.weight(1f).fillMaxWidth()) {
-                            androidx.compose.foundation.VerticalScrollbar(
-                                adapter = androidx.compose.foundation.rememberScrollbarAdapter(listState),
-                                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight()
-                            )
                             LazyColumn(Modifier.fillMaxSize(), state = listState) {
                                 items(visible, key = { it.id }) { item ->
+                                  // Slides into place on add, remove and re-sort instead of jumping.
+                                  Column(Modifier.animateItem()) {
                                     DownloadRow(
                                         item = item,
                                         palette = state.palette,
@@ -578,8 +576,14 @@ fun LibraryScreen(
                                         color = state.palette.outline.copy(alpha = 0.25f),
                                         thickness = 1.dp
                                     )
+                                  }
                                 }
                             }
+                            // After the list, so it sits on top and can be dragged.
+                            androidx.compose.foundation.VerticalScrollbar(
+                                adapter = androidx.compose.foundation.rememberScrollbarAdapter(listState),
+                                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight()
+                            )
                           }
                         }
 

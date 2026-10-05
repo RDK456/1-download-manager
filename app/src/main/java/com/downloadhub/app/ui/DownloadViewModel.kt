@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -230,7 +231,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 matchesStatus(item, selectedFilter) &&
                 matchesCategory(item, selectedCategory)
         }
-    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val visibleTorrents: StateFlow<List<DownloadEntity>> = combine(
         allDownloads,
@@ -245,20 +246,20 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 matchesStatus(item, selectedFilter) &&
                 matchesCategory(item, selectedCategory)
         }
-    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val mainSummary: StateFlow<TabSummary> = combine(allDownloads, kindFilter) { list, kind ->
         list.filter { kind.matches(it.source.name) }.toSummary()
-    }.stateIn(viewModelScope, SharingStarted.Lazily, TabSummary())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Lazily, TabSummary())
 
     val torrentSummary: StateFlow<TabSummary> = allDownloads
         .map { list -> list.filter { it.source == DownloadSource.TORRENT }.toSummary() }
-        .stateIn(viewModelScope, SharingStarted.Lazily, TabSummary())
+        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Lazily, TabSummary())
 
     /** Category counts for the filter sheet; torrents and files are counted apart. */
     val categoryCounts: StateFlow<Map<DownloadCategory, Int>> = allDownloads
         .map { list -> list.countCategories { it.source != DownloadSource.TORRENT } }
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
+        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
 
     /**
      * How many of each kind there are, for the row of kind chips.
@@ -273,16 +274,16 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 list.count { kind.matches(it.source.name) }
             }
         }
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
+        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
 
     /** Counts for the Torrents tab, whose categories are derived from the payload. */
     val torrentCategoryCounts: StateFlow<Map<DownloadCategory, Int>> = allDownloads
         .map { list -> list.countCategories { it.source == DownloadSource.TORRENT } }
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
+        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
 
     val selectedDownload: StateFlow<DownloadEntity?> = combine(allDownloads, _selectedId) { items, id ->
         items.firstOrNull { it.id == id }
-    }.stateIn(viewModelScope, SharingStarted.Lazily, null)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     fun setFilter(value: DownloadFilter) {
         filter.value = value

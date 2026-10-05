@@ -607,3 +607,8 @@ compose.desktop {
         }
     }
 }
+
+// Lets unchanged list rows skip recomposition; see the file for why.
+composeCompiler {
+    stabilityConfigurationFile.set(rootProject.layout.projectDirectory.file("compose-stability.conf"))
+}
