@@ -54,6 +54,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) pickUpCopiedLink()
+    }
+
+    /**
+     * A download link copied in the browser is picked up when the app comes back to the
+     * front, as AB Download Manager does. Only on focus, because Android lets only the
+     * focused app read the clipboard. Each link is picked up once, and never one that is
+     * already in the list (the app's own "copy link" would otherwise come straight back).
+     */
+    private fun pickUpCopiedLink() {
+        val clipboard = getSystemService(android.content.ClipboardManager::class.java) ?: return
+        val text = runCatching { clipboard.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() }
+            .getOrNull() ?: return
+        val link = LinkParser.extractFirstLink(text)
+            ?.takeIf { com.downloadhub.core.LinkParser.looksLikeDownload(it) } ?: return
+        val prefs = getSharedPreferences("clipboard", MODE_PRIVATE)
+        if (prefs.getString("last", null) == link) return
+        prefs.edit().putString("last", link).apply()
+        if (viewModel.allDownloads.value.any { it.url == link }) return
+        incomingLink = link
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

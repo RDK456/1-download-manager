@@ -37,6 +37,8 @@
       .ok { color: #34d399; }
       .bad { color: #ffb4ab; }
       p { color: #b4c0c2; margin: 10px 0 0; }
+      label.row { display: flex; gap: 8px; align-items: center; color: #e6edee; }
+      label.row input { width: auto; }
     </style>
   </head>
   <body>
@@ -49,10 +51,11 @@
     <label for="token">Pairing code (from the app's Settings page)</label>
     <input id="token" type="text" autocomplete="off" />
 
+    <label class="row"><input id="auto" type="checkbox" /> Catch every download the browser starts</label>
     <button id="save">Save and test</button>
 
     <p>
-      Links you click now go to the app instead of the browser's downloader.
+      Downloads now go to the app instead of the browser's downloader.
       When the app is closed the browser downloads them as usual.
     </p>
 

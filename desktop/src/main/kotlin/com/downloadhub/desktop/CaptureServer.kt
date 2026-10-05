@@ -180,7 +180,8 @@ class CaptureServer(
         return CaptureRequest(
             url = link,
             referer = json.referer?.take(1024),
-            fileName = json.fileName?.take(256)
+            fileName = json.fileName?.take(256),
+            cookies = json.cookies?.take(8 * 1024)
         )
     }
 
@@ -213,7 +214,7 @@ class CaptureServer(
 
     companion object {
         const val DEFAULT_PORT = 38621
-        private const val MAX_BODY_BYTES = 16 * 1024
+        private const val MAX_BODY_BYTES = 32 * 1024
 
         /** A fresh shared secret per install. */
         fun newToken(): String {
@@ -230,12 +231,16 @@ class CaptureServer(
 data class CapturePayload(
     val url: String? = null,
     val referer: String? = null,
-    val fileName: String? = null
+    val fileName: String? = null,
+    /** The site's cookies for the link, as a Cookie header value, so a signed-in download works. */
+    val cookies: String? = null
 )
 
 /** A validated link ready to be queued. */
 data class CaptureRequest(
     val url: String,
     val referer: String? = null,
-    val fileName: String? = null
+    val fileName: String? = null,
+    /** The site's cookies for the link, as a Cookie header value, so a signed-in download works. */
+    val cookies: String? = null
 )

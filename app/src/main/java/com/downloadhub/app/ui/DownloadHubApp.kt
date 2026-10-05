@@ -178,6 +178,13 @@ fun DownloadHubApp(
         val nav = remember(navKey) { decodeNav(navKey) }
         val rootDestination = nav.root
         val destination = nav.current
+        // Torrent screens are where a magnet's file list will be wanted soon, so the lookup
+        // session starts here rather than at launch, which would cost battery for nothing.
+        LaunchedEffect(destination) {
+            if (destination == AppDestination.SEARCH || destination == AppDestination.TORRENTS) {
+                com.downloadhub.core.TorrentMetadataReader.warmUp()
+            }
+        }
         var dismissedRelease by rememberSaveable { mutableStateOf<String?>(null) }
         var confirmExit by rememberSaveable { mutableStateOf(false) }
         val snackbarHostState = remember { SnackbarHostState() }
@@ -251,8 +258,7 @@ fun DownloadHubApp(
         }
         LaunchedEffect(incomingLink) {
             incomingLink?.let { link ->
-                val source = com.downloadhub.app.download.LinkParser.sourceFor(link)
-                viewModel.openEditor(EditorSeed(link = link, source = source))
+                viewModel.handleIncoming(link)
                 onIncomingConsumed()
             }
         }
@@ -487,6 +493,7 @@ fun DownloadHubApp(
                         onConnectionsChange = viewModel::setConnectionsPerDownload,
                         onSpeedLimitChange = viewModel::setSpeedLimit,
                         onWifiOnlyChange = viewModel::setWifiOnly,
+                        onAutoQueueChange = viewModel::setAutoQueueIncoming,
                         onMaxRetriesChange = viewModel::setMaxRetries,
                         onAutoRemoveChange = viewModel::setAutoRemoveCompleted,
                         onDestinationChange = viewModel::setDestinationTreeUri,
@@ -567,7 +574,8 @@ fun DownloadHubApp(
             TorrentPreviewSheet(
                 preview = preview,
                 onConfirm = viewModel::confirmTorrentPreview,
-                onDismiss = viewModel::dismissTorrentPreview
+                onDismiss = viewModel::dismissTorrentPreview,
+                onRetry = viewModel::retryTorrentPreview
             )
         }
         if (scanState is PageScanState.Found || scanState is PageScanState.Failed) {
@@ -604,6 +612,8 @@ fun DownloadHubApp(
                 onShare = { viewModel.launchShare(item) },
                 trackersOf = { viewModel.torrentTrackers(item) },
                 peersOf = { viewModel.torrentPeers(item) },
+                contentOf = { viewModel.torrentContent(item) },
+                onFilesWanted = { indices, wanted -> viewModel.setTorrentFilesWanted(item.id, indices, wanted) },
                 onForceRecheck = { viewModel.forceRecheck(item) },
                 onForceReannounce = { viewModel.forceReannounce(item) },
                 queues = queues,

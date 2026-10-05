@@ -38,7 +38,15 @@ class ExtensionInstaller(private val installDir: File = File(AppPaths.home, "bro
     private fun installBuild(build: String): Boolean {
         val names = filesFor(build)
         val target = File(installDir, build)
-        if (target.isDirectory && names.all { File(target, it).isFile }) return true
+        // Complete and the same version as the one bundled: nothing to do. A different
+        // manifest means the app was updated, and an old extension would keep running
+        // without the new features until the files are replaced.
+        val bundledManifest = ExtensionInstaller::class.java.classLoader
+            ?.getResourceAsStream("browser-extension/$build/manifest.json")?.use { it.readBytes() }
+        val installedManifest = File(target, "manifest.json").takeIf { it.isFile }?.readBytes()
+        if (target.isDirectory && names.all { File(target, it).isFile } &&
+            bundledManifest != null && bundledManifest.contentEquals(installedManifest)
+        ) return true
         return runCatching {
             target.mkdirs()
             var copied = 0

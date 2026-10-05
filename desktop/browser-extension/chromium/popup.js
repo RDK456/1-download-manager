@@ -1,6 +1,11 @@
 const portInput = document.getElementById("port");
 const tokenInput = document.getElementById("token");
 const state = document.getElementById("state");
+const autoInput = document.getElementById("auto");
+const ext = typeof browser !== "undefined" ? browser : chrome;
+
+// Saved as soon as it is ticked: it needs no pairing to mean something.
+autoInput.addEventListener("change", () => ext.storage.local.set({ autoCapture: autoInput.checked }));
 
 function render(status) {
   if (!status.paired) {
@@ -18,7 +23,8 @@ function render(status) {
 }
 
 async function refresh() {
-  const stored = await (typeof browser !== "undefined" ? browser : chrome).storage.local.get(["port", "token"]);
+  const stored = await ext.storage.local.get(["port", "token", "autoCapture"]);
+  autoInput.checked = stored.autoCapture !== false;
   portInput.value = stored.port || 38621;
   tokenInput.value = stored.token || "";
   const status = await (typeof browser !== "undefined" ? browser : chrome).runtime.sendMessage({ type: "status" });

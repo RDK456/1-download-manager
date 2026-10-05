@@ -311,7 +311,30 @@ fun magnetFor(infoHash: String, displayName: String = ""): String {
     val encoded = name
         .replace("+", "%2B")
         .replace(" ", "%20")
-    return "magnet:?xt=urn:btih:$hash&dn=$encoded"
+    return withPublicTrackers("magnet:?xt=urn:btih:$hash&dn=$encoded")
+}
+
+/**
+ * Well-known open trackers.
+ *
+ * Search sources hand back a bare hash, and a magnet with no trackers can only find peers
+ * through DHT - slow to start and often not in time for the pre-download dialog.
+ */
+val PUBLIC_TRACKERS = listOf(
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://open.demonii.com:1337/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://exodus.desync.com:6969/announce",
+    "udp://explodie.org:6969/announce",
+    "udp://tracker.openbittorrent.com:6969/announce"
+)
+
+/** Adds [PUBLIC_TRACKERS] to a magnet that names no tracker of its own; anything else is returned as is. */
+fun withPublicTrackers(magnet: String): String {
+    if (!magnet.startsWith("magnet:", ignoreCase = true)) return magnet
+    if (Regex("[?&]tr=", RegexOption.IGNORE_CASE).containsMatchIn(magnet)) return magnet
+    return magnet + PUBLIC_TRACKERS.joinToString("") { "&tr=" + java.net.URLEncoder.encode(it, "UTF-8") }
 }
 
 /** Whether a query is worth sending. An empty box means "browse", which no source supports. */

@@ -181,6 +181,8 @@ data class DesktopSettings(
     /** Shared secret the browser extension must present. Generated once. */
     val captureToken: String = "",
     val browserCaptureEnabled: Boolean = true,
+    /** Downloads the extension catches go straight into the queue instead of the pre-download dialog. */
+    val browserCaptureAutoQueue: Boolean = true,
     val closeToTray: Boolean = true,
     val startMinimised: Boolean = false,
     /**

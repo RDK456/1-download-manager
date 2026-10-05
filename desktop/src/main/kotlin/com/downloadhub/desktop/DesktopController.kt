@@ -682,21 +682,30 @@ class DesktopController(
      */
     private val capturedReferers = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    /** The browser's cookies for each captured link, sent so a signed-in download works. */
+    private val capturedCookies = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private fun withCapturedReferer(link: String, headers: Map<String, String>): Map<String, String> {
-        val referer = capturedReferers.remove(link) ?: return headers
-        if (headers.keys.any { it.equals("Referer", ignoreCase = true) }) return headers
-        return headers + ("Referer" to referer)
+        var result = headers
+        capturedReferers.remove(link)?.let { referer ->
+            if (result.keys.none { it.equals("Referer", ignoreCase = true) }) result = result + ("Referer" to referer)
+        }
+        capturedCookies.remove(link)?.let { cookies ->
+            if (result.keys.none { it.equals("Cookie", ignoreCase = true) }) result = result + ("Cookie" to cookies)
+        }
+        return result
     }
 
     private fun acceptCapturedLink(request: CaptureRequest) {
         request.referer?.takeIf { it.isNotBlank() }?.let { capturedReferers[request.url] = it }
+        request.cookies?.takeIf { it.isNotBlank() }?.let { capturedCookies[request.url] = it }
         val review = onDownloadNeedsReview
-        if (review != null) {
+        if (review != null && !settingsState.value.browserCaptureAutoQueue) {
             review(request.url)
             return
         }
-        // The window is not up yet. Queued directly rather than dropped, so a link that
-        // arrives in the first moments is not lost.
+        // Straight into the queue: the setting asks for it, or the window is not up yet
+        // and a link that arrives in the first moments must not be lost.
         val name = request.fileName?.takeIf { it.isNotBlank() }
             ?: com.downloadhub.core.LinkParser.fileNameFrom(request.url)
         addDownload(
@@ -1823,6 +1832,7 @@ class DesktopController(
         store.persist()
         capture.stop()
         torrents.close()
+        com.downloadhub.core.TorrentMetadataReader.shutdown()
         engine.close()
     }
 
@@ -1830,6 +1840,8 @@ class DesktopController(
     init {
         initialised = true
         refreshLoop.value
+        // So the first magnet's file list does not wait on DHT bootstrap.
+        com.downloadhub.core.TorrentMetadataReader.warmUp()
     }
 }
 

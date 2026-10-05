@@ -23,7 +23,9 @@ data class DownloadSettings(
     val maxRetries: Int = DEFAULT_MAX_RETRIES,
     val autoRemoveCompleted: Boolean = false,
     /** Parallel connections one file is split over, when its server takes ranges. */
-    val connectionsPerDownload: Int = DEFAULT_CONNECTIONS
+    val connectionsPerDownload: Int = DEFAULT_CONNECTIONS,
+    /** Links shared or opened from a browser, or copied, go straight into the queue. */
+    val autoQueueIncoming: Boolean = true
 ) {
     val isSpeedLimited: Boolean get() = speedLimitBytesPerSecond > 0
 
@@ -61,6 +63,7 @@ class SettingsRepository(private val context: Context) {
     private val maxConcurrentKey = intPreferencesKey("max_concurrent_downloads")
     private val speedLimitKey = longPreferencesKey("speed_limit_bps")
     private val wifiOnlyKey = booleanPreferencesKey("wifi_only")
+    private val autoQueueKey = booleanPreferencesKey("auto_queue_incoming")
     private val maxRetriesKey = intPreferencesKey("max_retries")
     private val autoRemoveKey = booleanPreferencesKey("auto_remove_completed")
     private val connectionsKey = intPreferencesKey("connections_per_download")
@@ -107,7 +110,8 @@ class SettingsRepository(private val context: Context) {
                 .coerceIn(0, DownloadSettings.MAX_RETRIES_LIMIT),
             autoRemoveCompleted = preferences[autoRemoveKey] ?: false,
             connectionsPerDownload = (preferences[connectionsKey] ?: DownloadSettings.DEFAULT_CONNECTIONS)
-                .coerceIn(1, DownloadSettings.MAX_CONNECTIONS)
+                .coerceIn(1, DownloadSettings.MAX_CONNECTIONS),
+            autoQueueIncoming = preferences[autoQueueKey] ?: true
         )
     }
 
@@ -180,6 +184,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setSpeedLimit(bytesPerSecond: Long) {
         context.downloadHubDataStore.edit { it[speedLimitKey] = bytesPerSecond.coerceAtLeast(0L) }
+    }
+
+    suspend fun setAutoQueueIncoming(enabled: Boolean) {
+        context.downloadHubDataStore.edit { it[autoQueueKey] = enabled }
     }
 
     suspend fun setWifiOnly(enabled: Boolean) {

@@ -53,6 +53,7 @@ async function sendToApp(url, options = {}) {
         url: url,
         referer: options.referer || "",
         fileName: options.fileName || "",
+        cookies: options.cookies || "",
       }),
     });
     if (response.status === 403) {
@@ -96,3 +97,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Allow the page to ask us to queue a link it discovered.
 chrome.runtime.onMessageExternal?.addListener?.(() => false);
+
+// ---- every download the browser starts --------------------------------------------
+//
+// Link clicks are caught by content.js, but most downloads are not a plain link to a
+// file: a button, a redirect, a script, a "download.php?id=" address. The downloads API
+// sees all of them. Each is offered to the app first, and the browser's own copy is
+// cancelled only once the app has accepted it - so with the app closed, unpaired or
+// refusing, the browser downloads it as usual and nothing is lost.
+const downloadsApi = typeof browser !== "undefined" ? browser : chrome;
+
+async function cookieHeaderFor(url) {
+  try {
+    const cookies = await downloadsApi.cookies.getAll({ url });
+    return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+  } catch (error) {
+    return "";
+  }
+}
+
+downloadsApi.downloads.onCreated.addListener(async (item) => {
+  const { autoCapture } = await downloadsApi.storage.local.get(["autoCapture"]);
+  if (autoCapture === false) return;
+  if (item.byExtensionId) return; // started by an extension, possibly on purpose
+  const url = item.finalUrl || item.url || "";
+  // blob:, data: and file: exist only inside this browser; the app cannot fetch them.
+  if (!/^https?:/i.test(url)) return;
+  const name = (item.filename || "").split(/[\/]/).pop();
+  const result = await sendToApp(url, {
+    referer: item.referrer || "",
+    fileName: name,
+    cookies: await cookieHeaderFor(url),
+  });
+  if (!result.ok) return;
+  try {
+    await downloadsApi.downloads.cancel(item.id);
+    await downloadsApi.downloads.erase({ id: item.id });
+  } catch (error) {
+    // Already finished or gone; the app has its own copy either way.
+  }
+});

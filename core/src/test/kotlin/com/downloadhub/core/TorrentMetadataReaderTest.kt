@@ -137,9 +137,9 @@ class TorrentMetadataReaderTest {
     @Test
     fun theTimeoutIsLongEnoughToBeWorthWaitingAndShortEnoughToBeWaitedFor() {
         assertTrue(
-            "a normal swarm answers in seconds; twenty is generous without being a wait " +
-                "the user has to sit through",
-            TorrentMetadataReader.DEFAULT_TIMEOUT_MILLIS in 10_000L..30_000L
+            "a tracker-less magnet can need most of a minute to reach a peer through DHT; " +
+                "the dialog stays usable meanwhile, so the wait can be that long but no longer",
+            TorrentMetadataReader.DEFAULT_TIMEOUT_MILLIS in 30_000L..90_000L
         )
     }
 

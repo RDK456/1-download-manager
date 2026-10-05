@@ -282,7 +282,9 @@ fun AddDownloadDialog(
      * the swarm's metadata, a few kilobytes away.
      */
     val wantsMetadata = pending.metainfo.files.isEmpty() && pending.isTorrent
-    LaunchedEffect(pending.link) {
+    // Bumped by "Try again", which asks the swarm a second time.
+    var attempt by remember(pending.link) { mutableStateOf(0) }
+    LaunchedEffect(pending.link, attempt) {
         if (wantsMetadata) {
             loading = true
             onLoadMetadata(pending.link) { fetched ->
@@ -569,6 +571,9 @@ fun AddDownloadDialog(
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.padding(horizontal = 12.dp)
                                 )
+                                if (wantsMetadata && metainfo.files.isEmpty()) {
+                                    TextButton(onClick = { attempt++ }) { Text("Try again") }
+                                }
                             }
                         }
                     }

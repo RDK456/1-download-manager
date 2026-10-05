@@ -75,9 +75,10 @@ class EveryAddGoesThroughTheDialogTest {
             addAt > reviewAt
         )
         assertTrue(
-            "and the fallback is not unconditional - it has to be a null check on the " +
-                "callback, so that it only applies before the window exists:\n$body",
-            body.contains("if (review != null)")
+            "and the fallback is not unconditional - it applies only before the window " +
+                "exists, or when the user turned on adding browser downloads straight " +
+                "away:\n$body",
+            body.contains("if (review != null && !settingsState.value.browserCaptureAutoQueue)")
         )
     }
 

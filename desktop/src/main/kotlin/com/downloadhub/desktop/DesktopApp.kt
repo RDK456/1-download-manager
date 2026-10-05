@@ -92,6 +92,7 @@ fun SettingsDialog(
     var connections by remember { mutableStateOf(settings.connectionsPerDownload.toString()) }
     var retries by remember { mutableStateOf(settings.maxRetries.toString()) }
     var closeToTray by remember { mutableStateOf(settings.closeToTray) }
+    var autoQueueCaptured by remember { mutableStateOf(settings.browserCaptureAutoQueue) }
     var cache by remember { mutableStateOf(settings.cacheDir) }
     var deleteCache by remember { mutableStateOf(settings.deleteCacheWhenRemoved) }
     var themePalette by remember { mutableStateOf(ThemePalette.fromValue(settings.themePalette)) }
@@ -352,6 +353,12 @@ fun SettingsDialog(
                                 },
                                 onChange = onToggleCapture
                             )
+                            TickRow(
+                                "Add them to the queue straight away",
+                                autoQueueCaptured,
+                                detail = "Off: each one opens the pre-download window first.",
+                                onChange = { autoQueueCaptured = it }
+                            )
                             if (settings.browserCaptureEnabled && settings.captureToken.isNotBlank()) {
                                 Spacer(Modifier.height(6.dp))
                                 Text(
@@ -397,6 +404,7 @@ fun SettingsDialog(
                         speedLimitBytesPerSecond = (speed.toLongOrNull() ?: 0L) * 1024L,
                         maxRetries = retries.toIntOrNull()?.coerceIn(0, 5) ?: 2,
                         closeToTray = closeToTray,
+                        browserCaptureAutoQueue = autoQueueCaptured,
                         // Trimmed: a trailing space in a path is a folder that does not exist.
                         cacheDir = cache.trim(),
                         deleteCacheWhenRemoved = deleteCache,

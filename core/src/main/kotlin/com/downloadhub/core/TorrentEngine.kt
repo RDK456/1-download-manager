@@ -318,6 +318,17 @@ class TorrentEngine(
         return runCatching { sessionManager.find(Sha1Hash.parseHex(hash)) }.getOrNull()?.takeIf { it.isValid }
     }
 
+    /**
+     * The torrent's files and how many bytes of each are done, for a Content tab.
+     * Null until the torrent is in the session with its metadata.
+     */
+    fun content(item: DownloadItem): Pair<TorrentMetainfo, LongArray>? {
+        val handle = handleFor(item) ?: return null
+        val info = runCatching { handle.torrentFile() }.getOrNull()?.takeIf { it.isValid } ?: return null
+        val done = runCatching { handle.fileProgress() }.getOrNull() ?: LongArray(0)
+        return TorrentMetadataReader.metainfoFrom(info) to done
+    }
+
     fun trackers(item: DownloadItem): List<TrackerRow> {
         val handle = handleFor(item) ?: return emptyList()
         return runCatching {
@@ -439,7 +450,7 @@ class TorrentEngine(
         } else {
             val params = AddTorrentParams.parseMagnetUri(item.url)
             val hash = params.infoHashes.getBest().toHex()
-            sessionManager.download(item.url, saveDirectory, flags)
+            sessionManager.download(withPublicTrackers(item.url), saveDirectory, flags)
             hash
         }
     }

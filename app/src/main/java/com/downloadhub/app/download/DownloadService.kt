@@ -1,5 +1,6 @@
 package com.downloadhub.app.download
 
+import kotlinx.coroutines.sync.withLock
 import android.Manifest
 import android.app.Service
 import android.content.Context
@@ -119,7 +120,7 @@ class DownloadService : Service() {
             val fileIndex = intent.getIntExtra(EXTRA_FILE_INDEX, -1)
             val priority = com.downloadhub.core.FilePriority
                 .fromOrdinal(intent.getIntExtra(EXTRA_PRIORITY, -1))
-            scope.launch { setFilePriority(id, fileIndex, priority) }
+            scope.launch { fileChoiceLock.withLock { setFilePriority(id, fileIndex, priority) } }
         }
             ACTION_START -> intent.getStringArrayListExtra(EXTRA_IDS)?.forEach(::enqueue)
             ACTION_RECOVER -> scope.launch { enqueueAll(dao.getByStatuses(ACTIVE_STATUSES)) }
@@ -509,6 +510,9 @@ class DownloadService : Service() {
      * claiming something the engine has not done yet, and if the apply then fails the row
      * keeps a change that was never made - which is the harder of the two to notice.
      */
+    /** One file-choice write at a time: each reads the row, merges and writes it back. */
+    private val fileChoiceLock = kotlinx.coroutines.sync.Mutex()
+
     private suspend fun setFilePriority(
         id: String,
         fileIndex: Int,
@@ -520,9 +524,17 @@ class DownloadService : Service() {
 
         val merged = FileChoiceCodec.decodePriorities(item.torrentFilePriorities) +
             (fileIndex to priority)
+        // A file left out in the pre-download sheet is skipped by the selection whatever
+        // its priority says, so asking for it again puts it back in the selection.
+        val selection = FileChoiceCodec.decodeSelected(item.torrentSelectedFiles)
+        val selected = if (priority != com.downloadhub.core.FilePriority.SKIP && selection.isNotEmpty()) {
+            FileChoiceCodec.encodeSelected(selection + fileIndex)
+        } else {
+            item.torrentSelectedFiles
+        }
         dao.updateTorrentFileChoices(
             id = id,
-            selected = item.torrentSelectedFiles,
+            selected = selected,
             priorities = FileChoiceCodec.encodePriorities(merged),
             updatedAt = System.currentTimeMillis()
         )

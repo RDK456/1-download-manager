@@ -65,6 +65,8 @@ fun DownloadDetailsSheet(
     // A torrent's trackers and peers, and qBittorrent's two force actions.
     trackersOf: () -> List<com.downloadhub.core.TrackerRow> = { emptyList() },
     peersOf: () -> List<com.downloadhub.core.PeerRow> = { emptyList() },
+    contentOf: () -> TorrentContentView? = { null },
+    onFilesWanted: (List<Int>, Boolean) -> Unit = { _, _ -> },
     onForceRecheck: () -> Unit = {},
     onForceReannounce: () -> Unit = {},
     // Which queue it is in, and what an ordinary link sends with its requests.
@@ -100,7 +102,7 @@ fun DownloadDetailsSheet(
                 color = MaterialTheme.colorScheme.primary
             )
             if (item.source == com.downloadhub.app.data.model.DownloadSource.TORRENT) {
-                TorrentExtras(item.id, trackersOf, peersOf, onForceRecheck, onForceReannounce)
+                TorrentExtras(item.id, contentOf, trackersOf, peersOf, onFilesWanted, onForceRecheck, onForceReannounce)
             }
             if (item.status != DownloadStatus.COMPLETED) {
                 QueueChips(item.queueId, queues, onMoveToQueue)

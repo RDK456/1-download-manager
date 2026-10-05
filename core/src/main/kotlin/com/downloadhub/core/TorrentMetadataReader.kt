@@ -4,7 +4,6 @@ import java.io.File
 import org.libtorrent4j.AddTorrentParams
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
-import org.libtorrent4j.TorrentFlags
 import org.libtorrent4j.TorrentInfo
 
 /**
@@ -21,28 +20,59 @@ import org.libtorrent4j.TorrentInfo
  * is true and also means a torrent is the one kind of download where you cannot see what
  * you are about to get, or take three files out of forty, or say no.
  *
- * A throwaway session rather than the download session's. The torrent must not appear in
- * the list, must not count towards the connection budget, and must be gone the moment the
- * metadata has been read; giving it its own session means all three follow from stopping
- * it, with no removal call whose overload might not be the one meant.
+ * Its own session rather than the download session's, so a lookup never appears in the
+ * list or counts towards the connection budget.
  */
 object TorrentMetadataReader {
 
     /**
      * How long to wait before giving up.
      *
-     * Long enough for a normal swarm and short enough that a magnet with nobody on it
-     * does not leave the user watching a dialog. The fallback is a dialog with no file
-     * list, which is what it always was.
+     * A minute: a magnet with no trackers is found through DHT alone, and on a quiet swarm
+     * the first peer can take most of that. The dialog stays usable meanwhile.
      */
-    const val DEFAULT_TIMEOUT_MILLIS = 20_000L
+    const val DEFAULT_TIMEOUT_MILLIS = 60_000L
 
     /**
-     * The file list behind a magnet, or null.
+     * One lookup session for the life of the app, rather than one per magnet.
      *
-     * Null means "could not be read", which is three different things that all look the
-     * same from here and are worth telling apart in the message rather than in the type:
-     * nothing is seeding it, the swarm is too slow, or it is not a magnet at all.
+     * A new session starts with an empty DHT routing table, and filling it takes 10-30
+     * seconds - which is why lookups used to time out at 20 seconds without ever reaching
+     * a peer. Kept running, the table stays warm and later lookups start straight away.
+     * It never downloads: [SessionManager.fetchMagnet] fetches only the metadata and
+     * removes the torrent again.
+     */
+    private var shared: SessionManager? = null
+
+    @Synchronized
+    private fun session(): SessionManager {
+        shared?.takeIf { it.isRunning }?.let { return it }
+        LibtorrentNative.ensureReady()
+        val manager = SessionManager()
+        val params = SessionParams()
+        params.setPosixDiskIO()
+        manager.start(params)
+        shared = manager
+        return manager
+    }
+
+    /** Stops the lookup session, so its threads do not keep the process alive on exit. */
+    @Synchronized
+    fun shutdown() {
+        shared?.let { runCatching { it.stop() } }
+        shared = null
+    }
+
+    /** Starts the lookup session early, so the first magnet does not wait on DHT bootstrap. */
+    fun warmUp() {
+        Thread({ runCatching { session() } }, "magnet-lookup-warmup").apply { isDaemon = true }.start()
+    }
+
+    /**
+     * The file list behind a magnet, or a failure saying why not.
+     *
+     * Public trackers are added to a magnet that names none (search results never do), so
+     * peers are found through trackers as well as DHT.
      */
     fun read(magnet: String, timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS): Result<TorrentMetainfo> {
         val link = magnet.trim()
@@ -51,75 +81,19 @@ object TorrentMetadataReader {
                 IllegalArgumentException("That is not a magnet link, so it needs no lookup")
             )
         }
-        val hash = runCatching { AddTorrentParams.parseMagnetUri(link).infoHashes.getBest() }
-            .getOrNull()
+        // Loaded first: parsing the magnet is itself a native call, and fails without it.
+        runCatching { LibtorrentNative.ensureReady() }
+        runCatching { AddTorrentParams.parseMagnetUri(link).infoHashes.getBest() }.getOrNull()
             ?: return Result.failure(IllegalArgumentException("The magnet link has no info hash"))
 
-        val manager = SessionManager()
-        // Somewhere harmless to point a paused torrent at. Nothing is written: the
-        // torrent never starts, so this is only here because the call insists on a path.
-        val scratch = File(System.getProperty("java.io.tmpdir") ?: ".", "dlm-metadata").apply {
-            mkdirs()
-        }
-        try {
-            val params = SessionParams()
-            params.setPosixDiskIO()
-            manager.start(params)
-
-            // Paused, and not auto-managed: this is a lookup, not the beginning of a
-            // download. Without PAUSED the swarm's first few pieces start arriving, which
-            // is data nobody asked for and which then has to be deleted.
-            manager.download(link, scratch, TorrentFlags.PAUSED)
-
-            val handle = awaitHandle(manager, hash, timeoutMillis)
-                ?: return Result.failure(
-                    IllegalStateException("No peers answered, so the file list is not available yet")
-                )
-            val info = awaitMetadata(handle, timeoutMillis)
-                ?: return Result.failure(
-                    IllegalStateException("The swarm did not send the file list in time")
-                )
-            return Result.success(metainfoFrom(info))
-        } catch (e: Exception) {
-            return Result.failure(e)
-        } finally {
-            // Stopping the session is the cleanup. There is no torrent to remove and no
-            // data to delete, because there was never a download.
-            runCatching { manager.stop() }
-            runCatching { scratch.deleteRecursively() }
+        val scratch = File(System.getProperty("java.io.tmpdir") ?: ".", "dlm-metadata").apply { mkdirs() }
+        return runCatching {
+            val seconds = (timeoutMillis / 1000).toInt().coerceAtLeast(1)
+            val bytes = session().fetchMagnet(withPublicTrackers(link), seconds, scratch)
+                ?: error("No peers sent the file list in time")
+            metainfoFrom(TorrentInfo(bytes))
         }
     }
-
-    private fun awaitHandle(
-        manager: SessionManager,
-        hash: org.libtorrent4j.Sha1Hash,
-        timeoutMillis: Long
-    ): org.libtorrent4j.TorrentHandle? {
-        val deadline = System.currentTimeMillis() + timeoutMillis
-        while (System.currentTimeMillis() < deadline) {
-            val handle = runCatching { manager.find(hash) }.getOrNull()
-            if (handle != null && handle.isValid) return handle
-            Thread.sleep(POLL_MILLIS)
-        }
-        return null
-    }
-
-    private fun awaitMetadata(
-        handle: org.libtorrent4j.TorrentHandle,
-        timeoutMillis: Long
-    ): TorrentInfo? {
-        val deadline = System.currentTimeMillis() + timeoutMillis
-        while (System.currentTimeMillis() < deadline) {
-            if (runCatching { handle.status().hasMetadata() }.getOrDefault(false)) {
-                val info = runCatching { handle.torrentFile() }.getOrNull()
-                if (info != null && info.isValid) return info
-            }
-            Thread.sleep(POLL_MILLIS)
-        }
-        return null
-    }
-
-    private const val POLL_MILLIS = 250L
 
     /**
      * Turns libtorrent's reading of a torrent into ours.

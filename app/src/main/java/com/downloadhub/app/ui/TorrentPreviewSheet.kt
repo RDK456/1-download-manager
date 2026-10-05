@@ -66,7 +66,8 @@ data class TorrentPreview(
 fun TorrentPreviewSheet(
     preview: TorrentPreview,
     onConfirm: (Set<Int>) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit = {}
 ) {
     val meta = preview.metainfo
     val tree = remember(meta) { meta?.let { m -> contentTree(m.files.map { ContentRow(it.path, it.index, it.size) }) }.orEmpty() }
@@ -91,11 +92,14 @@ fun TorrentPreviewSheet(
                     Spacer(Modifier.width(8.dp))
                     Text("Reading the file list from peers...", style = MaterialTheme.typography.bodySmall)
                 }
-                !hasList -> Text(
-                    "The file list could not be read (nobody answered in time). Everything in it will be downloaded.",
+                !hasList -> Column {
+                    Text(
+                    "The file list could not be read in time. Try again, or download everything in it.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                    )
+                    if (preview.torrentFile == null) TextButton(onClick = onRetry) { Text("Try again") }
+                }
                 else -> {
                     val total = meta!!.files.sumOf { it.size }
                     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -54,6 +54,7 @@ fun DownloadSettingsScreen(
     onConnectionsChange: (Int) -> Unit = {},
     onSpeedLimitChange: (Long) -> Unit,
     onWifiOnlyChange: (Boolean) -> Unit,
+    onAutoQueueChange: (Boolean) -> Unit = {},
     onMaxRetriesChange: (Int) -> Unit,
     onAutoRemoveChange: (Boolean) -> Unit,
     onDestinationChange: (String?) -> Unit,
@@ -151,6 +152,12 @@ fun DownloadSettingsScreen(
                 subtitle = "Pause transfers on mobile data",
                 checked = settings.wifiOnly,
                 onChange = onWifiOnlyChange
+            )
+            SettingSwitch(
+                title = "Add links from the browser straight away",
+                subtitle = "Links shared or opened from a browser, and download links you copy, go into the queue without asking",
+                checked = settings.autoQueueIncoming,
+                onChange = onAutoQueueChange
             )
         }
 

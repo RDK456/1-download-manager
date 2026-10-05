@@ -119,6 +119,28 @@ object LinkParser {
 
 
     /**
+     * Whether a link is plainly a download: a magnet, or an http(s) link whose path ends
+     * in a file extension people download. Used to pick links up from the clipboard, where
+     * an ordinary page link must be left alone.
+     */
+    fun looksLikeDownload(link: String): Boolean {
+        val trimmed = link.trim()
+        if (trimmed.startsWith("magnet:", ignoreCase = true)) return true
+        if (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true)) return false
+        val path = runCatching { java.net.URI(trimmed).path }.getOrNull()?.lowercase(Locale.US) ?: return false
+        val extension = path.substringAfterLast('/').substringAfterLast('.', "")
+        return extension in DOWNLOAD_EXTENSIONS
+    }
+
+    private val DOWNLOAD_EXTENSIONS = setOf(
+        "torrent", "zip", "rar", "7z", "tar", "gz", "xz", "bz2", "iso", "img", "dmg",
+        "apk", "xapk", "exe", "msi", "deb", "rpm", "appimage",
+        "mp4", "mkv", "webm", "mov", "avi", "m4v", "flv", "wmv", "ts",
+        "mp3", "m4a", "flac", "wav", "opus", "aac", "ogg",
+        "pdf", "epub", "cbz", "cbr"
+    )
+
+    /**
      * File providers are inconsistent about the MIME type they report for
      * torrents, so accept either a well-known bittorrent type or a .torrent name.
      */

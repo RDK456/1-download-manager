@@ -287,6 +287,18 @@ class TorrentSearchTest {
     // --- magnets ---------------------------------------------------------------------
 
     @Test
+    fun `a magnet without trackers gets the public ones, one with trackers is left alone`() {
+        val bare = "magnet:?xt=urn:btih:aabbccddeeff00112233445566778899aabbccdd&dn=x"
+        val added = withPublicTrackers(bare)
+        assertTrue(added.startsWith(bare))
+        assertEquals(PUBLIC_TRACKERS.size, Regex("&tr=").findAll(added).count())
+        val own = "$bare&tr=udp%3A%2F%2Fmine.example%3A1%2Fannounce"
+        assertEquals(own, withPublicTrackers(own))
+        assertEquals("https://example.com/a.torrent", withPublicTrackers("https://example.com/a.torrent"))
+        assertTrue(magnetFor("aabbccddeeff00112233445566778899aabbccdd").contains("&tr="))
+    }
+
+    @Test
     fun `a magnet is built from a hash and a name`() {
         val magnet = magnetFor("AABBCCDDEEFF00112233445566778899AABBCCDD", "Some Name")
         assertTrue(magnet.startsWith("magnet:?xt=urn:btih:"))

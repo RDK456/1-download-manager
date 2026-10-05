@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -748,6 +749,10 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun setAutoQueueIncoming(enabled: Boolean) {
+        viewModelScope.launch { settings.setAutoQueueIncoming(enabled) }
+    }
+
     fun setWifiOnly(enabled: Boolean) {
         viewModelScope.launch { settings.setWifiOnly(enabled) }
     }
@@ -759,6 +764,37 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 
     fun torrentPeers(item: com.downloadhub.app.data.local.DownloadEntity): List<com.downloadhub.core.PeerRow> =
         runCatching { app.container.torrentEngine.peers(item.toCoreItem()) }.getOrDefault(emptyList())
+
+    /**
+     * A torrent's files with bytes done and which are skipped, for the Content tab.
+     *
+     * From the engine while the torrent is loaded; otherwise read from its saved .torrent,
+     * counted as fully done once the download has finished. Null for a magnet that has not
+     * yet got its file list.
+     */
+    fun torrentContent(item: DownloadEntity): TorrentContentView? {
+        val selected = com.downloadhub.core.FileChoiceCodec.decodeSelected(item.torrentSelectedFiles)
+        val chosen = com.downloadhub.core.FileChoiceCodec.decodePriorities(item.torrentFilePriorities)
+        val (meta, done) = runCatching { app.container.torrentEngine.content(item.toCoreItem()) }.getOrNull()
+            ?: item.torrentFilePath?.let(::File)?.takeIf { it.isFile }
+                ?.let { runCatching { com.downloadhub.core.TorrentParser.parse(it) }.getOrNull() }
+                ?.let { meta ->
+                    meta to LongArray(meta.files.size) { i ->
+                        if (item.status == DownloadStatus.COMPLETED) meta.files[i].size else 0L
+                    }
+                }
+            ?: return null
+        val skipped = meta.files.map { it.index }.filter {
+            com.downloadhub.core.effectiveFilePriority(selected, chosen, it) == com.downloadhub.core.FilePriority.SKIP
+        }.toSet()
+        return TorrentContentView(meta, done, skipped)
+    }
+
+    /** Downloads or skips the given files of a torrent; a folder passes all of its files. */
+    fun setTorrentFilesWanted(id: String, indices: List<Int>, wanted: Boolean) {
+        val priority = if (wanted) com.downloadhub.core.FilePriority.NORMAL else com.downloadhub.core.FilePriority.SKIP
+        indices.forEach { DownloadService.requestFilePriority(getApplication(), id, it, priority) }
+    }
 
     fun forceRecheck(item: com.downloadhub.app.data.local.DownloadEntity): Boolean =
         runCatching { app.container.torrentEngine.forceRecheck(item.toCoreItem()) }.getOrDefault(false)
@@ -1155,6 +1191,39 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 it.copy(metainfo = meta, loading = false, name = meta?.name?.ifBlank { null } ?: it.name)
             }
         }
+    }
+
+    /**
+     * A link from outside the app: shared or opened from a browser, or picked up from the
+     * clipboard. With "Add links from the browser straight away" on it goes into the queue
+     * without a sheet - a magnet included; otherwise, and always for YouTube (which needs a
+     * quality chosen), the add sheet opens on it.
+     */
+    fun handleIncoming(link: String) {
+        viewModelScope.launch {
+            val source = LinkParser.sourceFor(link)
+            val auto = settings.downloadSettings.first().autoQueueIncoming
+            if (!auto || source == DownloadSource.YOUTUBE) {
+                openEditor(EditorSeed(link = link, source = source))
+                return@launch
+            }
+            if (link.startsWith("magnet:", ignoreCase = true)) {
+                val name = com.downloadhub.core.LinkParser.magnetDisplayName(link)
+                runCatching { repository.create(DownloadCreateRequest(source = DownloadSource.TORRENT, url = link, fileName = name)) }
+                    .onSuccess {
+                        DownloadService.start(getApplication(), listOf(it.id))
+                        _events.emit(DownloadEvent.Message("Added to the queue: ${name ?: "magnet link"}"))
+                    }
+                    .onFailure { _events.emit(DownloadEvent.Message(it.message ?: "Could not add the magnet")) }
+            } else {
+                addLink(link, sourceOverride = source)
+            }
+        }
+    }
+
+    /** Asks the swarm again for a magnet whose file list did not arrive in time. */
+    fun retryTorrentPreview() {
+        _torrentPreview.value?.takeIf { it.torrentFile == null }?.let { previewMagnet(it.link) }
     }
 
     fun dismissTorrentPreview() {
