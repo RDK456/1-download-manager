@@ -54,7 +54,13 @@ enum class TorrentTab(val label: String) {
     GENERAL("Details"),
 
     /** Every file in a torrent, with its own progress and priority. Torrents only. */
-    CONTENT("Content");
+    CONTENT("Content"),
+
+    /** The torrent's trackers and what each last said, as in qBittorrent. Torrents only. */
+    TRACKERS("Trackers"),
+
+    /** Who it is connected to and how fast each is going. Torrents only. */
+    PEERS("Peers");
 
     companion object {
         fun fromName(name: String?): TorrentTab =
@@ -138,6 +144,10 @@ fun TorrentDetailPanel(
     onFilePriority: ((Int, com.downloadhub.core.FilePriority) -> Unit)? = null,
     /** Bytes fetched per file, from the engine's last poll. */
     fileProgress: Map<Int, Long> = emptyMap(),
+    /** Reads the Trackers and Peers tabs; called off the UI thread while one is open. */
+    trackersOf: (String) -> List<com.downloadhub.core.TrackerRow> = { emptyList() },
+    peersOf: (String) -> List<com.downloadhub.core.PeerRow> = { emptyList() },
+    onAddTrackers: (List<String>) -> Unit = {},
 
     modifier: Modifier = Modifier
 ) {
@@ -189,6 +199,8 @@ fun TorrentDetailPanel(
                 // something to describe. The guard is here for the moment there is not,
                 // not as a way of turning away a download that is not a torrent.
                 item == null -> PanelNote("Select a download to see its details.")
+                tab == TorrentTab.TRACKERS -> TrackersTab(item.id, trackersOf, onAddTrackers)
+                tab == TorrentTab.PEERS -> PeersTab(item.id, peersOf)
                 else -> TorrentTabContent(item, tab, onFilePriority, fileProgress)
             }
         }
@@ -428,6 +440,8 @@ private fun TorrentTabContent(
             if (!error.isNullOrBlank()) Field("Error", error, label, MaterialTheme.colorScheme.error)
         }
 
+        // Drawn by TrackersTab and PeersTab, which TorrentDetailPanel picks before here.
+        TorrentTab.TRACKERS, TorrentTab.PEERS -> Unit
 
         TorrentTab.CONTENT -> {
             // The .torrent when there is one, and the saved file list when there is
@@ -625,7 +639,9 @@ fun TorrentStatusBar(items: List<DownloadItem>, modifier: Modifier = Modifier) {
     val strip = TorrentStatusStrip.from(items)
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 5.dp),
+        // Its own width only: it shares the strip with the message and the active count,
+        // and filling the strip left those no room at all.
+        modifier = modifier.padding(horizontal = 10.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -641,15 +657,17 @@ fun TorrentStatusBar(items: List<DownloadItem>, modifier: Modifier = Modifier) {
                 modifier = Modifier.size(12.dp),
                 tint = muted
             )
-            Text(" ${items.size}", fontSize = 10.sp, color = muted)
+            Text(" ${items.size}", fontSize = 10.sp, color = muted, maxLines = 1, softWrap = false)
         }
         Text(
             "↓ " + DisplayFormat.bytes(strip.downloadRate) + "/s",
             fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            softWrap = false
         )
-        Text("↑ " + DisplayFormat.bytes(strip.uploadRate) + "/s", fontSize = 10.sp, color = muted)
-        Text("Seeds " + strip.seeds, fontSize = 10.sp, color = muted)
-        Text("Peers " + strip.peers, fontSize = 10.sp, color = muted)
+        Text("↑ " + DisplayFormat.bytes(strip.uploadRate) + "/s", fontSize = 10.sp, color = muted, maxLines = 1, softWrap = false)
+        Text("Seeds " + strip.seeds, fontSize = 10.sp, color = muted, maxLines = 1, softWrap = false)
+        Text("Peers " + strip.peers, fontSize = 10.sp, color = muted, maxLines = 1, softWrap = false)
     }
 }

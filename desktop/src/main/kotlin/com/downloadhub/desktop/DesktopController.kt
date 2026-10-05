@@ -21,6 +21,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -53,7 +55,11 @@ data class DesktopUiState(
     /** What was fetched, and what it is. Null until something has downloaded. */
     val downloadedUpdate: DownloadedUpdate? = null,
     val extensionReady: Boolean = false,
-    val extensionPath: String = ""
+    val extensionPath: String = "",
+    /** The articles each RSS feed last returned, by feed URL. */
+    val rssItems: Map<String, List<com.downloadhub.core.RssItem>> = emptyMap(),
+    /** Whether a feed refresh is running, for the panel's spinner. */
+    val rssRefreshing: Boolean = false
 ) {
     /**
      * The Material scheme, read from the theme in force.
@@ -204,6 +210,28 @@ data class DesktopActions(
      * stale dialog cannot write to whatever took its place.
      */
     val setItemOptions: (String, Int, Long, Long, Double, Int) -> Unit,
+    /** Adds a queue, or replaces the one with the same id. */
+    val saveQueue: (QueueConfig) -> Unit = {},
+    /** Removes a queue; its downloads go back to Main. Main itself cannot be removed. */
+    val deleteQueue: (String) -> Unit = {},
+    /** A queue's Start / Stop button. Stopping puts what it was running back in line. */
+    val setQueueStarted: (String, Boolean) -> Unit = { _, _ -> },
+    val moveToQueue: (Collection<String>, String) -> Unit = { _, _ -> },
+    /** Replaces what one download sends with its requests; applies from its next request. */
+    val setItemRequest: (String, com.downloadhub.core.HttpRequestOptions) -> Unit = { _, _ -> },
+    // qBittorrent's per-torrent extras. The two readers block briefly on the engine, so
+    // the pane calls them off the UI thread.
+    val torrentTrackers: (String) -> List<com.downloadhub.core.TrackerRow> = { emptyList() },
+    val torrentPeers: (String) -> List<com.downloadhub.core.PeerRow> = { emptyList() },
+    val addTrackers: (String, List<String>) -> Unit = { _, _ -> },
+    val forceRecheck: (String) -> Unit = {},
+    val forceReannounce: (String) -> Unit = {},
+    // RSS feeds and their auto-download rules.
+    val addRssFeed: (String) -> Unit = {},
+    val removeRssFeed: (String) -> Unit = {},
+    val refreshRss: () -> Unit = {},
+    val saveRssRules: (List<RssRuleConfig>) -> Unit = {},
+    val downloadRssItem: (com.downloadhub.core.RssItem) -> Unit = {},
     /**
      * Unpacks the portable build and starts it, then closes this copy.
      *
@@ -269,6 +297,20 @@ class DesktopController(
 
     private val _ui = MutableStateFlow(DesktopUiState())
     val ui: StateFlow<DesktopUiState> = _ui.asStateFlow()
+
+    // Declared before the init blocks below, which already call refresh(). The collector
+    // starts lazily on first use for the same reason: the fields publishState() reads are
+    // not all assigned yet at this point.
+    private val refreshRequests = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+    private val refreshLoop = lazy {
+        scope.launch {
+            for (request in refreshRequests) {
+                publishState()
+                // At most this often, whatever the number of downloads reporting.
+                delay(UI_REFRESH_MILLIS)
+            }
+        }
+    }
 
     /**
      * Set by the window, and the one way anything reaches the queue.
@@ -358,6 +400,272 @@ class DesktopController(
         if (settingsState.value.browserCaptureEnabled) {
             capture.start()
         }
+        runQueueScheduler()
+        watchForTorrents()
+        runRssLoop()
+        reportLastUpdate()
+        // A quiet check a little after start: only an available update surfaces a dialog,
+        // so nobody is shown "you are up to date" or a network error they did not ask for.
+        scope.launch {
+            delay(STARTUP_UPDATE_CHECK_DELAY_MILLIS)
+            if (_update.value !is UpdateCheck.Idle) return@launch
+            val release = runCatching { updateChecker.pickInstallable(updateChecker.releases()) }.getOrNull()
+            if (release != null && isNewerVersion(release.version, APP_VERSION) && _update.value is UpdateCheck.Idle) {
+                _update.value = UpdateCheck.Available(release, release.installer()!!)
+                refresh()
+            }
+        }
+    }
+
+    /**
+     * qBittorrent's watched folder: every few seconds, each .torrent dropped into it is
+     * added with the default folder and started, then renamed to `.torrent.added` so it
+     * is never added twice - the same convention qBittorrent uses.
+     */
+    private fun watchForTorrents() {
+        scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(WATCH_FOLDER_TICK_MILLIS)
+                val settings = settingsState.value
+                if (!settings.watchFolderEnabled || settings.watchFolder.isBlank()) continue
+                val found = File(settings.watchFolder).listFiles { file ->
+                    file.isFile && file.name.endsWith(".torrent", ignoreCase = true)
+                }.orEmpty()
+                found.forEach { file ->
+                    val meta = runCatching { com.downloadhub.core.TorrentParser.parse(file) }.getOrNull()
+                    // Renamed whether or not it parsed: a broken file would otherwise be
+                    // retried, and complained about, every few seconds for ever.
+                    val done = File(file.parentFile, file.name + if (meta == null) ".invalid" else ".added")
+                    if (meta != null) {
+                        addPrepared(
+                            com.downloadhub.core.TorrentAddRequest(
+                                metainfo = meta,
+                                metainfoFile = file,
+                                saveDirectory = settings.downloadDirFile(),
+                                startImmediately = true,
+                                link = file.absolutePath
+                            )
+                        )
+                        _messages.value = "Added ${meta.name.ifBlank { file.name }} from the watched folder."
+                    }
+                    runCatching { file.renameTo(done) }
+                }
+            }
+        }
+    }
+
+    // --- RSS ------------------------------------------------------------------------
+
+    private val _rssItems = MutableStateFlow<Map<String, List<com.downloadhub.core.RssItem>>>(emptyMap())
+    private val _rssRefreshing = MutableStateFlow(false)
+    private val rssSeenFile: File get() = File(AppPaths.home, "rss-seen.txt")
+
+    /** "feedUrl|guid" of every article already acted on. Loaded once, appended as it grows. */
+    private val rssSeen: MutableSet<String> by lazy {
+        java.util.Collections.synchronizedSet(
+            runCatching { rssSeenFile.readLines().filter { it.isNotBlank() }.toMutableSet() }.getOrDefault(mutableSetOf())
+        )
+    }
+
+    private fun runRssLoop() {
+        scope.launch(Dispatchers.IO) {
+            delay(RSS_FIRST_REFRESH_DELAY_MILLIS)
+            while (isActive) {
+                refreshRss()
+                delay(settingsState.value.rssRefreshMinutes.coerceAtLeast(5) * 60_000L)
+            }
+        }
+    }
+
+    /**
+     * Re-reads every feed and runs the auto-download rules over what is new.
+     *
+     * On a feed's first read everything in it is only marked seen: qBittorrent would
+     * otherwise download every back episode a new rule happens to match.
+     */
+    fun refreshRss() {
+        if (_rssRefreshing.value) return
+        _rssRefreshing.value = true
+        refresh()
+        scope.launch(Dispatchers.IO) {
+            try {
+                val settings = settingsState.value
+                val rules = settings.rssRules.map { it.toRule() }
+                val newlySeen = mutableListOf<String>()
+                val fetched = settings.rssFeeds.associate { feed ->
+                    val items = runCatching { com.downloadhub.core.RssParser.parse(fetchFeed(feed.url, settings)) }
+                        .getOrElse {
+                            _messages.value = "Could not read the feed ${feed.name.ifBlank { feed.url }}: ${it.message ?: it::class.simpleName}"
+                            _rssItems.value[feed.url].orEmpty()
+                        }
+                    val firstRead = rssSeen.none { it.startsWith(feed.url + "|") }
+                    items.forEach { item ->
+                        val key = feed.url + "|" + item.guid
+                        if (rssSeen.add(key)) {
+                            newlySeen += key
+                            val rule = if (firstRead) null else rules.firstOrNull { it.matches(item.title) }
+                            if (rule != null) {
+                                downloadRssItem(item)
+                                _messages.value = "RSS rule \"${rule.name}\" added ${item.title}."
+                            }
+                        }
+                    }
+                    feed.url to items
+                }
+                if (newlySeen.isNotEmpty()) runCatching { rssSeenFile.appendText(newlySeen.joinToString("\n", postfix = "\n")) }
+                _rssItems.value = fetched
+            } finally {
+                _rssRefreshing.value = false
+                refresh()
+            }
+        }
+    }
+
+    private fun fetchFeed(url: String, settings: DesktopSettings): String {
+        val target = java.net.URL(url)
+        val connection = (settings.proxySetting().toProxy()?.let { target.openConnection(it) } ?: target.openConnection())
+            as java.net.HttpURLConnection
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 30_000
+        connection.instanceFollowRedirects = true
+        connection.setRequestProperty("User-Agent", "1-download-manager/$APP_VERSION")
+        try {
+            if (connection.responseCode !in 200..299) error("HTTP ${connection.responseCode}")
+            return connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /** Queues an article's link through the same path as a pasted one. */
+    fun downloadRssItem(item: com.downloadhub.core.RssItem) {
+        addDownload(
+            link = item.link,
+            audioOnly = false,
+            format = "m4a",
+            height = null,
+            playlist = false,
+            preferredName = item.title
+        )
+    }
+
+    fun addRssFeed(url: String) {
+        val trimmed = url.trim()
+        if (!trimmed.startsWith("http")) {
+            _messages.value = "That does not look like a feed address."
+            return
+        }
+        val settings = settingsState.value
+        if (settings.rssFeeds.any { it.url == trimmed }) return
+        saveSettings(settings.copy(rssFeeds = settings.rssFeeds + RssFeedConfig(trimmed, java.net.URL(trimmed).host)))
+        refreshRss()
+    }
+
+    fun removeRssFeed(url: String) {
+        val settings = settingsState.value
+        saveSettings(settings.copy(rssFeeds = settings.rssFeeds.filter { it.url != url }))
+        _rssItems.value = _rssItems.value - url
+        refresh()
+    }
+
+    fun saveRssRules(rules: List<RssRuleConfig>) {
+        saveSettings(settingsState.value.copy(rssRules = rules))
+    }
+
+    /** Says how the silent install that ran before this start went, once. */
+    private fun reportLastUpdate() {
+        val result = updateInstaller.takeLastResult() ?: return
+        _messages.value = if (result.succeeded) {
+            "Updated to version $APP_VERSION."
+        } else {
+            "The update did not install (Windows Installer code ${result.exitCode}). " +
+                "Details are in ${result.logPath}."
+        }
+    }
+
+    // --- queues ---------------------------------------------------------------
+
+    /** Presses each queue's Start or Stop when its scheduled time has passed. */
+    private fun runQueueScheduler() {
+        scope.launch {
+            var last = java.time.LocalDateTime.now()
+            while (isActive) {
+                delay(QUEUE_SCHEDULER_TICK_MILLIS)
+                val now = java.time.LocalDateTime.now()
+                settingsState.value.queuesOrDefault.forEach { queue ->
+                    when (com.downloadhub.core.QueueRules.switchBetween(queue.schedule, last, now)) {
+                        com.downloadhub.core.QueueSwitch.START -> setQueueStarted(queue.id, true)
+                        com.downloadhub.core.QueueSwitch.STOP -> setQueueStarted(queue.id, false)
+                        null -> Unit
+                    }
+                }
+                last = now
+            }
+        }
+    }
+
+    private fun saveSettings(updated: DesktopSettings) {
+        settingsState.value = updated
+        DesktopSettings.save(updated)
+        refresh()
+    }
+
+    private fun kickEngines() {
+        engine.pump()
+        torrents.startLoop()
+    }
+
+    fun saveQueue(queue: QueueConfig) {
+        val settings = settingsState.value
+        val list = settings.queuesOrDefault
+        val cleaned = queue.copy(
+            name = queue.name.trim().ifBlank { "Queue" },
+            maxConcurrent = queue.maxConcurrent.coerceIn(0, 16)
+        )
+        val updated = if (list.any { it.id == cleaned.id }) {
+            list.map { if (it.id == cleaned.id) cleaned else it }
+        } else {
+            list + cleaned
+        }
+        saveSettings(settings.copy(queues = updated))
+        if (cleaned.started) kickEngines()
+    }
+
+    fun deleteQueue(id: String) {
+        if (id == com.downloadhub.core.QueueRules.MAIN) return
+        moveToQueue(store.snapshot().filter { it.queueId == id }.map { it.id }, com.downloadhub.core.QueueRules.MAIN)
+        val settings = settingsState.value
+        saveSettings(settings.copy(queues = settings.queuesOrDefault.filter { it.id != id }))
+    }
+
+    fun setQueueStarted(id: String, started: Boolean) {
+        val settings = settingsState.value
+        val queue = settings.queue(id)
+        if (queue.id != id) return
+        saveSettings(settings.copy(queues = settings.queuesOrDefault.map { if (it.id == id) it.copy(started = started) else it }))
+        if (started) {
+            kickEngines()
+            return
+        }
+        // Stopping a queue stops what it is running and puts it back in line, rather than
+        // pausing it: a paused download would not come back when the queue next starts.
+        store.snapshot()
+            .filter { it.queueId == id && (it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.RESOLVING) }
+            .forEach { item ->
+                if (item.source == DownloadSource.TORRENT) torrents.pause(item.id) else engine.pause(item.id)
+                store.update(item.id) { it.copy(status = DownloadStatus.QUEUED, speedBytesPerSecond = 0L) }
+            }
+        store.persist()
+        refresh()
+    }
+
+    fun moveToQueue(ids: Collection<String>, queueId: String) {
+        if (ids.isEmpty()) return
+        val target = settingsState.value.queue(queueId).id
+        ids.forEach { id -> store.update(id) { it.copy(queueId = target) } }
+        store.persist()
+        refresh()
+        kickEngines()
     }
 
     /**
@@ -368,7 +676,20 @@ class DesktopController(
      * dialog: no folder chosen, no chance to see what it was, and no way to refuse it
      * once it had started.
      */
+    /**
+     * The page each captured link was clicked on. Sent as the Referer when the link is
+     * queued, because a site that checks where a download came from refuses one without it.
+     */
+    private val capturedReferers = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun withCapturedReferer(link: String, headers: Map<String, String>): Map<String, String> {
+        val referer = capturedReferers.remove(link) ?: return headers
+        if (headers.keys.any { it.equals("Referer", ignoreCase = true) }) return headers
+        return headers + ("Referer" to referer)
+    }
+
     private fun acceptCapturedLink(request: CaptureRequest) {
+        request.referer?.takeIf { it.isNotBlank() }?.let { capturedReferers[request.url] = it }
         val review = onDownloadNeedsReview
         if (review != null) {
             review(request.url)
@@ -500,7 +821,7 @@ class DesktopController(
             refresh()
             return
         }
-        val started = updateInstaller.launch(downloaded.file)
+        val started = updateInstaller.launchSilently(downloaded.file, UpdateInstaller.installedLauncher())
         if (started.isFailure) {
             // Keep the dialog open, keep the file, and say what went wrong. A security
             // agent blocking the installer is the common case and the message is the
@@ -513,9 +834,10 @@ class DesktopController(
             refresh()
             return
         }
-        _downloadedUpdate.value = null
-        _update.value = UpdateCheck.Idle
-        refresh()
+        // The script installs once this process has gone, then starts the new version.
+        store.persist()
+        capture.stop()
+        onQuitRequested()
     }
 
     /**
@@ -702,12 +1024,39 @@ class DesktopController(
         refresh()
     }
 
+    /**
+     * Asks for the UI to be rebuilt. Coalesced: every engine calls this on every progress
+     * tick, and rebuilding the whole state - a copy of the queue plus several file checks -
+     * for each one is what made the window stutter with a few downloads running.
+     */
     private fun refresh() {
+        refreshRequests.trySend(Unit)
+        if (initialised) refreshLoop.value
+    }
+
+    /** Set at the end of construction; until then requests just wait in the channel. */
+    @Volatile
+    private var initialised = false
+
+    /** Tool and extension status touch the disk; a few seconds stale is fine. */
+    private var cachedToolStatus: Triple<String, Boolean, Long>? = null
+
+    private fun toolStatus(): Pair<String, Boolean> {
+        val now = System.currentTimeMillis()
+        val cached = cachedToolStatus
+        if (cached != null && now - cached.third < TOOL_STATUS_TTL_MILLIS) return cached.first to cached.second
+        val fresh = Triple(tools.statusText(), extension.available, now)
+        cachedToolStatus = fresh
+        return fresh.first to fresh.second
+    }
+
+    private fun publishState() {
+        val (ytDlpStatus, extensionReady) = toolStatus()
         _ui.value = DesktopUiState(
             items = store.snapshot(),
             settings = settingsState.value,
             busyCount = engine.busy.value,
-            ytDlpStatus = tools.statusText(),
+            ytDlpStatus = ytDlpStatus,
             captureActive = capture.isRunning,
             capturePort = capture.boundPort,
             message = _messages.value,
@@ -718,8 +1067,10 @@ class DesktopController(
             updateTotalBytes = _updateTotalBytes.value,
             downloadedUpdate = _downloadedUpdate.value,
             updateReleaseName = _availableRelease.value?.displayName,
-            extensionReady = extension.available,
-            extensionPath = extension.pathForDisplay()
+            extensionReady = extensionReady,
+            extensionPath = extension.pathForDisplay(),
+            rssItems = _rssItems.value,
+            rssRefreshing = _rssRefreshing.value
         )
     }
 
@@ -788,12 +1139,10 @@ class DesktopController(
             // downloading four gigabytes because someone pressed Resume on something
             // they had just finished watching download was not a reasonable outcome.
             //
-            // So the one state where resuming is meaningless is answered in words. The
-            // message is the answer, not an error: the file is there, the row is
-            // Finished, and there is nothing to do.
+            // So a finished row is left alone. Resume is not offered for one any more, and
+            // the "already finished" answer belongs to Retry, the button that is.
             if (item?.status == DownloadStatus.COMPLETED) {
-                _messages.value = "That one is already finished. Its file is " +
-                    (item.location ?: "in the downloads folder") + "."
+                Unit
             } else if (item?.source == DownloadSource.TORRENT) {
                 torrents.resume(id)
             } else {
@@ -823,7 +1172,16 @@ class DesktopController(
         },
         retry = { id ->
             val item = store.get(id)
-            if (item?.source == DownloadSource.TORRENT) torrents.resume(id) else engine.retry(id)
+            // Retrying something finished would fetch the whole file again; say where it is
+            // instead. This is the one place the "already finished" message belongs.
+            if (item?.status == DownloadStatus.COMPLETED) {
+                _messages.value = "That one is already finished. Its file is " +
+                    (item.location ?: "in the downloads folder") + "."
+            } else if (item?.source == DownloadSource.TORRENT) {
+                torrents.resume(id)
+            } else {
+                engine.retry(id)
+            }
         },
         remove = { id ->
             val item = store.get(id)
@@ -880,6 +1238,38 @@ class DesktopController(
         downloadUpdate = { portable -> downloadUpdate(portable) },
         revealDownloadedInstaller = ::revealDownloadedInstaller,
         setItemOptions = ::setItemOptions,
+        saveQueue = ::saveQueue,
+        deleteQueue = ::deleteQueue,
+        setQueueStarted = ::setQueueStarted,
+        moveToQueue = ::moveToQueue,
+        addRssFeed = ::addRssFeed,
+        removeRssFeed = ::removeRssFeed,
+        refreshRss = ::refreshRss,
+        saveRssRules = ::saveRssRules,
+        downloadRssItem = ::downloadRssItem,
+        torrentTrackers = { id -> torrents.trackers(id) },
+        torrentPeers = { id -> torrents.peers(id) },
+        addTrackers = { id, urls ->
+            if (!torrents.addTrackers(id, urls)) _messages.value = "Start the torrent first, then add trackers to it."
+        },
+        forceRecheck = { id ->
+            _messages.value = if (torrents.forceRecheck(id)) "Checking every piece on disk." else "Start the torrent first to recheck it."
+        },
+        forceReannounce = { id ->
+            _messages.value = if (torrents.forceReannounce(id)) "Asking the trackers for peers now." else "Start the torrent first to reannounce it."
+        },
+        setItemRequest = { id, request ->
+            store.update(id) {
+                it.copy(
+                    requestHeaders = request.headers,
+                    cookies = request.cookies,
+                    username = request.username,
+                    password = request.password
+                )
+            }
+            store.persist()
+            refresh()
+        },
         switchToDownloadedVersion = ::switchToDownloadedVersion,
         launchInstaller = ::launchInstaller,
         dismissUpdate = ::dismissUpdate,
@@ -1107,7 +1497,11 @@ class DesktopController(
                 torrentSelectedFiles = torrentRequest?.selectedFiles?.toList().orEmpty(),
                 torrentSequential = torrentRequest?.sequentialDownload ?: false,
                 torrentFirstLastPiecesFirst = torrentRequest?.downloadFirstAndLastPiecesFirst ?: false,
-                torrentContentFolder = torrentRequest?.contentFolder.orEmpty()
+                torrentContentFolder = torrentRequest?.contentFolder.orEmpty(),
+                requestHeaders = withCapturedReferer(link, torrentRequest?.http?.headers.orEmpty()),
+                cookies = torrentRequest?.http?.cookies.orEmpty(),
+                username = torrentRequest?.http?.username.orEmpty(),
+                password = torrentRequest?.http?.password.orEmpty()
             )
         )
         // Keep the file list for a magnet.
@@ -1431,6 +1825,12 @@ class DesktopController(
         torrents.close()
         engine.close()
     }
+
+    // Last in the class, so every field publishState() reads is assigned by now.
+    init {
+        initialised = true
+        refreshLoop.value
+    }
 }
 
 private fun exitProcess(code: Int) {
@@ -1452,3 +1852,21 @@ internal val APP_VERSION: String = runCatching {
     DesktopController::class.java.`package`?.implementationVersion
 }.getOrNull()?.takeIf { it.isNotBlank() } ?: "unknown"
 
+
+/** How often queue schedules are checked. A start time is honoured within this. */
+private const val QUEUE_SCHEDULER_TICK_MILLIS = 20_000L
+
+/** The fastest the window is rebuilt from engine progress; about eight frames a second. */
+private const val UI_REFRESH_MILLIS = 120L
+
+/** How long the yt-dlp and extension status may be reused before checking the disk again. */
+private const val TOOL_STATUS_TTL_MILLIS = 3_000L
+
+/** How long after start the quiet update check waits, so it does not compete with startup. */
+private const val STARTUP_UPDATE_CHECK_DELAY_MILLIS = 15_000L
+
+/** How often the watched folder is looked in. */
+private const val WATCH_FOLDER_TICK_MILLIS = 5_000L
+
+/** Feeds are first read a little after start, so they do not compete with startup. */
+private const val RSS_FIRST_REFRESH_DELAY_MILLIS = 20_000L

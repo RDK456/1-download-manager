@@ -67,6 +67,7 @@ import com.downloadhub.core.ThemeMode
 import com.downloadhub.core.ThemePalette
 import java.util.Locale
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun SettingsDialog(
     settings: DesktopSettings,
@@ -82,138 +83,308 @@ fun SettingsDialog(
     extensionPath: String,
     onOpenExtensionFolder: () -> Unit
 ) {
+    var section by remember { mutableStateOf(SettingsSection.APPEARANCE) }
     var folder by remember { mutableStateOf(settings.downloadDir) }
     var concurrent by remember { mutableStateOf(settings.maxConcurrent.toString()) }
-    var speed by remember { mutableStateOf(settings.speedLimitBytesPerSecond.toString()) }
+    // Shown in KB/s, the unit it is typed and saved in. It was shown in bytes and saved as
+    // KB, so every Save multiplied the limit by 1024.
+    var speed by remember { mutableStateOf((settings.speedLimitBytesPerSecond / 1024L).toString()) }
+    var connections by remember { mutableStateOf(settings.connectionsPerDownload.toString()) }
     var retries by remember { mutableStateOf(settings.maxRetries.toString()) }
     var closeToTray by remember { mutableStateOf(settings.closeToTray) }
-    // Shown as the folder itself rather than "the app's own folder", because a user
-    // looking at this wants to know where the bytes are going.
     var cache by remember { mutableStateOf(settings.cacheDir) }
     var deleteCache by remember { mutableStateOf(settings.deleteCacheWhenRemoved) }
     var themePalette by remember { mutableStateOf(ThemePalette.fromValue(settings.themePalette)) }
     var themeMode by remember { mutableStateOf(ThemeMode.fromValue(settings.themeMode)) }
+    var proxyType by remember { mutableStateOf(settings.proxySetting().type) }
+    var proxyHost by remember { mutableStateOf(settings.proxyHost) }
+    var proxyPort by remember { mutableStateOf(if (settings.proxyPort > 0) settings.proxyPort.toString() else "") }
+    fun kb(bytes: Long) = if (bytes > 0) (bytes / 1024).toString() else "0"
+    var upload by remember { mutableStateOf(kb(settings.uploadLimitBytesPerSecond)) }
+    var altDown by remember { mutableStateOf(kb(settings.altDownloadLimitBytesPerSecond)) }
+    var altUp by remember { mutableStateOf(kb(settings.altUploadLimitBytesPerSecond)) }
+    var altSchedule by remember { mutableStateOf(settings.altScheduleEnabled) }
+    var altStart by remember { mutableStateOf(com.downloadhub.core.QueueRules.formatTime(settings.altScheduleStartMinute)) }
+    var altStop by remember { mutableStateOf(com.downloadhub.core.QueueRules.formatTime(settings.altScheduleStopMinute)) }
+    var altDays by remember { mutableStateOf(settings.altScheduleDays.toSet()) }
+    var port by remember { mutableStateOf(if (settings.torrentListenPort > 0) settings.torrentListenPort.toString() else "") }
+    var dht by remember { mutableStateOf(settings.torrentDht) }
+    var lsd by remember { mutableStateOf(settings.torrentLocalPeerDiscovery) }
+    var portForwarding by remember { mutableStateOf(settings.torrentPortForwarding) }
+    var encryption by remember { mutableStateOf(settings.torrentSessionSettings().encryption) }
+    var maxConnections by remember { mutableStateOf(if (settings.torrentMaxConnections > 0) settings.torrentMaxConnections.toString() else "") }
+    var anonymous by remember { mutableStateOf(settings.torrentAnonymousMode) }
+    var ipFilterOn by remember { mutableStateOf(settings.ipFilterEnabled) }
+    var ipFilterPath by remember { mutableStateOf(settings.ipFilterPath) }
+    var watchOn by remember { mutableStateOf(settings.watchFolderEnabled) }
+    var watchFolder by remember { mutableStateOf(settings.watchFolder) }
+    val rules = remember {
+        androidx.compose.runtime.mutableStateListOf<RuleDraft>().apply {
+            settings.categoryRules.forEach {
+                add(RuleDraft(it.name, com.downloadhub.core.CategoryRules.formatExtensions(it.extensions), it.folder))
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-            properties = APP_DIALOG_PROPERTIES,
+        // Wider than a plain dialog: the sections sit beside the settings, not above them.
+        properties = APP_WIDE_DIALOG_PROPERTIES,
+        modifier = Modifier.width(800.dp),
         title = { Text("Settings") },
         text = {
-            // A fixed width and a scrollbar, rather than whatever height the content
-            // happens to be. The old layout grew with its content, so a long path pushed
-            // the last setting off the bottom of the dialog with no way to reach it.
-            Column(Modifier.width(440.dp).verticalScroll(rememberScrollState())) {
-                SectionHeading("Appearance")
-                ThemePicker(themePalette, themeMode) { p, m ->
-                    themePalette = p
-                    themeMode = m
+            Row(Modifier.height(470.dp)) {
+                // ---- the sections ---------------------------------------------------
+                Column(Modifier.width(170.dp).fillMaxHeight()) {
+                    SettingsSection.entries.forEach { entry ->
+                        val selected = entry == section
+                        Text(
+                            entry.label,
+                            fontSize = 13.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (selected) AppTheme.Palette.accent else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 1.dp)
+                                .hoverFill(selected = selected, shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .clickable { section = entry }
+                                .padding(horizontal = 12.dp, vertical = 9.dp)
+                        )
+                    }
                 }
-                Spacer(Modifier.height(12.dp))
-                SectionHeading("Downloads")
-                FolderRow(
-                    label = "Download folder",
-                    value = folder,
-                    onValueChange = { folder = it },
-                    onBrowse = { onChooseFolder()?.let { folder = it.absolutePath } }
-                )
-                NumberRow(
-                    label = "Downloads at once (1-8)",
-                    value = concurrent,
-                    onValueChange = { concurrent = it.filter(Char::isDigit) }
-                )
-                NumberRow(
-                    label = "Speed limit in KB/s (0 = unlimited)",
-                    value = speed,
-                    onValueChange = { speed = it.filter(Char::isDigit) }
-                )
-                NumberRow(
-                    label = "Automatic retries (0-5)",
-                    value = retries,
-                    onValueChange = { retries = it.filter(Char::isDigit) }
-                )
-                TickRow("Close to the system tray", closeToTray) { closeToTray = it }
+                Spacer(Modifier.width(18.dp))
+                // ---- the settings in it ---------------------------------------------
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    when (section) {
+                        SettingsSection.APPEARANCE -> {
+                            SectionHeading("Theme")
+                            ThemePicker(themePalette, themeMode) { p, m ->
+                                themePalette = p
+                                themeMode = m
+                            }
+                        }
 
-                SectionHeading("Temporary files")
-                Text(
-                    "A download is written here first and moved to the download folder " +
-                        "only when it is whole, so this is the folder that fills up during " +
-                        "a transfer. Leave it empty to use the app's own folder.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-                FolderRow(
-                    label = "Cache folder",
-                    value = cache,
-                    onValueChange = { cache = it },
-                    onBrowse = { onChooseCacheFolder()?.let { cache = it.absolutePath } }
-                )
-                TickRow(
-                    "Delete the cache when an unfinished download is removed",
-                    deleteCache
-                ) { deleteCache = it }
+                        SettingsSection.DOWNLOADS -> {
+                            SectionHeading("Where files go")
+                            FolderRow(
+                                label = "Download folder",
+                                value = folder,
+                                onValueChange = { folder = it },
+                                onBrowse = { onChooseFolder()?.let { folder = it.absolutePath } }
+                            )
+                            SectionHeading("Speed")
+                            NumberRow("Downloads at once (1-8)", concurrent) { concurrent = it.filter(Char::isDigit) }
+                            NumberRow("Connections per download (1-16)", connections) { connections = it.filter(Char::isDigit) }
+                            NumberRow("Automatic retries (0-5)", retries) { retries = it.filter(Char::isDigit) }
+                            SectionHeading("Temporary files")
+                            Text(
+                                "A download is written here first and moved to the download folder " +
+                                    "only when it is whole. Leave it empty to use the app's own folder.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            FolderRow(
+                                label = "Cache folder",
+                                value = cache,
+                                onValueChange = { cache = it },
+                                onBrowse = { onChooseCacheFolder()?.let { cache = it.absolutePath } }
+                            )
+                            TickRow("Delete the cache when an unfinished download is removed", deleteCache) { deleteCache = it }
+                            SectionHeading("Window")
+                            TickRow("Close to the system tray", closeToTray) { closeToTray = it }
+                        }
 
-                SectionHeading("Status")
-                Text(
-                    ytDlp,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                        SettingsSection.SPEED -> {
+                            SectionHeading("Normal limits")
+                            NumberRow("Download limit in KB/s (0 = unlimited)", speed) { speed = it.filter(Char::isDigit) }
+                            NumberRow("Upload limit in KB/s, torrents (0 = unlimited)", upload) { upload = it.filter(Char::isDigit) }
+                            SectionHeading("Alternative limits")
+                            Text(
+                                "Used instead while the turtle in the status bar is on, or inside the schedule below.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            NumberRow("Download limit in KB/s", altDown) { altDown = it.filter(Char::isDigit) }
+                            NumberRow("Upload limit in KB/s", altUp) { altUp = it.filter(Char::isDigit) }
+                            TickRow("Use the alternative limits on a schedule", altSchedule) { altSchedule = it }
+                            if (altSchedule) {
+                                Spacer(Modifier.height(6.dp))
+                                Row {
+                                    OutlinedTextField(
+                                        value = altStart,
+                                        onValueChange = { altStart = it.take(5) },
+                                        label = { Text("From (HH:mm)") },
+                                        isError = com.downloadhub.core.QueueRules.parseTime(altStart) == null,
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    OutlinedTextField(
+                                        value = altStop,
+                                        onValueChange = { altStop = it.take(5) },
+                                        label = { Text("To (HH:mm)") },
+                                        isError = com.downloadhub.core.QueueRules.parseTime(altStop) == null,
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    DAY_LABELS.forEachIndexed { index, label ->
+                                        val day = index + 1
+                                        DayChip(label, day in altDays) { altDays = if (day in altDays) altDays - day else altDays + day }
+                                    }
+                                }
+                            }
+                        }
 
-                SectionHeading("Browser downloads")
-                // The explanatory line moved under the tick, where it belongs to the
-                // setting rather than floating between it and the next section.
-                TickRow(
-                    "Catch downloads from the browser",
-                    settings.browserCaptureEnabled,
-                    detail = if (captureActive) {
-                        "Listening on 127.0.0.1:$capturePort. Install the extension and " +
-                            "paste the code below to pair it."
-                    } else {
-                        "Turn this on, then install the browser extension."
-                    },
-                    onChange = onToggleCapture
-                )
-                if (settings.browserCaptureEnabled && settings.captureToken.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Pairing code",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    SelectionContainerCompat(settings.captureToken)
+                        SettingsSection.BITTORRENT -> {
+                            SectionHeading("Listening port")
+                            NumberRow("Port for incoming peers (blank = automatic)", port) { port = it.filter(Char::isDigit).take(5) }
+                            TickRow("Use UPnP / NAT-PMP to forward the port from my router", portForwarding) { portForwarding = it }
+                            SectionHeading("Finding peers")
+                            TickRow("Enable DHT (decentralised network) to find more peers", dht) { dht = it }
+                            TickRow("Enable Local Peer Discovery to find peers on my network", lsd) { lsd = it }
+                            SectionHeading("Privacy")
+                            com.downloadhub.core.TorrentEncryption.entries.forEach { mode ->
+                                TickRow(mode.label, encryption == mode) { if (it) encryption = mode }
+                            }
+                            TickRow("Enable anonymous mode", anonymous, detail = "Hides the client name and other identifying details from peers and trackers.") { anonymous = it }
+                            SectionHeading("Connections")
+                            NumberRow("Maximum connections (blank = default)", maxConnections) { maxConnections = it.filter(Char::isDigit).take(5) }
+                            SectionHeading("IP filter")
+                            TickRow("Block peers listed in a filter file", ipFilterOn, detail = "An eMule .dat or PeerGuardian .p2p blocklist.") { ipFilterOn = it }
+                            if (ipFilterOn) {
+                                FolderRow(
+                                    label = "Filter file",
+                                    value = ipFilterPath,
+                                    onValueChange = { ipFilterPath = it },
+                                    onBrowse = {
+                                        val chooser = javax.swing.JFileChooser().apply {
+                                            fileFilter = javax.swing.filechooser.FileNameExtensionFilter("IP filter (.dat, .p2p)", "dat", "p2p", "txt")
+                                        }
+                                        if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
+                                            ipFilterPath = chooser.selectedFile.absolutePath
+                                        }
+                                    }
+                                )
+                            }
+                            SectionHeading("Watched folder")
+                            TickRow("Add .torrent files saved to a folder automatically", watchOn, detail = "Each one is started with the default download folder, then renamed to .torrent.added.") { watchOn = it }
+                            if (watchOn) {
+                                FolderRow(
+                                    label = "Folder to watch",
+                                    value = watchFolder,
+                                    onValueChange = { watchFolder = it },
+                                    onBrowse = { onChooseFolder()?.let { watchFolder = it.absolutePath } }
+                                )
+                            }
+                        }
+
+                        SettingsSection.CONNECTION -> {
+                            SectionHeading("Proxy")
+                            Text(
+                                "Used by ordinary downloads. YouTube and torrents connect on their own.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            com.downloadhub.core.ProxyType.entries.forEach { type ->
+                                TickRow(type.label, proxyType == type) { if (it) proxyType = type }
+                            }
+                            val manual = proxyType == com.downloadhub.core.ProxyType.HTTP ||
+                                proxyType == com.downloadhub.core.ProxyType.SOCKS
+                            if (manual) {
+                                Spacer(Modifier.height(8.dp))
+                                Row {
+                                    OutlinedTextField(
+                                        value = proxyHost,
+                                        onValueChange = { proxyHost = it.trim() },
+                                        label = { Text("Host") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    OutlinedTextField(
+                                        value = proxyPort,
+                                        onValueChange = { proxyPort = it.filter(Char::isDigit).take(5) },
+                                        label = { Text("Port") },
+                                        singleLine = true,
+                                        modifier = Modifier.width(110.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        SettingsSection.CATEGORIES -> {
+                            SectionHeading("Your categories")
+                            Text(
+                                "A finished file whose extension is listed goes to that category's folder. " +
+                                    "A folder that is not a full path is inside the download folder. Files no " +
+                                    "category names are sorted by type, as before.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            rules.forEachIndexed { index, rule ->
+                                CategoryRuleRow(
+                                    rule = rule,
+                                    onChange = { rules[index] = it },
+                                    onBrowse = { onChooseFolder()?.let { rules[index] = rule.copy(folder = it.absolutePath) } },
+                                    onRemove = { rules.removeAt(index) }
+                                )
+                            }
+                            OutlinedButton(onClick = { rules.add(RuleDraft("", "", "")) }) { Text("Add category") }
+                        }
+
+                        SettingsSection.BROWSER -> {
+                            SectionHeading("Browser downloads")
+                            TickRow(
+                                "Catch downloads from the browser",
+                                settings.browserCaptureEnabled,
+                                detail = if (captureActive) {
+                                    "Listening on 127.0.0.1:$capturePort. Install the extension and " +
+                                        "paste the code below to pair it."
+                                } else {
+                                    "Turn this on, then install the browser extension."
+                                },
+                                onChange = onToggleCapture
+                            )
+                            if (settings.browserCaptureEnabled && settings.captureToken.isNotBlank()) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "Pairing code",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                SelectionContainerCompat(settings.captureToken)
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                "Install the extension: open the folder, then in Chrome or Edge choose " +
+                                    "Extensions, turn on Developer mode, and pick that folder.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            SelectionContainerCompat(extensionPath)
+                            OutlinedButton(onClick = onOpenExtensionFolder) {
+                                Text(if (extensionReady) "Open extension folder" else "Extract and open folder")
+                            }
+                        }
+
+                        SettingsSection.ABOUT -> {
+                            SectionHeading("Tools")
+                            Text(
+                                ytDlp,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
-
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "1. Install the extension",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    "Open the folder, then in Chrome or Edge choose Extensions, turn on " +
-                        "Developer mode, and pick that folder.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(4.dp))
-                SelectionContainerCompat(extensionPath)
-                OutlinedButton(
-                    onClick = onOpenExtensionFolder,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (extensionReady) "Open extension folder" else "Extract and open folder")
-                }
-
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "2. Paste the pairing code above into the extension",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.height(12.dp))
             }
         },
         confirmButton = {
@@ -222,6 +393,7 @@ fun SettingsDialog(
                     settings.copy(
                         downloadDir = folder,
                         maxConcurrent = concurrent.toIntOrNull()?.coerceIn(1, 8) ?: 3,
+                        connectionsPerDownload = connections.toIntOrNull()?.coerceIn(1, 16) ?: 4,
                         speedLimitBytesPerSecond = (speed.toLongOrNull() ?: 0L) * 1024L,
                         maxRetries = retries.toIntOrNull()?.coerceIn(0, 5) ?: 2,
                         closeToTray = closeToTray,
@@ -229,13 +401,97 @@ fun SettingsDialog(
                         cacheDir = cache.trim(),
                         deleteCacheWhenRemoved = deleteCache,
                         themePalette = themePalette.value,
-                        themeMode = themeMode.value
+                        themeMode = themeMode.value,
+                        proxyType = proxyType.name,
+                        proxyHost = proxyHost.trim(),
+                        proxyPort = proxyPort.toIntOrNull()?.coerceIn(0, 65535) ?: 0,
+                        uploadLimitBytesPerSecond = (upload.toLongOrNull() ?: 0L) * 1024L,
+                        altDownloadLimitBytesPerSecond = (altDown.toLongOrNull() ?: 0L) * 1024L,
+                        altUploadLimitBytesPerSecond = (altUp.toLongOrNull() ?: 0L) * 1024L,
+                        altScheduleEnabled = altSchedule,
+                        altScheduleDays = altDays.sorted(),
+                        altScheduleStartMinute = com.downloadhub.core.QueueRules.parseTime(altStart) ?: settings.altScheduleStartMinute,
+                        altScheduleStopMinute = com.downloadhub.core.QueueRules.parseTime(altStop) ?: settings.altScheduleStopMinute,
+                        torrentListenPort = port.toIntOrNull()?.coerceIn(0, 65535) ?: 0,
+                        torrentDht = dht,
+                        torrentLocalPeerDiscovery = lsd,
+                        torrentPortForwarding = portForwarding,
+                        torrentEncryption = encryption.name,
+                        torrentMaxConnections = maxConnections.toIntOrNull() ?: 0,
+                        torrentAnonymousMode = anonymous,
+                        ipFilterEnabled = ipFilterOn,
+                        ipFilterPath = ipFilterPath.trim(),
+                        watchFolderEnabled = watchOn,
+                        watchFolder = watchFolder.trim(),
+                        // A row with no extensions can match nothing, so it is not kept.
+                        categoryRules = rules.mapNotNull { draft ->
+                            val extensions = com.downloadhub.core.CategoryRules.parseExtensions(draft.extensions)
+                            if (extensions.isEmpty()) null
+                            else CategoryRuleConfig(draft.name.trim().ifBlank { "Category" }, extensions, draft.folder.trim())
+                        }
                     )
                 )
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+/** The pages of Settings, in the order they are listed. */
+private enum class SettingsSection(val label: String) {
+    APPEARANCE("Appearance"),
+    DOWNLOADS("Downloads"),
+    SPEED("Speed"),
+    BITTORRENT("BitTorrent"),
+    CONNECTION("Connection"),
+    CATEGORIES("Categories"),
+    BROWSER("Browser"),
+    ABOUT("Tools")
+}
+
+/** One category while it is being edited; extensions stay as typed until Save. */
+private data class RuleDraft(val name: String, val extensions: String, val folder: String)
+
+@Composable
+private fun CategoryRuleRow(
+    rule: RuleDraft,
+    onChange: (RuleDraft) -> Unit,
+    onBrowse: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+            .border(1.dp, AppTheme.Palette.outlineVariant, androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            .padding(10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = rule.name,
+                onValueChange = { onChange(rule.copy(name = it)) },
+                label = { Text("Name") },
+                singleLine = true,
+                modifier = Modifier.width(150.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            OutlinedTextField(
+                value = rule.extensions,
+                onValueChange = { onChange(rule.copy(extensions = it)) },
+                label = { Text("Extensions (mp4, mkv)") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onRemove) { Text("Remove", color = AppTheme.Palette.error) }
+        }
+        Spacer(Modifier.height(6.dp))
+        FolderRow(
+            label = "Folder",
+            value = rule.folder,
+            onValueChange = { onChange(rule.copy(folder = it)) },
+            onBrowse = onBrowse
+        )
+    }
 }
 
 // --- settings layout helpers ------------------------------------------------
@@ -264,7 +520,7 @@ private fun ThemePicker(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { entry ->
                     Box(Modifier.weight(1f)) {
-                        ProvideDesktopTheme(entry, mode) {
+                        ProvideDesktopTheme(entry, mode, installGlobally = false) {
                             ThemeSwatch(
                                 entry = entry,
                                 selected = entry == palette,
@@ -291,7 +547,7 @@ private fun ThemePicker(
         Spacer(Modifier.height(4.dp))
         Text(
             "AMOLED makes the background true black and leaves the accent alone, so it " +
-                "works with any of the nine.",
+                "works with any of them.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -301,7 +557,8 @@ private fun ThemePicker(
 /** One theme's swatch, drawn in that theme. */
 @Composable
 private fun ThemeSwatch(entry: ThemePalette, selected: Boolean, onClick: () -> Unit) {
-    val p = AppTheme.Palette
+    // The swatch's own theme, from the local its ProvideDesktopTheme set - not the app's.
+    val p = LocalDesktopPalette.current
     Column(
         Modifier
             .fillMaxWidth()

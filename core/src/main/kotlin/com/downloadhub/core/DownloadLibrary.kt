@@ -195,6 +195,9 @@ sealed interface RailEntry {
      */
     data object YouTube : RailEntry
 
+    /** qBittorrent's RSS reader: feeds and their auto-download rules. */
+    data object Rss : RailEntry
+
     /** A heading with nothing selectable under it. */
     data class Heading(val label: String) : RailEntry
 }
@@ -218,6 +221,7 @@ fun sidebarEntries(): List<RailEntry> = buildList {
         if (index == 0) add(RailEntry.Search)
         // YouTube beside Search: found versus pasted, the two ways new things arrive.
         if (index == 0) add(RailEntry.YouTube)
+        if (index == 0) add(RailEntry.Rss)
     }
     add(RailEntry.Heading("Categories"))
     // ALL is already up above as "All Downloads"; repeating it here under Categories
@@ -253,6 +257,7 @@ fun railCount(entry: RailEntry, items: List<DownloadItem>): Int = when (entry) {
     RailEntry.Search -> 0
     // YouTube holds no downloads either: a pasted playlist is not in the queue yet.
     RailEntry.YouTube -> 0
+    RailEntry.Rss -> 0
     is RailEntry.Heading -> 0
 }
 
@@ -286,7 +291,9 @@ data class LibraryQuery(
     val group: LibraryGroup = LibraryGroup.ALL,
     val search: String = "",
     val kind: LibraryKind = LibraryKind.ALL,
-    val sort: LibrarySort = LibrarySort.RECENT
+    val sort: LibrarySort = LibrarySort.RECENT,
+    /** Only this queue's downloads, when set. */
+    val queueId: String? = null
 ) {
     /**
      * Whether this query is scoped to torrents alone.
@@ -302,6 +309,7 @@ data class LibraryQuery(
         // round would exclude torrents from the main list, which is a queue silently
         // missing downloads.
         if (!kind.matches(item)) return false
+        if (queueId != null && item.queueId != queueId) return false
         if (!category.matches(item)) return false
         if (!group.matches(item)) return false
         if (search.isNotBlank()) {

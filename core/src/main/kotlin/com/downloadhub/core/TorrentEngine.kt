@@ -2,11 +2,17 @@ package com.downloadhub.core
 
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import org.libtorrent4j.AnnounceEntry
 import org.libtorrent4j.AddTorrentParams
 import org.libtorrent4j.Priority
 import org.libtorrent4j.SessionHandle
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
+import org.libtorrent4j.SettingsPack
+import org.libtorrent4j.swig.settings_pack
+import org.libtorrent4j.swig.ip_filter
+import org.libtorrent4j.swig.address
+import org.libtorrent4j.swig.error_code
 import org.libtorrent4j.Sha1Hash
 import org.libtorrent4j.TorrentFlags
 import org.libtorrent4j.TorrentHandle
@@ -232,6 +238,134 @@ class TorrentEngine(
         handles[item.id]?.pause()
     }
 
+    /** What the session runs with; kept so a session started later still gets it. */
+    @Volatile
+    private var sessionSettings: TorrentSessionSettings? = null
+
+    /**
+     * Speed limits and connection settings for the whole session, as in qBittorrent's
+     * Speed and Connection pages. Applied now if the session is running, and at start
+     * otherwise. Cheap to call repeatedly; libtorrent only acts on what changed.
+     */
+    fun applySettings(settings: TorrentSessionSettings) {
+        sessionSettings = settings
+        synchronized(lock) {
+            if (sessionManager.isRunning) runCatching { sessionManager.applySettings(packFor(settings)) }
+        }
+    }
+
+    /** The blocked ranges; kept so a session started later still gets them. */
+    @Volatile
+    private var blockedRanges: List<IpRange> = emptyList()
+
+    /** qBittorrent's IP filter: peers in these ranges are refused. An empty list clears it. */
+    fun setIpFilter(ranges: List<IpRange>) {
+        blockedRanges = ranges
+        synchronized(lock) {
+            if (sessionManager.isRunning) applyIpFilter(ranges)
+        }
+    }
+
+    private fun applyIpFilter(ranges: List<IpRange>) = runCatching {
+        val filter = ip_filter()
+        val blocked = ip_filter.access_flags.blocked.swigValue().toLong()
+        ranges.forEach { range ->
+            val error = error_code()
+            val from = address.from_string(range.start, error)
+            val to = address.from_string(range.end, error)
+            if (error.value() == 0) filter.add_rule(from, to, blocked)
+        }
+        sessionManager.swig()?.set_ip_filter(filter)
+    }
+
+    private fun packFor(s: TorrentSessionSettings): SettingsPack {
+        val pack = SettingsPack()
+            // libtorrent reads 0 as unlimited, which is the same meaning the app gives it.
+            .downloadRateLimit(s.downloadLimitBytesPerSecond.coerceIn(0, Int.MAX_VALUE.toLong()).toInt())
+            .uploadRateLimit(s.uploadLimitBytesPerSecond.coerceIn(0, Int.MAX_VALUE.toLong()).toInt())
+            .anonymousMode(s.anonymousMode)
+        if (s.maxConnections > 0) pack.connectionsLimit(s.maxConnections)
+        pack.setEnableDht(s.dht)
+        pack.setEnableLsd(s.localPeerDiscovery)
+        pack.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), s.portForwarding)
+        pack.setBoolean(settings_pack.bool_types.enable_natpmp.swigValue(), s.portForwarding)
+        val policy = when (s.encryption) {
+            TorrentEncryption.REQUIRED -> 0 // pe_forced
+            TorrentEncryption.ALLOWED -> 1 // pe_enabled
+            TorrentEncryption.DISABLED -> 2 // pe_disabled
+        }
+        pack.setInteger(settings_pack.int_types.in_enc_policy.swigValue(), policy)
+        pack.setInteger(settings_pack.int_types.out_enc_policy.swigValue(), policy)
+        if (s.listenPort in 1..65535) {
+            pack.listenInterfaces("0.0.0.0:${s.listenPort},[::]:${s.listenPort}")
+        }
+        return pack
+    }
+
+    // --- qBittorrent's Trackers and Peers tabs, and its two "force" actions ---------
+
+    /** The torrent's handle whether or not this run started it; null when it is not in the session. */
+    private fun handleFor(item: DownloadItem): TorrentHandle? {
+        handles[item.id]?.takeIf { it.isValid }?.let { return it }
+        val hash = item.torrentInfoHash ?: return null
+        return runCatching { sessionManager.find(Sha1Hash.parseHex(hash)) }.getOrNull()?.takeIf { it.isValid }
+    }
+
+    fun trackers(item: DownloadItem): List<TrackerRow> {
+        val handle = handleFor(item) ?: return emptyList()
+        return runCatching {
+            handle.trackers().map { entry ->
+                // One endpoint per local interface; the best answer any of them got.
+                val infos = entry.endpoints().mapNotNull { runCatching { it.infohashV1() }.getOrNull() }
+                TrackerRow(
+                    url = entry.url(),
+                    tier = entry.tier(),
+                    status = trackerStatus(
+                        contacted = infos.isNotEmpty(),
+                        updating = infos.any { it.updating() },
+                        working = infos.any { it.isWorking() },
+                        fails = infos.maxOfOrNull { it.fails().toInt() } ?: 0
+                    ),
+                    message = infos.map { it.message() }.firstOrNull { it.isNotBlank() }.orEmpty()
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun peers(item: DownloadItem): List<PeerRow> {
+        val handle = handleFor(item) ?: return emptyList()
+        return runCatching {
+            handle.peerInfo().map { peer ->
+                PeerRow(
+                    address = peer.ip(),
+                    client = peer.client(),
+                    progressPercent = (peer.progress() * 100).toInt().coerceIn(0, 100),
+                    downloadRate = peer.downSpeed().toLong().coerceAtLeast(0),
+                    uploadRate = peer.upSpeed().toLong().coerceAtLeast(0),
+                    downloaded = peer.totalDownload(),
+                    uploaded = peer.totalUpload()
+                )
+            }.sortedByDescending { it.downloadRate + it.uploadRate }
+        }.getOrDefault(emptyList())
+    }
+
+    /** Adds trackers; ones already there are left alone. True when the torrent was found. */
+    fun addTrackers(item: DownloadItem, urls: List<String>): Boolean {
+        val handle = handleFor(item) ?: return false
+        val existing = runCatching { handle.trackers().map { it.url() }.toSet() }.getOrDefault(emptySet())
+        urls.map { it.trim() }.filter { it.isNotEmpty() && it !in existing }
+            .forEach { runCatching { handle.addTracker(AnnounceEntry(it)) } }
+        return true
+    }
+
+    /** Re-reads every piece on disk against its hash: qBittorrent's Force recheck. */
+    fun forceRecheck(item: DownloadItem): Boolean =
+        handleFor(item)?.let { runCatching { it.forceRecheck() }.isSuccess } ?: false
+
+    /** Asks every tracker for peers now rather than at its next interval: Force reannounce. */
+    fun forceReannounce(item: DownloadItem): Boolean =
+        handleFor(item)?.let { runCatching { it.forceReannounce() }.isSuccess } ?: false
+
     fun resume(item: DownloadItem) {
         val handle = handles[item.id] ?: run {
             start(item)
@@ -266,6 +400,9 @@ class TorrentEngine(
                 val params = SessionParams()
                 params.setPosixDiskIO()
                 sessionManager.start(params)
+                // Whatever applySettings was given before there was a session to apply it to.
+                sessionSettings?.let { runCatching { sessionManager.applySettings(packFor(it)) } }
+                if (blockedRanges.isNotEmpty()) applyIpFilter(blockedRanges)
             }
         }
 
@@ -280,8 +417,10 @@ class TorrentEngine(
             base
         }
         saveDirectory.mkdirs()
-        val flags = TorrentFlags.SEQUENTIAL_DOWNLOAD
-            .or_(TorrentFlags.UPDATE_SUBSCRIBE)
+        // Not SEQUENTIAL_DOWNLOAD: that was set on every torrent, which fetches pieces in
+        // order instead of rarest-first and slows the whole swarm. It is applied in
+        // applyFileSelection only when the add dialog asked for it.
+        val flags = TorrentFlags.UPDATE_SUBSCRIBE
             .or_(TorrentFlags.NEED_SAVE_RESUME)
 
         return if (torrentFile != null) {
@@ -332,8 +471,10 @@ class TorrentEngine(
             },
             downloadRate = status.downloadPayloadRate().toLong().coerceAtLeast(0),
             uploadRate = status.uploadPayloadRate().toLong().coerceAtLeast(0),
-            peers = status.numSeeds(),
-            seeds = status.listSeeds(),
+            // Connected peers and connected seeds. Peers was read from numSeeds, so the
+            // pane's Peers figure was the seed count.
+            peers = status.numPeers(),
+            seeds = status.numSeeds(),
             // Read from the item, not from libtorrent.
             //
             // This was hardcoded false, so nothing downstream could tell a paused torrent
@@ -386,3 +527,57 @@ class TorrentEngine(
         }
     }
 }
+
+/** One row of the Trackers tab. */
+data class TrackerRow(
+    val url: String,
+    val tier: Int,
+    /** "Working", "Updating...", "Not working" or "Not contacted yet", as qBittorrent words it. */
+    val status: String,
+    /** What the tracker last said, such as an error; empty when it said nothing. */
+    val message: String
+)
+
+/** One row of the Peers tab. */
+data class PeerRow(
+    val address: String,
+    val client: String,
+    val progressPercent: Int,
+    val downloadRate: Long,
+    val uploadRate: Long,
+    val downloaded: Long,
+    val uploaded: Long
+)
+
+/** A tracker's state in qBittorrent's words, from what its announces reported. */
+internal fun trackerStatus(contacted: Boolean, updating: Boolean, working: Boolean, fails: Int): String = when {
+    !contacted -> "Not contacted yet"
+    updating -> "Updating..."
+    working -> "Working"
+    fails > 0 -> "Not working"
+    else -> "Not contacted yet"
+}
+
+enum class TorrentEncryption(val label: String) {
+    ALLOWED("Allow encryption"),
+    REQUIRED("Require encryption"),
+    DISABLED("Disable encryption")
+}
+
+/**
+ * The session-wide torrent settings, as qBittorrent's Speed and Connection pages lay them
+ * out. Limits are bytes per second, 0 meaning unlimited. A port of 0 leaves libtorrent's
+ * own choice; a connection limit of 0 leaves libtorrent's default.
+ */
+data class TorrentSessionSettings(
+    val downloadLimitBytesPerSecond: Long = 0,
+    val uploadLimitBytesPerSecond: Long = 0,
+    val listenPort: Int = 0,
+    val dht: Boolean = true,
+    val localPeerDiscovery: Boolean = true,
+    /** UPnP and NAT-PMP together, as qBittorrent's single tick box does. */
+    val portForwarding: Boolean = true,
+    val encryption: TorrentEncryption = TorrentEncryption.ALLOWED,
+    val maxConnections: Int = 0,
+    val anonymousMode: Boolean = false
+)

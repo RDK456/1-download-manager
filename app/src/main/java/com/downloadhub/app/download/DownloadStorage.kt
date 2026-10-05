@@ -65,9 +65,20 @@ class DownloadStorage(private val context: Context) {
      * be created keeps a completed download from being lost to a full or read-only
      * volume.
      */
+    /** The user's own categories; a matching rule names the folder. Set from settings. */
+    @Volatile
+    var categoryRules: List<com.downloadhub.core.CategoryRule> = emptyList()
+
+    /** A rule's folder for this file, else the built-in type folder. A subfolder name on a phone. */
+    private fun folderNameFor(preferredName: String, category: DownloadCategory): String =
+        com.downloadhub.core.CategoryRules.match(preferredName, categoryRules)
+            ?.let { rule -> rule.folder.trim().replace("\\", "/").substringAfterLast("/").ifBlank { rule.name } }
+            ?.let { LinkParser.sanitizeFileName(it) }
+            ?: category.destinationFolder()
+
     fun targetFile(preferredName: String, category: DownloadCategory = DownloadCategory.OTHER): File {
         root.mkdirs()
-        val dir = File(root, category.destinationFolder())
+        val dir = File(root, folderNameFor(preferredName, category))
         if (!dir.isDirectory && !dir.mkdirs()) return uniqueIn(root, preferredName)
         return uniqueIn(dir, preferredName)
     }
@@ -91,8 +102,8 @@ class DownloadStorage(private val context: Context) {
      * first use. Returns the tree itself when the folder cannot be made, so a file
      * still lands somewhere rather than the download failing.
      */
-    private fun categoryFolder(tree: DocumentFile, category: DownloadCategory): DocumentFile {
-        val name = category.destinationFolder()
+    private fun categoryFolder(tree: DocumentFile, category: DownloadCategory, preferredName: String = ""): DocumentFile {
+        val name = folderNameFor(preferredName, category)
         val existing = tree.findFile(name)
         if (existing != null) return if (existing.isDirectory) existing else tree
         return runCatching { tree.createDirectory(name) }.getOrNull()?.takeIf { it.isDirectory } ?: tree
@@ -145,7 +156,7 @@ class DownloadStorage(private val context: Context) {
             return PublishedTarget(target.absolutePath)
         }
 
-        val tree = categoryFolder(treeFor(destinationTreeUri), category)
+        val tree = categoryFolder(treeFor(destinationTreeUri), category, preferredName)
         val safeName = LinkParser.sanitizeFileName(preferredName)
         val name = uniqueDocumentName(tree, safeName)
         val mime = mimeFor(name)

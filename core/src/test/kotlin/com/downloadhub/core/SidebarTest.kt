@@ -82,6 +82,7 @@ class SidebarTest {
                     is RailEntry.Kind -> it.kind.label
                     RailEntry.Search -> "Search"
                     RailEntry.YouTube -> "YouTube"
+                    RailEntry.Rss -> "RSS"
                     is RailEntry.Heading -> null
                 }
             }
@@ -330,6 +331,7 @@ class SidebarTest {
                 is RailEntry.Kind -> "kind"
                 is RailEntry.Search -> "search"
                 is RailEntry.YouTube -> "youtube"
+                is RailEntry.Rss -> "rss"
                 is RailEntry.Heading -> "heading"
             }
         }

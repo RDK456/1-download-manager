@@ -3,6 +3,8 @@ package com.downloadhub.desktop
 import com.downloadhub.core.DownloadCategory
 import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.DownloadStatus
+import com.downloadhub.core.QueueRules
+import com.downloadhub.core.QueueSchedule
 import java.io.File
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -117,11 +119,63 @@ object DesktopJson {
     }
 }
 
+/**
+ * One named queue, as saved. [maxConcurrent] of 0 means only the app-wide limit applies.
+ * [started] is the queue's Start/Stop button; the schedule presses it at its times.
+ */
+@Serializable
+data class QueueConfig(
+    val id: String,
+    val name: String,
+    val maxConcurrent: Int = 0,
+    val started: Boolean = true,
+    val scheduleEnabled: Boolean = false,
+    val days: List<Int> = (1..7).toList(),
+    val startMinute: Int = 0,
+    val stopMinute: Int = QueueSchedule.NO_STOP
+) {
+    val schedule: QueueSchedule
+        get() = QueueSchedule(scheduleEnabled, days.toSet(), startMinute, stopMinute)
+
+    companion object {
+        fun main() = QueueConfig(id = QueueRules.MAIN, name = "Main")
+    }
+}
+
+/** One of the user's own categories, as saved. See [com.downloadhub.core.CategoryRule]. */
+@Serializable
+data class CategoryRuleConfig(
+    val name: String,
+    val extensions: List<String> = emptyList(),
+    /** Absolute, or relative to the download folder; blank uses the name. */
+    val folder: String = ""
+) {
+    fun toRule() = com.downloadhub.core.CategoryRule(name, extensions, folder)
+}
+
+/** One RSS feed, by its URL; [name] is what the panel shows. */
+@Serializable
+data class RssFeedConfig(val url: String, val name: String = "")
+
+/** One auto-download rule, as saved. See [com.downloadhub.core.RssRule]. */
+@Serializable
+data class RssRuleConfig(
+    val name: String,
+    val mustContain: String,
+    val mustNotContain: String = "",
+    val useRegex: Boolean = false,
+    val enabled: Boolean = true
+) {
+    fun toRule() = com.downloadhub.core.RssRule(name, mustContain, mustNotContain, useRegex, enabled)
+}
+
 /** User-facing settings, persisted as JSON. */
 @Serializable
 data class DesktopSettings(
     val downloadDir: String = AppPaths.defaultDownloadDir.absolutePath,
     val maxConcurrent: Int = 3,
+    /** Parallel connections one HTTP file is split over, when its server takes ranges. */
+    val connectionsPerDownload: Int = 4,
     val speedLimitBytesPerSecond: Long = 0L,
     val maxRetries: Int = 2,
     /** Shared secret the browser extension must present. Generated once. */
@@ -162,7 +216,7 @@ data class DesktopSettings(
      * upgrading sees no change, and the choice is the same one the Android app offers so
      * that picking Ocean on a phone gives Ocean on the desktop.
      */
-    val themePalette: String = "MINT",
+    val themePalette: String = "AURORA",
     /**
      * Light, dark, or AMOLED.
      *
@@ -170,8 +224,86 @@ data class DesktopSettings(
      * palette: it makes the background and surfaces true black and leaves the accent
      * alone, so it works with all nine colours rather than replacing the choice.
      */
-    val themeMode: String = "DARK"
+    val themeMode: String = "DARK",
+    /** Named queues. Main is always first and cannot be removed; see [queuesOrDefault]. */
+    val queues: List<QueueConfig> = listOf(QueueConfig.main()),
+    /** The proxy for HTTP downloads, by [ProxyType] name. Follows Windows by default. */
+    val proxyType: String = "SYSTEM",
+    val proxyHost: String = "",
+    val proxyPort: Int = 0,
+    /** The user's own categories: by extension, to a folder. Checked before the built-in type folders. */
+    val categoryRules: List<CategoryRuleConfig> = emptyList(),
+    // --- qBittorrent's Speed page --------------------------------------------------
+    /** App-wide upload cap for torrents, bytes per second; 0 is unlimited. */
+    val uploadLimitBytesPerSecond: Long = 0L,
+    /** The "turtle" limits, used instead of the normal ones while alternative speed is on. */
+    val altDownloadLimitBytesPerSecond: Long = 512L * 1024,
+    val altUploadLimitBytesPerSecond: Long = 128L * 1024,
+    /** The turtle switch, pressed by hand. */
+    val altSpeedEnabled: Boolean = false,
+    /** Turns alternative speed on by itself inside this window. */
+    val altScheduleEnabled: Boolean = false,
+    val altScheduleDays: List<Int> = (1..7).toList(),
+    val altScheduleStartMinute: Int = 8 * 60,
+    val altScheduleStopMinute: Int = 20 * 60,
+    // --- qBittorrent's Connection and BitTorrent pages --------------------------------
+    /** 0 lets libtorrent pick. */
+    val torrentListenPort: Int = 0,
+    val torrentDht: Boolean = true,
+    val torrentLocalPeerDiscovery: Boolean = true,
+    val torrentPortForwarding: Boolean = true,
+    /** A [com.downloadhub.core.TorrentEncryption] name. */
+    val torrentEncryption: String = "ALLOWED",
+    /** 0 leaves libtorrent's default. */
+    val torrentMaxConnections: Int = 0,
+    val torrentAnonymousMode: Boolean = false,
+    /** qBittorrent's IP filter: an eMule .dat or PeerGuardian .p2p blocklist. */
+    val ipFilterEnabled: Boolean = false,
+    val ipFilterPath: String = "",
+    /** qBittorrent's watched folder: .torrent files dropped here are added by themselves. */
+    val watchFolderEnabled: Boolean = false,
+    val watchFolder: String = "",
+    // --- RSS -------------------------------------------------------------------
+    val rssFeeds: List<RssFeedConfig> = emptyList(),
+    val rssRules: List<RssRuleConfig> = emptyList(),
+    /** How often feeds are re-read. */
+    val rssRefreshMinutes: Int = 30
 ) {
+    /** The queues, with Main put back if a hand-edited file lost it. */
+    val queuesOrDefault: List<QueueConfig>
+        get() = if (queues.any { it.id == QueueRules.MAIN }) queues else listOf(QueueConfig.main()) + queues
+
+    /** Whether the turtle limits apply right now: switched on by hand, or inside the schedule. */
+    fun altSpeedActive(now: java.time.LocalDateTime = java.time.LocalDateTime.now()): Boolean =
+        altSpeedEnabled || com.downloadhub.core.QueueRules.isWithin(
+            com.downloadhub.core.QueueSchedule(altScheduleEnabled, altScheduleDays.toSet(), altScheduleStartMinute, altScheduleStopMinute),
+            now
+        )
+
+    fun effectiveDownloadLimit(): Long = if (altSpeedActive()) altDownloadLimitBytesPerSecond else speedLimitBytesPerSecond
+    fun effectiveUploadLimit(): Long = if (altSpeedActive()) altUploadLimitBytesPerSecond else uploadLimitBytesPerSecond
+
+    fun torrentSessionSettings(): com.downloadhub.core.TorrentSessionSettings = com.downloadhub.core.TorrentSessionSettings(
+        downloadLimitBytesPerSecond = effectiveDownloadLimit(),
+        uploadLimitBytesPerSecond = effectiveUploadLimit(),
+        listenPort = torrentListenPort,
+        dht = torrentDht,
+        localPeerDiscovery = torrentLocalPeerDiscovery,
+        portForwarding = torrentPortForwarding,
+        encryption = com.downloadhub.core.TorrentEncryption.entries.firstOrNull { it.name == torrentEncryption }
+            ?: com.downloadhub.core.TorrentEncryption.ALLOWED,
+        maxConnections = torrentMaxConnections,
+        anonymousMode = torrentAnonymousMode
+    )
+
+    fun proxySetting(): com.downloadhub.core.ProxySetting = com.downloadhub.core.ProxySetting(
+        type = com.downloadhub.core.ProxyType.entries.firstOrNull { it.name == proxyType } ?: com.downloadhub.core.ProxyType.SYSTEM,
+        host = proxyHost,
+        port = proxyPort
+    )
+
+    fun queue(id: String): QueueConfig =
+        queuesOrDefault.firstOrNull { it.id == id } ?: queuesOrDefault.first { it.id == QueueRules.MAIN }
 
     /**
      * Where temporary files go, with the default applied.
@@ -302,7 +434,15 @@ data class QueuedDownload(
      * Per-file priority, keyed by file index, holding a [com.downloadhub.core.FilePriority]
      * ordinal. Persisted, because it is a choice and a choice survives a restart.
      */
-    val torrentFilePriorities: Map<Int, Int> = emptyMap()
+    val torrentFilePriorities: Map<Int, Int> = emptyMap(),
+    /** Which queue starts it. Missing in older queue files, which puts them in Main. */
+    val queueId: String = QueueRules.MAIN,
+    // --- what each request for this file carries (HTTP only) ---
+    val requestHeaders: Map<String, String> = emptyMap(),
+    val cookies: String = "",
+    val username: String = "",
+    /** Kept in queue.json in plain text, as AB Download Manager does; the file is in the user profile. */
+    val password: String = ""
 ) {
 
     /**
@@ -315,6 +455,18 @@ data class QueuedDownload(
      */
     val cacheKey: String
         get() = if (source == DownloadSource.TORRENT) "torrent-$id" else id
+
+    /**
+     * Every scratch entry this item can have. An HTTP download's partial is `part-<id>`
+     * (see DesktopWorkArea), plus its segment state when split - [cacheKey] alone named
+     * neither, so removing an unfinished download left its partial behind.
+     */
+    val cacheKeys: List<String>
+        get() = when (source) {
+            DownloadSource.TORRENT -> listOf(cacheKey)
+            DownloadSource.YOUTUBE -> listOf("yt-$id")
+            DownloadSource.HTTP -> listOf("part-$id", "part-$id.segments", "part-$id.segments.tmp")
+        }
 }
 
 /** JSON-backed queue, loaded once and written on change (debounced by the caller). */
@@ -384,7 +536,7 @@ class DesktopStore(initial: List<QueuedDownload> = emptyList()) {
         // unfinished download it *is* the file - there is nothing else on disk. Leaving it
         // behind is how a cache quietly fills up with partials nobody can account for.
         if (deleteCache) {
-            runCatching { AppPaths.workDir.resolve(item.cacheKey).deleteRecursively() }
+            item.cacheKeys.forEach { key -> runCatching { AppPaths.workDir.resolve(key).deleteRecursively() } }
         }
     }
 

@@ -3,222 +3,81 @@ package com.downloadhub.app.download
 import com.downloadhub.app.data.SettingsRepository
 import com.downloadhub.app.data.local.DownloadDao
 import com.downloadhub.app.data.local.DownloadEntity
-import com.downloadhub.app.data.model.DownloadStatus
+import com.downloadhub.app.data.model.DownloadCategory as AppCategory
+import com.downloadhub.app.data.model.DownloadStatus as AppStatus
+import com.downloadhub.core.DownloadCategory
+import com.downloadhub.core.DownloadStatus
+import com.downloadhub.core.DownloadStore
+import com.downloadhub.core.PublishedTarget
+import com.downloadhub.core.TransferPolicy
+import com.downloadhub.core.TransferPolicyProvider
+import com.downloadhub.core.WorkArea
 import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 
+/**
+ * The phone's HTTP downloads, run by the shared engine in :core.
+ *
+ * This used to be a separate copy of that engine, so the phone never got what was added
+ * to the shared one: several connections per file with resumable segments, per-download
+ * headers, cookies and login. Now it is three small adapters onto Room, the phone's
+ * storage and its settings, and the transfer itself is the same code the desktop runs.
+ */
 class HttpDownloader(
     private val dao: DownloadDao,
     private val storage: DownloadStorage,
     private val settings: SettingsRepository,
     private val speedLimiter: SpeedLimiter
 ) {
-    suspend fun download(item: DownloadEntity) = withContext(Dispatchers.IO) {
-        val work = storage.workFile(item.id)
-        var attempt = 0
-        var restart = false
+    // The shared engine's store is not suspending; Room's is. The engine calls it from
+    // its own IO thread, so blocking there for a single-row update is fine.
+    private val store = object : DownloadStore {
+        override fun updateValidators(id: String, etag: String?, lastModified: String?, now: Long) =
+            runBlocking { dao.updateValidators(id, etag, lastModified, now) }
 
-        while (true) {
-            ensureActive()
-            var existing = if (restart) 0L else work.length()
-            if (restart) work.delete()
+        override fun updateMetadata(id: String, fileName: String, mimeType: String?, category: DownloadCategory, totalBytes: Long, now: Long) =
+            runBlocking { dao.updateMetadata(id, fileName, mimeType, AppCategory.valueOf(category.name), totalBytes, now) }
 
-            val connection = (URL(item.url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 20_000
-                readTimeout = 35_000
-                instanceFollowRedirects = true
-                setRequestProperty("Accept-Encoding", "identity")
-                setRequestProperty("User-Agent", item.userAgent ?: "DownloadHub/1.0")
-                if (existing > 0) {
-                    setRequestProperty("Range", "bytes=$existing-")
-                    item.etag?.let { setRequestProperty("If-Range", it) }
-                        ?: item.lastModified?.let { setRequestProperty("If-Range", it) }
-                }
-            }
+        override fun updateProgress(id: String, bytesDownloaded: Long, totalBytes: Long, percent: Int, speedBytesPerSecond: Long, etaSeconds: Long, now: Long) =
+            runBlocking { dao.updateProgress(id, bytesDownloaded, totalBytes, percent, speedBytesPerSecond, etaSeconds, now) }
 
-            try {
-                val responseCode = connection.responseCode
-                if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
-                    val rangeStart = parseContentRangeStart(connection.getHeaderField("Content-Range"))
-                    if (existing > 0 && rangeStart != existing) {
-                        restart = true
-                        attempt++
-                        if (attempt < 2) continue
-                    }
-                } else if (responseCode == HttpURLConnection.HTTP_OK && existing > 0) {
-                    existing = 0
-                    work.delete()
-                } else if (responseCode == 416 && existing > 0 && attempt == 0) {
-                    val remoteTotal = parseUnsatisfiedTotal(connection.getHeaderField("Content-Range"))
-                    if (remoteTotal == existing) {
-                        promoteCompleted(item, work, downloaded = existing, total = remoteTotal)
-                        return@withContext
-                    }
-                    restart = true
-                    attempt++
-                    if (attempt < 2) continue
-                }
+        override fun updateOutputPath(id: String, location: String?, now: Long) =
+            runBlocking { dao.updateOutputPath(id, location, now) }
 
-                if (responseCode !in 200..299) {
-                    throw IOException("Server returned HTTP $responseCode")
-                }
-
-                val responseEtag = connection.getHeaderField("ETag")
-                val responseLastModified = connection.getHeaderField("Last-Modified")
-                val responseMime = connection.contentType?.substringBefore(';')?.trim()
-                val total = parseTotal(connection, responseCode, existing)
-                val now = System.currentTimeMillis()
-                if (responseEtag != null || responseLastModified != null) {
-                    dao.updateValidators(item.id, responseEtag, responseLastModified, now)
-                }
-                if (responseMime != null && item.mimeType.isNullOrBlank()) {
-                    dao.updateMetadata(
-                        item.id,
-                        item.fileName,
-                        responseMime,
-                        item.category,
-                        total,
-                        now
-                    )
-                } else if (total > 0 && total != item.totalBytes) {
-                    dao.updateMetadata(
-                        item.id,
-                        item.fileName,
-                        item.mimeType,
-                        item.category,
-                        total,
-                        now
-                    )
-                }
-
-                val append = responseCode == HttpURLConnection.HTTP_PARTIAL && existing > 0
-                var downloaded = existing
-                var windowStarted = System.currentTimeMillis()
-                var windowBytes = 0L
-                var lastUpdate = 0L
-
-                connection.inputStream.use { input ->
-                    FileOutputStream(work, append).use { output ->
-                        // A larger read buffer keeps the socket busy on fast links.
-                        val buffer = ByteArray(TRANSFER_BUFFER_BYTES)
-                        while (true) {
-                            ensureActive()
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            // Shared bucket: caps the whole app's download rate.
-                            speedLimiter.acquire(count)
-                            output.write(buffer, 0, count)
-                            downloaded += count
-                            windowBytes += count
-                            val current = System.currentTimeMillis()
-                            if (current - lastUpdate >= 400) {
-                                val elapsed = (current - windowStarted).coerceAtLeast(1L)
-                                val speed = windowBytes * 1000L / elapsed
-                                val percent = if (total > 0) {
-                                    (downloaded * 100L / total).coerceIn(0, 100).toInt()
-                                } else {
-                                    0
-                                }
-                                dao.updateProgress(
-                                    item.id,
-                                    downloaded,
-                                    total,
-                                    percent,
-                                    speed,
-                                    estimateEta(total, downloaded, speed),
-                                    current
-                                )
-                                lastUpdate = current
-                                windowStarted = current
-                                windowBytes = 0
-                            }
-                        }
-                        output.fd.sync()
-                    }
-                }
-
-                val finalSize = work.length()
-                val finalTotal = if (total > 0) total else finalSize
-                val finalPercent = if (finalTotal > 0) {
-                    (finalSize * 100L / finalTotal).coerceIn(0, 100).toInt()
-                } else {
-                    100
-                }
-                promoteCompleted(
-                    item,
-                    work,
-                    downloaded = finalSize,
-                    total = finalTotal,
-                    percent = finalPercent
-                )
-                return@withContext
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } finally {
-                connection.disconnect()
-            }
-        }
-        @Suppress("UNREACHABLE_CODE")
-        Unit
+        override fun setStatus(id: String, status: DownloadStatus, error: String?, now: Long) =
+            runBlocking { dao.setStatus(id, AppStatus.valueOf(status.name), error, now) }
     }
 
-    private suspend fun promoteCompleted(
-        item: DownloadEntity,
-        work: File,
-        downloaded: Long = work.length(),
-        total: Long = if (item.totalBytes > 0) item.totalBytes else downloaded,
-        percent: Int = 100
-    ) {
-        val now = System.currentTimeMillis()
-        val published = storage.publishFile(
-            source = work,
-            preferredName = item.fileName,
-            destinationTreeUri = settings.currentDestinationTreeUri(),
-            // Classified from the response headers, so the folder matches what the
-            // sidebar already calls this file.
-            category = item.category.toCoreCategory()
-        )
-        dao.updateOutputPath(item.id, published.location, now)
-        dao.updateProgress(item.id, downloaded, total, percent, 0, -1, now)
-        dao.setStatus(item.id, DownloadStatus.COMPLETED, null, now)
-        if (!published.location.startsWith("content:")) {
-            storage.scan(File(published.location))
+    private val area = object : WorkArea {
+        override fun workFile(id: String): File = storage.workFile(id)
+
+        override fun publishFile(source: File, preferredName: String, destinationTreeUri: String?, category: DownloadCategory): PublishedTarget =
+            PublishedTarget(storage.publishFile(source, preferredName, destinationTreeUri, category).location)
+
+        override fun scan(file: File) = storage.scan(file)
+    }
+
+    private val policies = object : TransferPolicyProvider {
+        override suspend fun policyFor(id: String): TransferPolicy {
+            val current = settings.currentDownloadSettings()
+            return TransferPolicy(
+                maxRetries = current.maxRetries,
+                speedLimitBytesPerSecond = current.speedLimitBytesPerSecond,
+                useSpeedLimit = current.isSpeedLimited,
+                connections = current.connectionsPerDownload,
+                proxy = settings.currentAdvanced().proxy.toProxy()
+            )
         }
     }
 
-    private fun parseContentRangeStart(value: String?): Long? =
-        value?.substringAfter("bytes ", "")?.substringBefore('-')?.trim()?.toLongOrNull()
-
-    private fun parseUnsatisfiedTotal(value: String?): Long? =
-        value?.substringAfter('/')?.trim()?.toLongOrNull()
-
-    private fun parseTotal(connection: HttpURLConnection, responseCode: Int, existing: Long): Long {
-        val contentRangeTotal = connection.getHeaderField("Content-Range")
-            ?.substringAfter('/', "")
-            ?.trim()
-            ?.toLongOrNull()
-        if (contentRangeTotal != null && contentRangeTotal > 0) return contentRangeTotal
-        val length = connection.contentLengthLong
-        return if (length > 0) {
-            if (responseCode == HttpURLConnection.HTTP_PARTIAL) existing + length else length
-        } else {
-            0
-        }
-    }
-
-    private fun estimateEta(total: Long, downloaded: Long, speed: Long): Long {
-        if (total <= 0 || speed <= 0 || downloaded >= total) return -1
-        return (total - downloaded) / speed
-    }
-
-    private companion object {
-        const val TRANSFER_BUFFER_BYTES = 64 * 1024
+    suspend fun download(item: DownloadEntity) {
+        val treeUri = settings.currentDestinationTreeUri()
+        com.downloadhub.core.HttpDownloader(
+            store = store,
+            area = area,
+            policies = policies,
+            speedLimiter = speedLimiter,
+            destinationTreeUri = { treeUri }
+        ).download(item.toCoreItem())
     }
 }

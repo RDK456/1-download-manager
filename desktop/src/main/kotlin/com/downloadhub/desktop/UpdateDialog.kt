@@ -74,7 +74,7 @@ fun updateActionsFor(
     // it is, so this is decided before anything else.
     if (downloaded != null) {
         return UpdateActions(
-            confirm = if (downloaded.isInstaller) "Install now" else "Switch to this version",
+            confirm = if (downloaded.isInstaller) "Install and restart" else "Switch to this version",
             onConfirm = if (downloaded.isInstaller) UpdateAction.INSTALL else UpdateAction.SWITCH_TO_NEW_VERSION,
             secondary = "Show file",
             onSecondary = UpdateAction.REVEAL,

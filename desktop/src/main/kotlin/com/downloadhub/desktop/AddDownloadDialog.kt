@@ -75,7 +75,9 @@ fun NewDownloadDialog(
     onSubmit: (PendingDownload) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var link by remember { mutableStateOf("") }
+    // Starts with a link already on the clipboard, as AB Download Manager does: the usual
+    // way to get here is having just copied one.
+    var link by remember { mutableStateOf(clipboardLink().orEmpty()) }
     // Set when a picked file turns out not to be a torrent, so the reason sits under the
     // box rather than replacing the whole dialog.
     var problem by remember { mutableStateOf<String?>(null) }
@@ -250,6 +252,11 @@ fun AddDownloadDialog(
     var startNow by remember(pending.link) { mutableStateOf(true) }
     var stopWhen by remember(pending.link) { mutableStateOf(0) }
     var stopValue by remember(pending.link) { mutableStateOf("2.0") }
+    // What a plain link sends with its requests. Empty means nothing extra is sent.
+    var headersText by remember(pending.link) { mutableStateOf("") }
+    var cookies by remember(pending.link) { mutableStateOf("") }
+    var username by remember(pending.link) { mutableStateOf("") }
+    var password by remember(pending.link) { mutableStateOf("") }
 
     /**
      * The metadata in force, which starts as whatever the caller already had and is
@@ -463,6 +470,17 @@ fun AddDownloadDialog(
                         fontSize = 11.sp,
                         color = DIALOG_SECONDARY
                     )
+                } else if (!pending.isTorrent) {
+                    HttpRequestFields(
+                        headers = headersText,
+                        onHeaders = { headersText = it },
+                        cookies = cookies,
+                        onCookies = { cookies = it },
+                        username = username,
+                        onUsername = { username = it },
+                        password = password,
+                        onPassword = { password = it }
+                    )
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         // A magnet's list is being fetched, and a plain link's genuinely
@@ -534,6 +552,13 @@ fun AddDownloadDialog(
                         startImmediately = startNow,
                         stopCondition = stopConditionFrom(stopWhen, stopValue),
                         chosenFolder = folder
+                    )?.copy(
+                        http = com.downloadhub.core.HttpRequestOptions(
+                            headers = com.downloadhub.core.HttpRequestOptions.parseHeaders(headersText),
+                            cookies = cookies.trim(),
+                            username = username.trim(),
+                            password = password
+                        )
                     )
                     if (request != null) onConfirm(request)
                 },
@@ -639,3 +664,73 @@ private const val OPTIONS_COLUMN_MIN_DP = 250f
 private const val OPTIONS_COLUMN_MAX_DP = 400f
 
 
+
+/**
+ * Headers, cookies and a login for one link - what a site that only serves its own
+ * signed-in visitors needs before it hands over a file. Shared by the add dialog and
+ * the download's options, so the two ask for the same things the same way.
+ */
+@Composable
+internal fun HttpRequestFields(
+    headers: String,
+    onHeaders: (String) -> Unit,
+    cookies: String,
+    onCookies: (String) -> Unit,
+    username: String,
+    onUsername: (String) -> Unit,
+    password: String,
+    onPassword: (String) -> Unit
+) {
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+        SectionLabel("Request")
+        Text(
+            "Only needed when a site refuses the link on its own. Leave these empty otherwise.",
+            fontSize = 11.sp,
+            color = DIALOG_SECONDARY
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = headers,
+            onValueChange = onHeaders,
+            label = { Text("Extra headers, one per line (Name: value)", fontSize = 12.sp) },
+            placeholder = { Text("Referer: https://example.com/page", fontSize = 12.sp) },
+            minLines = 3,
+            maxLines = 6,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(6.dp))
+        OutlinedTextField(
+            value = cookies,
+            onValueChange = onCookies,
+            label = { Text("Cookies (name=value; other=value)", fontSize = 12.sp) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        SectionLabel("Login")
+        Row {
+            OutlinedTextField(
+                value = username,
+                onValueChange = onUsername,
+                label = { Text("Username", fontSize = 12.sp) },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(8.dp))
+            OutlinedTextField(
+                value = password,
+                onValueChange = onPassword,
+                label = { Text("Password", fontSize = 12.sp) },
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+/** A link or magnet on the clipboard, if that is what is there; null otherwise. */
+internal fun clipboardLink(): String? = runCatching {
+    val text = java.awt.Toolkit.getDefaultToolkit().systemClipboard
+        .getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
+    text?.trim()?.takeIf { it.length < 4096 && !it.contains('\n') && LinkParser.isFetchable(it, null) }
+}.getOrNull()

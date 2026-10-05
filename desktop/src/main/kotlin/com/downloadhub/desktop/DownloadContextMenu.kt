@@ -94,6 +94,15 @@ sealed interface ContextAction {
      * about what the app does with the files.
      */
     data object AutomaticManagement : ContextAction
+
+    /** Puts it in another named queue, which decides when it starts. */
+    data object MoveToQueue : ContextAction
+
+    /** Re-reads every piece against its hash. qBittorrent's Force recheck. */
+    data object ForceRecheck : ContextAction
+
+    /** Asks the trackers for peers now. qBittorrent's Force reannounce. */
+    data object ForceReannounce : ContextAction
 }
 
 /**
@@ -117,6 +126,7 @@ fun contextActions(item: DownloadItem, hasContentFiles: Boolean): List<ContextAc
         else -> Unit
     }
     add(ContextAction.Options)
+    if (item.status != DownloadStatus.COMPLETED) add(ContextAction.MoveToQueue)
     if (!item.isTorrent && item.status != DownloadStatus.COMPLETED) {
         add(ContextAction.SetLocation)
     }
@@ -125,6 +135,8 @@ fun contextActions(item: DownloadItem, hasContentFiles: Boolean): List<ContextAc
     }
     if (hasContentFiles) add(ContextAction.OpenFolder)
     if (item.isTorrent) {
+        add(ContextAction.ForceRecheck)
+        add(ContextAction.ForceReannounce)
         add(ContextAction.CopyMagnet)
         add(ContextAction.ExportTorrent)
     }
@@ -140,13 +152,16 @@ fun contextActionLabel(action: ContextAction): String = when (action) {
     ContextAction.Resume -> "Resume"
     ContextAction.ForceStart -> "Force Start"
     ContextAction.Remove -> "Remove"
-    ContextAction.Options -> "Torrent options..."
+    ContextAction.Options -> "Options..."
     ContextAction.SetLocation -> "Set location..."
     ContextAction.Rename -> "Rename..."
     ContextAction.OpenFolder -> "Open destination folder"
     ContextAction.CopyMagnet -> "Copy magnet link"
     ContextAction.ExportTorrent -> "Export .torrent..."
     ContextAction.AutomaticManagement -> "Automatic Torrent Management"
+    ContextAction.MoveToQueue -> "Move to queue..."
+    ContextAction.ForceRecheck -> "Force recheck"
+    ContextAction.ForceReannounce -> "Force reannounce"
 }
 
 /**

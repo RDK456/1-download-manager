@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -63,6 +64,8 @@ fun MenuBar(
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit,
     onQuit: () -> Unit,
+    /** Tools > Create torrent. */
+    onCreateTorrent: () -> Unit = {},
     /** Where the bundled browser extensions were unpacked, for the integration help. */
     extensionRoot: java.io.File,
     /** The loopback pairing code the extension has to present. */
@@ -70,11 +73,16 @@ fun MenuBar(
 ) {
     var open by remember { mutableStateOf<String?>(null) }
     var showIntegration by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
+    if (showAbout) AboutDialog(version) { showAbout = false }
     // Where each label ended up, so its panel opens underneath it.
     val offsets = remember { mutableStateMapOf<String, Int>() }
 
     Box {
-        Surface(color = AppTheme.Palette.surface) {
+        // A hairline under the menu strip, so the window chrome ends somewhere definite.
+        Surface(color = AppTheme.Palette.surface, modifier = Modifier.drawBehind {
+            drawLine(AppTheme.Palette.outlineVariant, androidx.compose.ui.geometry.Offset(0f, size.height - 1f), androidx.compose.ui.geometry.Offset(size.width, size.height - 1f), 1f)
+        }) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val roomForWordmark = maxWidth >= MENU_BAR_WORDMARK_MINIMUM
                 Row(
@@ -157,11 +165,10 @@ fun MenuBar(
                             "Tasks" -> {
                                 MenuItem("Resume all") { open = null; onResumeAll() }
                                 MenuItem("Pause all") { open = null; onPauseAll() }
-                                MenuDivider()
-                                MenuItem("Check for updates") { open = null; onCheckUpdates() }
                             }
 
                             "Tools" -> {
+                                MenuItem("Create torrent...") { open = null; onCreateTorrent() }
                                 MenuItem("Download Browser Integration") {
                                     open = null; showIntegration = true
                                 }
@@ -170,7 +177,10 @@ fun MenuBar(
                             }
 
                             else -> {
-                                MenuItem("About 1 download manager") { open = null; onOpenSettings() }
+                                MenuItem("Report a problem") { open = null; browse("https://github.com/${DesktopUpdateChecker.REPOSITORY}/issues") }
+                                MenuItem("Source code") { open = null; browse("https://github.com/${DesktopUpdateChecker.REPOSITORY}") }
+                                MenuDivider()
+                                MenuItem("About 1 download manager") { open = null; showAbout = true }
                             }
                         }
                     }
@@ -193,6 +203,52 @@ private fun Scrim(onClick: () -> Unit) {
             .fillMaxSize()
             .background(MENU_SCRIM)
             .clickable(onClick = onClick)
+    )
+}
+
+private fun browse(url: String) {
+    Thread { runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) } }.start()
+}
+
+/** What Help > About used to do was open Settings. This says what the app is, and its keys. */
+@Composable
+private fun AboutDialog(version: String, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = APP_DIALOG_PROPERTIES,
+        title = { Text("1 download manager") },
+        text = {
+            Column {
+                Text("Version $version", fontSize = 12.sp, color = AppTheme.Palette.muted)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Direct downloads, YouTube and BitTorrent in one queue.",
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(14.dp))
+                Text("Keyboard", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                listOf(
+                    "Ctrl+N" to "New download",
+                    "Ctrl+A" to "Select every row in the list",
+                    "Delete" to "Remove the selected downloads",
+                    "Enter / double-click" to "Open a finished file",
+                    "Esc" to "Clear the selection"
+                ).forEach { (key, what) ->
+                    Row(Modifier.padding(top = 4.dp)) {
+                        Text(key, fontSize = 12.sp, color = AppTheme.Palette.accent, modifier = Modifier.width(150.dp))
+                        Text(what, fontSize = 12.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = { browse("https://github.com/${DesktopUpdateChecker.REPOSITORY}") }) {
+                Text("GitHub")
+            }
+        }
     )
 }
 

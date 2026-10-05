@@ -75,7 +75,14 @@ internal fun DownloadEntity.toCoreItem(): DownloadItem = DownloadItem(
     shareRatioLimit = shareRatioLimit,
     seedTimeLimitMinutes = seedTimeLimitMinutes,
     seedingSinceEpochMillis = seedingSinceEpochMillis,
-    seedingStoppedAtEpochMillis = seedingStoppedAtEpochMillis
+    seedingStoppedAtEpochMillis = seedingStoppedAtEpochMillis,
+    queueId = queueId,
+    request = com.downloadhub.core.HttpRequestOptions(
+        headers = com.downloadhub.core.HttpRequestOptions.parseHeaders(requestHeaders.orEmpty()),
+        cookies = cookies.orEmpty(),
+        username = username.orEmpty(),
+        password = password.orEmpty()
+    )
 )
 
 /**

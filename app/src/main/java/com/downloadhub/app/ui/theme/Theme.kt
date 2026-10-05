@@ -30,7 +30,7 @@ private val AppTypography = Typography().run {
 @Composable
 fun DownloadHubTheme(
     themeMode: ThemeMode,
-    appTheme: AppTheme = AppTheme.MINT,
+    appTheme: AppTheme = AppTheme.AURORA,
     content: @Composable () -> Unit
 ) {
     val dark = when (themeMode) {

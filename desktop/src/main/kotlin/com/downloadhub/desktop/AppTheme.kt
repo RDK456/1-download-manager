@@ -1,5 +1,6 @@
 package com.downloadhub.desktop
 
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -73,6 +74,13 @@ val APP_DIALOG_PROPERTIES = androidx.compose.ui.window.DialogProperties(
     scrimColor = Color(0xCC000000)
 )
 
+/** The same, for a dialog that sets its own width - Settings, with its section list. */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+val APP_WIDE_DIALOG_PROPERTIES = androidx.compose.ui.window.DialogProperties(
+    usePlatformDefaultWidth = false,
+    scrimColor = Color(0xCC000000)
+)
+
 object AppTheme {
 
     /**
@@ -93,6 +101,13 @@ object AppTheme {
 
     /** Shorthand for the flat fills: `AppTheme.Palette.surface`. */
     val Palette: DesktopPalette get() = current
+
+    /**
+     * "Done" green, the same in every palette: the accent is orange in Sunset and red in
+     * Rose, and a finished download painted in either looked like a warning.
+     */
+    val success: Color
+        get() = if (current.colors.isDark) Color(0xFF4ADE80) else Color(0xFF1E8E4E)
 
     internal fun install(palette: DesktopPalette) {
         current = palette
@@ -169,15 +184,34 @@ object AppTheme {
  * are the same theme.
  */
 @Composable
-fun ProvideDesktopTheme(palette: ThemePalette, mode: ThemeMode, content: @Composable () -> Unit) {
+fun ProvideDesktopTheme(
+    palette: ThemePalette,
+    mode: ThemeMode,
+    /**
+     * False for a theme drawn inside another - a swatch in the theme picker. The global
+     * palette is the app's; a swatch writing it left the whole window painted in the last
+     * swatch's colours (AMOLED green) after Settings had been opened.
+     */
+    installGlobally: Boolean = true,
+    content: @Composable () -> Unit
+) {
     val colors = remember(palette, mode) { resolveThemeColors(palette, mode) }
     val desktopPalette = remember(colors) { DesktopPalette(colors) }
     // Written before the children are composed, so the first frame they draw is already
     // the right colour. Writing it afterwards left one frame of the old theme on screen.
-    AppTheme.install(desktopPalette)
+    if (installGlobally) AppTheme.install(desktopPalette)
     CompositionLocalProvider(LocalDesktopPalette provides desktopPalette) {
         androidx.compose.material3.MaterialTheme(
             colorScheme = AppTheme.schemeFor(colors),
+            // Tighter corners than Material's 28 dp dialogs and full pills, closer to AB
+            // Download Manager's: rounded, not bubbly.
+            shapes = androidx.compose.material3.Shapes(
+                extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+                small = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                medium = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                large = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+            ),
             content = content
         )
     }

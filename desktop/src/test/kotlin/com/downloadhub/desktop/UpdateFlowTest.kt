@@ -128,7 +128,7 @@ class UpdateFlowTest {
             progress = -1,
             hasPortable = true
         )
-        assertEquals("Install now", actions.confirm)
+        assertEquals("Install and restart", actions.confirm)
         assertEquals(UpdateAction.INSTALL, actions.onConfirm)
         assertEquals("Show file", actions.secondary)
         assertEquals(UpdateAction.REVEAL, actions.onSecondary)

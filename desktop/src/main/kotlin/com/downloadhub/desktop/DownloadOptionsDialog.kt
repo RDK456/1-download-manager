@@ -48,8 +48,17 @@ fun DownloadOptionsDialog(
     item: DownloadItem,
     globalSpeedLimitBytesPerSecond: Long,
     onSave: (priorityRank: Int, speedLimit: Long, startAfter: Long, ratio: Double, minutes: Int) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Headers, cookies and login for an ordinary download; not asked for otherwise. */
+    onSaveRequest: (com.downloadhub.core.HttpRequestOptions) -> Unit = {}
 ) {
+    val isPlainLink = item.source == com.downloadhub.core.DownloadSource.HTTP
+    var headersText by remember(item.id) {
+        mutableStateOf(com.downloadhub.core.HttpRequestOptions.formatHeaders(item.request.headers))
+    }
+    var cookies by remember(item.id) { mutableStateOf(item.request.cookies) }
+    var username by remember(item.id) { mutableStateOf(item.request.username) }
+    var password by remember(item.id) { mutableStateOf(item.request.password) }
     var priority by remember(item.id) { mutableStateOf(item.priority) }
     var speedLimitText by remember(item.id) {
         mutableStateOf(
@@ -183,11 +192,35 @@ fun DownloadOptionsDialog(
                         )
                     }
                 }
+
+                if (isPlainLink) {
+                    Spacer(Modifier.height(16.dp))
+                    HttpRequestFields(
+                        headers = headersText,
+                        onHeaders = { headersText = it },
+                        cookies = cookies,
+                        onCookies = { cookies = it },
+                        username = username,
+                        onUsername = { username = it },
+                        password = password,
+                        onPassword = { password = it }
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(
+            androidx.compose.material3.Button(
                 onClick = {
+                    if (isPlainLink) {
+                        onSaveRequest(
+                            com.downloadhub.core.HttpRequestOptions(
+                                headers = com.downloadhub.core.HttpRequestOptions.parseHeaders(headersText),
+                                cookies = cookies.trim(),
+                                username = username.trim(),
+                                password = password
+                            )
+                        )
+                    }
                     onSave(
                         priority.rank,
                         // KB/s in the field, bytes per second stored.

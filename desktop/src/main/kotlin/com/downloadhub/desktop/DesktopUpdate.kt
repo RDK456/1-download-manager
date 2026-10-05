@@ -293,16 +293,67 @@ class UpdateInstaller(private val directory: File = AppPaths.updateDir) {
      * A failure here is reported rather than swallowed: a user who sees nothing
      * happen will assume the update failed.
      */
-    fun launch(msi: File): Result<Unit> = runCatching {
+    /**
+     * Installs the update with no wizard, then starts the new version.
+     *
+     * The install cannot run while this copy is open - its files are in use - so a small
+     * script does it after the app exits: it waits for this process, runs msiexec with no
+     * UI (/qn; the MSI is a per-user install, so there is no elevation prompt to hide),
+     * writes the result for the next start to report, and starts [relaunch] again. The
+     * caller quits straight after this returns.
+     *
+     * [relaunch] is null when running from Gradle, where there is no installed exe.
+     */
+    fun launchSilently(msi: File, relaunch: File?): Result<Unit> = runCatching {
         if (!msi.isFile) error("The installer file is missing")
-        ProcessBuilder("msiexec", "/i", msi.absolutePath)
-            .redirectErrorStream(true)
-            .start()
+        if (!directory.isDirectory) directory.mkdirs()
+        val log = File(directory, "install.log")
+        resultFile.delete()
+        val script = File(directory, "apply-update.ps1")
+        fun quoted(file: File) = "'" + file.absolutePath.replace("'", "''") + "'"
+        script.writeText(
+            """
+            |${'$'}ErrorActionPreference = 'Continue'
+            |Wait-Process -Id ${ProcessHandle.current().pid()} -ErrorAction SilentlyContinue
+            |${'$'}p = Start-Process msiexec.exe -ArgumentList '/i', ('"' + ${quoted(msi)} + '"'), '/qn', '/norestart', '/l*v', ('"' + ${quoted(log)} + '"') -Wait -PassThru
+            |Set-Content -Path ${quoted(resultFile)} -Value ("" + ${'$'}p.ExitCode + '|' + ${quoted(msi)} + '|' + ${quoted(log)})
+            |${relaunch?.let { "Start-Process -FilePath ${quoted(it)}" } ?: ""}
+            |Remove-Item -LiteralPath ${'$'}MyInvocation.MyCommand.Path -ErrorAction SilentlyContinue
+            """.trimMargin()
+        )
+        ProcessBuilder(
+            "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-WindowStyle", "Hidden", "-File", script.absolutePath
+        ).redirectErrorStream(true).start()
         Unit
     }
 
-    private companion object {
-        const val PROGRESS_INTERVAL_MILLIS = 300L
+    /** Written by the install script: "<exit code>|<msi>|<log>". */
+    val resultFile: File get() = File(directory, "last-update.txt")
+
+    /**
+     * What the last silent install did, read once and then forgotten. Null when no install
+     * ran since the last start. msiexec's 0 is success and 3010 is success needing a reboot.
+     */
+    fun takeLastResult(): InstallResult? {
+        val text = runCatching { resultFile.readText().trim() }.getOrNull() ?: return null
+        resultFile.delete()
+        val parts = text.split('|')
+        val code = parts.firstOrNull()?.trim()?.toIntOrNull() ?: return null
+        return InstallResult(code, parts.getOrNull(2)?.trim().orEmpty())
+    }
+
+    data class InstallResult(val exitCode: Int, val logPath: String) {
+        val succeeded: Boolean get() = exitCode == 0 || exitCode == 3010
+    }
+
+    companion object {
+        private const val PROGRESS_INTERVAL_MILLIS = 300L
+
+        /** This process's own exe when it is the installed launcher; null under Gradle. */
+        fun installedLauncher(): File? = ProcessHandle.current().info().command().orElse(null)
+            ?.let(::File)
+            ?.takeIf { it.isFile && !it.name.equals("java.exe", true) && !it.name.equals("javaw.exe", true) }
     }
 }
 

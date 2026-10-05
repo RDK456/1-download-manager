@@ -1,5 +1,6 @@
 package com.downloadhub.app.ui
 
+import com.downloadhub.app.download.toCoreItem
 import android.app.Application
 import android.content.Intent
 import android.database.Cursor
@@ -105,7 +106,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     val themeMode: StateFlow<ThemeMode> = settings.themeMode
         .stateIn(viewModelScope, SharingStarted.Lazily, ThemeMode.SYSTEM)
     val appTheme: StateFlow<AppTheme> = settings.appTheme
-        .stateIn(viewModelScope, SharingStarted.Lazily, AppTheme.MINT)
+        .stateIn(viewModelScope, SharingStarted.Lazily, AppTheme.AURORA)
     val downloadSettings: StateFlow<DownloadSettings> = settings.downloadSettings
         .stateIn(viewModelScope, SharingStarted.Lazily, DownloadSettings())
     val destinationTreeUri: StateFlow<String?> = settings.destinationTreeUri
@@ -607,6 +608,19 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             runCatching { repository.create(request) }
                 .onSuccess {
                     closeEditor()
+                    // Saved before the service is started, so the very first request
+                    // already carries the headers, cookies and login.
+                    pendingRequest?.let { options ->
+                        app.container.database.downloadDao().updateRequest(
+                            it.id,
+                            com.downloadhub.core.HttpRequestOptions.formatHeaders(options.headers).ifBlank { null },
+                            options.cookies.ifBlank { null },
+                            options.username.ifBlank { null },
+                            options.password.ifBlank { null },
+                            System.currentTimeMillis()
+                        )
+                    }
+                    pendingRequest = null
                     DownloadService.start(getApplication(), listOf(it.id))
                     _events.emit(DownloadEvent.Message("Added to the download queue"))
                 }
@@ -717,6 +731,163 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 
     fun setWifiOnly(enabled: Boolean) {
         viewModelScope.launch { settings.setWifiOnly(enabled) }
+    }
+
+    // qBittorrent's per-torrent extras, read by the details sheet. Empty / false when the
+    // torrent is not in the running session.
+    fun torrentTrackers(item: com.downloadhub.app.data.local.DownloadEntity): List<com.downloadhub.core.TrackerRow> =
+        runCatching { app.container.torrentEngine.trackers(item.toCoreItem()) }.getOrDefault(emptyList())
+
+    fun torrentPeers(item: com.downloadhub.app.data.local.DownloadEntity): List<com.downloadhub.core.PeerRow> =
+        runCatching { app.container.torrentEngine.peers(item.toCoreItem()) }.getOrDefault(emptyList())
+
+    fun forceRecheck(item: com.downloadhub.app.data.local.DownloadEntity): Boolean =
+        runCatching { app.container.torrentEngine.forceRecheck(item.toCoreItem()) }.getOrDefault(false)
+
+    fun forceReannounce(item: com.downloadhub.app.data.local.DownloadEntity): Boolean =
+        runCatching { app.container.torrentEngine.forceReannounce(item.toCoreItem()) }.getOrDefault(false)
+
+    // --- categories, proxy, speed and BitTorrent settings, IP filter ----------------
+
+    val advanced: StateFlow<com.downloadhub.app.data.AdvancedSettings> = settings.advanced
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.downloadhub.app.data.AdvancedSettings())
+
+    fun saveAdvanced(value: com.downloadhub.app.data.AdvancedSettings) {
+        viewModelScope.launch {
+            settings.saveAdvanced(value)
+            _events.emit(DownloadEvent.Message("Saved"))
+        }
+    }
+
+    /** Copies a chosen blocklist into the app's own files and switches the filter on. */
+    fun importIpFilter(uri: android.net.Uri) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val target = java.io.File(app.filesDir, "ipfilter.dat")
+            val copied = runCatching {
+                app.contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } } != null
+            }.getOrDefault(false)
+            if (!copied) {
+                _events.emit(DownloadEvent.Message("Could not read that file"))
+                return@launch
+            }
+            val count = runCatching { com.downloadhub.core.IpFilterParser.parse(target).size }.getOrDefault(0)
+            settings.saveAdvanced(settings.currentAdvanced().copy(ipFilterEnabled = true, ipFilterPath = target.absolutePath))
+            _events.emit(DownloadEvent.Message("IP filter loaded: $count ranges"))
+        }
+    }
+
+    // --- RSS --------------------------------------------------------------------
+
+    val rssFeeds: StateFlow<List<com.downloadhub.app.download.RssFeed>> = settings.rssFeedsFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val rssRules: StateFlow<List<com.downloadhub.core.RssRule>> = settings.rssRulesFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val _rssItems = kotlinx.coroutines.flow.MutableStateFlow<Map<String, List<com.downloadhub.core.RssItem>>>(emptyMap())
+    val rssItems: StateFlow<Map<String, List<com.downloadhub.core.RssItem>>> = _rssItems
+    private val _rssRefreshing = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val rssRefreshing: StateFlow<Boolean> = _rssRefreshing
+
+    fun refreshRss() {
+        if (_rssRefreshing.value) return
+        _rssRefreshing.value = true
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                _rssItems.value = com.downloadhub.app.download.RssSync.refresh(app, app.container)
+            } finally {
+                _rssRefreshing.value = false
+            }
+        }
+    }
+
+    fun subscribeRss(url: String) {
+        val trimmed = url.trim()
+        if (!trimmed.startsWith("http")) {
+            viewModelScope.launch { _events.emit(DownloadEvent.Message("That does not look like a feed address")) }
+            return
+        }
+        viewModelScope.launch {
+            val feeds = settings.rssFeeds()
+            if (feeds.none { it.url == trimmed }) {
+                settings.saveRssFeeds(feeds + com.downloadhub.app.download.RssFeed(trimmed, runCatching { java.net.URL(trimmed).host }.getOrDefault(trimmed)))
+            }
+            refreshRss()
+        }
+    }
+
+    fun removeRssFeed(url: String) {
+        viewModelScope.launch {
+            settings.saveRssFeeds(settings.rssFeeds().filter { it.url != url })
+            _rssItems.value = _rssItems.value - url
+        }
+    }
+
+    fun saveRssRules(rules: List<com.downloadhub.core.RssRule>) {
+        viewModelScope.launch { settings.saveRssRules(rules) }
+    }
+
+    fun downloadRssItem(item: com.downloadhub.core.RssItem) {
+        viewModelScope.launch {
+            runCatching { com.downloadhub.app.download.RssSync.download(app, app.container, item) }
+                .onSuccess { _events.emit(DownloadEvent.Message("Added to the download queue")) }
+                .onFailure { _events.emit(DownloadEvent.Message(it.message ?: "Could not add it")) }
+        }
+    }
+
+    // --- named queues -----------------------------------------------------------
+
+    val queues: StateFlow<List<com.downloadhub.app.data.AppQueue>> = settings.queues
+        .stateIn(viewModelScope, SharingStarted.Eagerly, listOf(com.downloadhub.app.data.AppQueue.main()))
+
+    fun saveQueue(queue: com.downloadhub.app.data.AppQueue) {
+        viewModelScope.launch {
+            val list = settings.currentQueues()
+            val cleaned = queue.copy(name = queue.name.trim().ifBlank { "Queue" }, maxConcurrent = queue.maxConcurrent.coerceIn(0, 16))
+            settings.saveQueues(if (list.any { it.id == cleaned.id }) list.map { if (it.id == cleaned.id) cleaned else it } else list + cleaned)
+            if (cleaned.started) com.downloadhub.app.download.DownloadService.action(app, com.downloadhub.app.download.DownloadService.ACTION_RECOVER)
+        }
+    }
+
+    fun deleteQueue(id: String) {
+        if (id == com.downloadhub.core.QueueRules.MAIN) return
+        viewModelScope.launch {
+            app.container.database.downloadDao().returnToMainQueue(id)
+            settings.saveQueues(settings.currentQueues().filter { it.id != id })
+        }
+    }
+
+    fun setQueueStarted(id: String, started: Boolean) {
+        viewModelScope.launch { com.downloadhub.app.download.QueueControl.setStarted(app, app.container, id, started) }
+    }
+
+    fun moveToQueue(itemId: String, queueId: String) {
+        viewModelScope.launch {
+            app.container.database.downloadDao().updateQueue(itemId, queueId, System.currentTimeMillis())
+            com.downloadhub.app.download.DownloadService.action(app, com.downloadhub.app.download.DownloadService.ACTION_RECOVER)
+        }
+    }
+
+    fun setItemRequest(itemId: String, request: com.downloadhub.core.HttpRequestOptions) {
+        viewModelScope.launch {
+            app.container.database.downloadDao().updateRequest(
+                itemId,
+                com.downloadhub.core.HttpRequestOptions.formatHeaders(request.headers).ifBlank { null },
+                request.cookies.ifBlank { null },
+                request.username.ifBlank { null },
+                request.password.ifBlank { null },
+                System.currentTimeMillis()
+            )
+        }
+    }
+
+    /** Request options typed in the add sheet, applied to the download it adds next. */
+    private var pendingRequest: com.downloadhub.core.HttpRequestOptions? = null
+
+    fun setPendingRequest(options: com.downloadhub.core.HttpRequestOptions) {
+        pendingRequest = options
+    }
+
+    fun setConnectionsPerDownload(value: Int) {
+        viewModelScope.launch { settings.setConnectionsPerDownload(value) }
     }
 
     fun setMaxRetries(value: Int) {

@@ -1,6 +1,7 @@
 package com.downloadhub.app
 
 import android.content.Context
+import kotlinx.coroutines.launch
 import androidx.room.Room
 import com.downloadhub.app.data.DownloadRepository
 import com.downloadhub.app.data.SettingsRepository
@@ -35,7 +36,13 @@ class AppContainer(context: Context) {
     val batteryOptimisation = BatteryOptimisation(appContext)
 
     val storage = DownloadStorage(appContext)
-    val settings = SettingsRepository(appContext)
+
+    /** For keeping small pieces of state in step with settings for the life of the process. */
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+    val settings = SettingsRepository(appContext).also { repository ->
+        // The storage files by the user's own categories as soon as they change.
+        scope.launch { repository.advanced.collect { storage.categoryRules = it.categoryRules } }
+    }
     val youtubeDownloader = YoutubeDownloader(
         appContext,
         database.downloadDao(),
@@ -44,4 +51,12 @@ class AppContainer(context: Context) {
         thumbnailCache
     )
     val repository = DownloadRepository(database.downloadDao(), storage, thumbnailCache)
+
+    /**
+     * The torrent engine, held here rather than inside the download service so the
+     * details sheet can read a torrent's trackers and peers and ask it to recheck.
+     */
+    val torrentEngine: com.downloadhub.core.TorrentEngine by lazy {
+        com.downloadhub.core.TorrentEngine(torrentRoot = { storage.torrentRoot() })
+    }
 }

@@ -55,6 +55,9 @@ val PRE_DOWNLOAD_MINIMUM_SIZE = java.awt.Dimension(620, 430)
  * manager needs a tray icon.
  */
 fun main(args: Array<String>) {
+    // Before any connection is made: the "Use the Windows proxy" setting relies on the
+    // default proxy selector reading the system proxy, which it only does if told at start.
+    System.setProperty("java.net.useSystemProxies", "true")
     // One copy, always. Every click on the app's icon used to start another one, each
     // with its own window and its own writes to the same queue file - and a magnet link
     // opened from a browser started a second copy rather than showing the first.
@@ -232,6 +235,11 @@ fun main(args: Array<String>) {
                             },
                             onProblem = { reason -> problem = reason }
                         )
+                    }
+
+                    // The title bar follows the theme, so it reads as part of the window.
+                    LaunchedEffect(window, state.settings.themePalette, state.settings.themeMode) {
+                        WindowChrome.apply(window, AppTheme.Palette.colors)
                     }
 
                     LibraryScreen(

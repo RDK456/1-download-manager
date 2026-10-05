@@ -59,14 +59,15 @@ class PaneAndResumeTest {
             TorrentTab.forDownload(isTorrent = false)
         )
         assertEquals(
-            listOf(TorrentTab.GENERAL, TorrentTab.CONTENT),
+            listOf(TorrentTab.GENERAL, TorrentTab.CONTENT, TorrentTab.TRACKERS, TorrentTab.PEERS),
             TorrentTab.forDownload(isTorrent = true)
         )
         // The dead tabs are gone from the model, not merely hidden.
-        assertEquals(2, TorrentTab.entries.size)
+        // Trackers and Peers are back now that they read the live session; still torrents only.
+        assertEquals(4, TorrentTab.entries.size)
         assertFalse(
             "a tab that can only ever say 'not collected yet' should not be in the strip",
-            TorrentTab.entries.any { it.name in setOf("TRACKERS", "PEERS", "HTTP_SOURCES") }
+            TorrentTab.entries.any { it.name in setOf("HTTP_SOURCES") }
         )
         assertEquals("Details", TorrentTab.GENERAL.label)
     }
@@ -121,13 +122,16 @@ class PaneAndResumeTest {
             "the finished case has to be checked at all:\n$resume",
             resume.contains("item?.status == DownloadStatus.COMPLETED")
         )
+        // The answer in words moved to Retry: Resume is no longer offered for a finished
+        // row, and a message on every Resume press was shown whatever was selected.
+        val retry = controller.substringAfter("retry = { id ->").substringBefore("remove = { id ->")
         assertTrue(
-            "and it has to say something, rather than failing silently",
-            resume.contains("already finished")
+            "Retry on a finished download says so, rather than fetching it again:\n$retry",
+            retry.contains("already finished") && retry.contains("item.location")
         )
         assertTrue(
-            "naming the file is the useful part of the answer",
-            resume.contains("item.location")
+            "and checks before handing anything to an engine",
+            retry.indexOf("engine.retry") > retry.indexOf("DownloadStatus.COMPLETED")
         )
 
         // Nothing may be handed to an engine before that check.

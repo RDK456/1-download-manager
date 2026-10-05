@@ -61,7 +61,16 @@ fun DownloadDetailsSheet(
     onDelete: () -> Unit,
     onOpen: () -> Unit,
     onOpenWith: () -> Unit,
-    onShare: () -> Unit
+    onShare: () -> Unit,
+    // A torrent's trackers and peers, and qBittorrent's two force actions.
+    trackersOf: () -> List<com.downloadhub.core.TrackerRow> = { emptyList() },
+    peersOf: () -> List<com.downloadhub.core.PeerRow> = { emptyList() },
+    onForceRecheck: () -> Unit = {},
+    onForceReannounce: () -> Unit = {},
+    // Which queue it is in, and what an ordinary link sends with its requests.
+    queues: List<com.downloadhub.app.data.AppQueue> = emptyList(),
+    onMoveToQueue: (String) -> Unit = {},
+    onSaveRequest: (com.downloadhub.core.HttpRequestOptions) -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var confirmDelete by remember { mutableStateOf(false) }
@@ -90,6 +99,15 @@ fun DownloadDetailsSheet(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary
             )
+            if (item.source == com.downloadhub.app.data.model.DownloadSource.TORRENT) {
+                TorrentExtras(item.id, trackersOf, peersOf, onForceRecheck, onForceReannounce)
+            }
+            if (item.status != DownloadStatus.COMPLETED) {
+                QueueChips(item.queueId, queues, onMoveToQueue)
+            }
+            if (item.source == com.downloadhub.app.data.model.DownloadSource.HTTP && item.status != DownloadStatus.COMPLETED) {
+                RequestSection(item, onSaveRequest)
+            }
             if (item.status == DownloadStatus.COMPLETED) {
                 // Finished downloads show a state instead of a progress bar.
                 Surface(

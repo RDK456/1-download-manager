@@ -43,7 +43,9 @@ data class TorrentAddRequest(
     /** Folder name under the save directory. Blank for a single-file torrent. */
     val contentFolder: String = "",
     /** The link to queue. A magnet, an http link, or a path to a `.torrent`. */
-    val link: String = ""
+    val link: String = "",
+    /** Headers, cookies and login for a plain link. Ignored for a torrent. */
+    val http: HttpRequestOptions = HttpRequestOptions()
 ) {
     /** True when there is a file to choose between, so the file list means something. */
     val hasFileList: Boolean get() = metainfo.files.isNotEmpty()

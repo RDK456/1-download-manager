@@ -26,6 +26,20 @@
 - An in-app updater that reads the newest GitHub release, compares it with the installed version, downloads the release APK, and hands it to the system package installer.
 - Files are saved under the default `Download/DownloadHub` folder, or a folder selected with Android's persisted document-tree picker. Engines keep resumable data in private staging until completion.
 
+## Windows install and updates
+
+The `.msi` installs per user, so it needs no administrator prompt, and adds Start menu and
+desktop shortcuts. To install with nothing on screen:
+
+```text
+msiexec /i 1-download-manager-<version>.msi /qn
+```
+
+The app checks GitHub for a newer release quietly 15 seconds after it starts and only
+shows a dialog when there is one. **Install and restart** downloads the installer, closes
+the app, installs it silently, and starts the new version; the next start says whether
+the install worked (the Windows Installer log is kept in the app's update folder).
+
 ## Build
 
 1. Install JDK 17.

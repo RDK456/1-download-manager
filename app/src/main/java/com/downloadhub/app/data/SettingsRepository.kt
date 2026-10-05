@@ -21,7 +21,9 @@ data class DownloadSettings(
     val speedLimitBytesPerSecond: Long = UNLIMITED,
     val wifiOnly: Boolean = false,
     val maxRetries: Int = DEFAULT_MAX_RETRIES,
-    val autoRemoveCompleted: Boolean = false
+    val autoRemoveCompleted: Boolean = false,
+    /** Parallel connections one file is split over, when its server takes ranges. */
+    val connectionsPerDownload: Int = DEFAULT_CONNECTIONS
 ) {
     val isSpeedLimited: Boolean get() = speedLimitBytesPerSecond > 0
 
@@ -32,6 +34,8 @@ data class DownloadSettings(
         const val MAX_MAX_CONCURRENT = 8
         const val DEFAULT_MAX_RETRIES = 2
         const val MAX_RETRIES_LIMIT = 5
+        const val DEFAULT_CONNECTIONS = 4
+        const val MAX_CONNECTIONS = 16
 
         /** Speed limit presets in bytes per second; 0 means unlimited. */
         val SPEED_PRESETS = listOf(
@@ -59,6 +63,13 @@ class SettingsRepository(private val context: Context) {
     private val wifiOnlyKey = booleanPreferencesKey("wifi_only")
     private val maxRetriesKey = intPreferencesKey("max_retries")
     private val autoRemoveKey = booleanPreferencesKey("auto_remove_completed")
+    private val connectionsKey = intPreferencesKey("connections_per_download")
+    private val queuesKey = stringPreferencesKey("queues")
+    private val advancedKey = stringPreferencesKey("advanced")
+    private val rssFeedsKey = stringPreferencesKey("rss_feeds")
+    private val rssRulesKey = stringPreferencesKey("rss_rules")
+    private val lastQueueCheckKey = longPreferencesKey("last_queue_check")
+    private val queuePausedKey = androidx.datastore.preferences.core.stringSetPreferencesKey("queue_paused_ids")
 
     val themeMode: Flow<ThemeMode> = context.downloadHubDataStore.data.map { preferences ->
         runCatching { ThemeMode.valueOf(preferences[themeKey].orEmpty()) }
@@ -94,8 +105,66 @@ class SettingsRepository(private val context: Context) {
             wifiOnly = preferences[wifiOnlyKey] ?: false,
             maxRetries = (preferences[maxRetriesKey] ?: DownloadSettings.DEFAULT_MAX_RETRIES)
                 .coerceIn(0, DownloadSettings.MAX_RETRIES_LIMIT),
-            autoRemoveCompleted = preferences[autoRemoveKey] ?: false
+            autoRemoveCompleted = preferences[autoRemoveKey] ?: false,
+            connectionsPerDownload = (preferences[connectionsKey] ?: DownloadSettings.DEFAULT_CONNECTIONS)
+                .coerceIn(1, DownloadSettings.MAX_CONNECTIONS)
         )
+    }
+
+    // --- categories, proxy, speed and BitTorrent settings, IP filter --------------
+
+    val advanced: Flow<AdvancedSettings> = context.downloadHubDataStore.data.map { AdvancedSettings.decode(it[advancedKey]) }
+
+    suspend fun currentAdvanced(): AdvancedSettings = advanced.first()
+
+    suspend fun saveAdvanced(settings: AdvancedSettings) {
+        context.downloadHubDataStore.edit { it[advancedKey] = settings.encode() }
+    }
+
+    // --- RSS feeds and auto-download rules ------------------------------------------
+
+    val rssFeedsFlow: Flow<List<com.downloadhub.app.download.RssFeed>> =
+        context.downloadHubDataStore.data.map { com.downloadhub.app.download.RssCodec.decodeFeeds(it[rssFeedsKey]) }
+    val rssRulesFlow: Flow<List<com.downloadhub.core.RssRule>> =
+        context.downloadHubDataStore.data.map { com.downloadhub.app.download.RssCodec.decodeRules(it[rssRulesKey]) }
+
+    suspend fun rssFeeds() = rssFeedsFlow.first()
+    suspend fun rssRules() = rssRulesFlow.first()
+
+    suspend fun saveRssFeeds(feeds: List<com.downloadhub.app.download.RssFeed>) {
+        context.downloadHubDataStore.edit { it[rssFeedsKey] = com.downloadhub.app.download.RssCodec.encodeFeeds(feeds) }
+    }
+
+    suspend fun saveRssRules(rules: List<com.downloadhub.core.RssRule>) {
+        context.downloadHubDataStore.edit { it[rssRulesKey] = com.downloadhub.app.download.RssCodec.encodeRules(rules) }
+    }
+
+    // --- named queues ------------------------------------------------------------
+
+    val queues: Flow<List<AppQueue>> = context.downloadHubDataStore.data.map { QueueCodec.decode(it[queuesKey]) }
+
+    suspend fun currentQueues(): List<AppQueue> = queues.first()
+
+    suspend fun saveQueues(list: List<AppQueue>) {
+        context.downloadHubDataStore.edit { it[queuesKey] = QueueCodec.encode(list) }
+    }
+
+    /** When the queue schedules were last checked, so the next check knows what passed. */
+    suspend fun lastQueueCheck(): Long = context.downloadHubDataStore.data.first()[lastQueueCheckKey] ?: 0L
+
+    suspend fun setLastQueueCheck(at: Long) {
+        context.downloadHubDataStore.edit { it[lastQueueCheckKey] = at }
+    }
+
+    /** Downloads a queue stop paused, so the queue's next start resumes them. */
+    suspend fun queuePausedIds(): Set<String> = context.downloadHubDataStore.data.first()[queuePausedKey].orEmpty()
+
+    suspend fun setQueuePausedIds(ids: Set<String>) {
+        context.downloadHubDataStore.edit { it[queuePausedKey] = ids }
+    }
+
+    suspend fun setConnectionsPerDownload(value: Int) {
+        context.downloadHubDataStore.edit { it[connectionsKey] = value.coerceIn(1, DownloadSettings.MAX_CONNECTIONS) }
     }
 
     suspend fun currentDownloadSettings(): DownloadSettings = downloadSettings.first()

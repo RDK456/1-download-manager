@@ -48,10 +48,41 @@ class DesktopTorrentEngine(
     )
     private val running = ConcurrentHashMap<String, Boolean>()
     private var loopStarted = false
+    @Volatile
+    private var appliedSettings: com.downloadhub.core.TorrentSessionSettings? = null
+    /** Path and modified time of the blocklist last applied; "" when none. */
+    @Volatile
+    private var appliedIpFilter: String? = null
 
     fun startLoop() {
         if (loopStarted) return
         loopStarted = true
+        // Session settings: checked every couple of seconds, so a Settings change or the
+        // turtle switch lands at once and a scheduled window starts and ends on time.
+        // Only a changed value reaches libtorrent.
+        scope.launch {
+            while (isActive) {
+                val wanted = settingsState.value.torrentSessionSettings()
+                if (wanted != appliedSettings) {
+                    runCatching { engine.applySettings(wanted) }
+                    appliedSettings = wanted
+                }
+                // The blocklist: reloaded when it is switched, pointed elsewhere, or the
+                // file itself changes. These lists run to hundreds of thousands of lines,
+                // so it is read only then, never on every tick.
+                val current = settingsState.value
+                val list = current.ipFilterPath.takeIf { current.ipFilterEnabled && it.isNotBlank() }?.let(::File)
+                val key = list?.let { it.absolutePath + "@" + it.lastModified() }.orEmpty()
+                if (key != appliedIpFilter) {
+                    val ranges = list?.takeIf { it.isFile }
+                        ?.let { runCatching { com.downloadhub.core.IpFilterParser.parse(it) }.getOrDefault(emptyList()) }
+                        .orEmpty()
+                    runCatching { engine.setIpFilter(ranges) }
+                    appliedIpFilter = key
+                }
+                delay(SETTINGS_TICK_MILLIS)
+            }
+        }
         scope.launch {
             while (isActive) {
                 driveOne()
@@ -69,7 +100,16 @@ class DesktopTorrentEngine(
         val active = torrents.count { it.isTransferring() || running.containsKey(it.id) }
         if (active >= limit) return
 
-        val next = torrents.firstOrNull { it.status == DownloadStatus.QUEUED } ?: return
+        val settings = settingsState.value
+        val all = store.snapshot()
+        val next = com.downloadhub.core.QueueRules.admit(
+            ordered = torrents.filter { it.status == DownloadStatus.QUEUED },
+            queueOf = { it.queueId },
+            runningPerQueue = all.filter { it.status == DownloadStatus.RUNNING }.groupingBy { it.queueId }.eachCount(),
+            isStarted = { settings.queue(it).started },
+            limitOf = { settings.queue(it).maxConcurrent },
+            free = 1
+        ).firstOrNull() ?: return
         // Started, not awaited.
         //
         // transfer() polls for the whole life of the torrent, so awaiting it here
@@ -358,8 +398,24 @@ class DesktopTorrentEngine(
      */
     private fun publish(id: String, snapshot: TorrentSnapshot) {
         val item = store.get(id) ?: return
-        val source = item.outputPath?.let(::File)?.takeIf { it.isDirectory }
-            ?: largestMediaIn(torrentDirFor(item))
+        // A folder the user chose is where the files are meant to be: leave them there.
+        // This used to move the chosen folder itself - "Save at D:\Movies" ended with
+        // all of D:\Movies, and everything already in it, renamed into the download
+        // folder. Only a torrent fetched into the app's own staging area is moved.
+        item.outputPath?.let(::File)?.takeIf { it.isDirectory }?.let { chosen ->
+            val placed = File(chosen, item.torrentContentFolder.ifBlank { snapshot.name ?: item.fileName })
+                .takeIf { it.exists() } ?: chosen
+            store.update(id) {
+                it.copy(
+                    status = DownloadStatus.COMPLETED,
+                    speedBytesPerSecond = 0L,
+                    location = ((if (placed.isDirectory) largestMediaIn(placed) else null) ?: placed).absolutePath
+                )
+            }
+            onChange()
+            return
+        }
+        val source = largestMediaIn(torrentDirFor(item))
         if (source == null) {
             store.update(id) {
                 it.copy(status = DownloadStatus.COMPLETED, speedBytesPerSecond = 0L)
@@ -478,6 +534,23 @@ class DesktopTorrentEngine(
         onChange()
     }
 
+    // --- the Trackers and Peers tabs and the force actions. Empty / false when the
+    // torrent is not in the session (paused before this run started it, or stopped).
+    fun trackers(id: String): List<com.downloadhub.core.TrackerRow> =
+        store.get(id)?.let { engine.trackers(it.toCoreItem()) }.orEmpty()
+
+    fun peers(id: String): List<com.downloadhub.core.PeerRow> =
+        store.get(id)?.let { engine.peers(it.toCoreItem()) }.orEmpty()
+
+    fun addTrackers(id: String, urls: List<String>): Boolean =
+        store.get(id)?.let { engine.addTrackers(it.toCoreItem(), urls) } ?: false
+
+    fun forceRecheck(id: String): Boolean =
+        store.get(id)?.let { engine.forceRecheck(it.toCoreItem()) } ?: false
+
+    fun forceReannounce(id: String): Boolean =
+        store.get(id)?.let { engine.forceReannounce(it.toCoreItem()) } ?: false
+
     fun remove(id: String, deleteFiles: Boolean, deleteCache: Boolean = true) {
         val item = store.get(id) ?: return
         // libtorrent is told about the files it wrote; the scratch folder is ours, and
@@ -508,3 +581,6 @@ const val SEEDING_POLL_MILLIS = 30_000L
         )
     }
 }
+
+/** How often the session settings are compared with what libtorrent last got. */
+private const val SETTINGS_TICK_MILLIS = 2_000L

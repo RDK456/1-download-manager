@@ -107,7 +107,8 @@ class TempDirectoryIndependenceTest {
     fun torrentEngineCallSitesUseNamedArguments() {
         listOf(
             File("src/main/kotlin/com/downloadhub/desktop/DesktopTorrentEngine.kt"),
-            File("../app/src/main/java/com/downloadhub/app/download/DownloadService.kt")
+            // The engine is built in AppContainer now, so the details sheet can reach it.
+            File("../app/src/main/java/com/downloadhub/app/AppContainer.kt")
         ).filter { it.isFile }.forEach { file ->
             val text = file.readText()
             assertFalse(

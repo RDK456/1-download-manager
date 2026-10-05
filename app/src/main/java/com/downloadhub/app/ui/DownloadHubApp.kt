@@ -36,6 +36,9 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -113,6 +116,12 @@ fun DownloadHubApp(
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val appTheme by viewModel.appTheme.collectAsStateWithLifecycle()
+    val queues by viewModel.queues.collectAsStateWithLifecycle()
+    val advanced by viewModel.advanced.collectAsStateWithLifecycle()
+    val rssFeeds by viewModel.rssFeeds.collectAsStateWithLifecycle()
+    val rssRules by viewModel.rssRules.collectAsStateWithLifecycle()
+    val rssItems by viewModel.rssItems.collectAsStateWithLifecycle()
+    val rssRefreshing by viewModel.rssRefreshing.collectAsStateWithLifecycle()
     DownloadHubTheme(themeMode, appTheme) {
         val context = LocalContext.current
         val visibleItems by viewModel.visibleDownloads.collectAsStateWithLifecycle()
@@ -289,7 +298,7 @@ fun DownloadHubApp(
                         }
                     },
                     actions = {
-                        if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES) {
+                        if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
                             BadgedBox(
                                 badge = {
                                     if (hasActiveFilter) {
@@ -323,7 +332,7 @@ fun DownloadHubApp(
                 )
             },
             bottomBar = {
-                if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES) {
+                if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
                     NavigationBar(modifier = Modifier.navigationBarsPadding()) {
                         NavigationBarItem(
                             selected = destination == AppDestination.DOWNLOADS,
@@ -353,7 +362,7 @@ fun DownloadHubApp(
                 }
             },
             floatingActionButton = {
-                if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES) {
+                if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
                     FloatingActionButton(onClick = { viewModel.openEditor() }) {
                         Icon(Icons.Default.Add, contentDescription = "Add download")
                     }
@@ -458,6 +467,9 @@ fun DownloadHubApp(
                         onAbout = { navigate(AppDestination.ABOUT) },
                         onDownloadSettings = { navigate(AppDestination.DOWNLOAD_SETTINGS) },
                         onThemes = { navigate(AppDestination.THEMES) },
+                        onQueues = { navigate(AppDestination.QUEUES) },
+                        onAdvanced = { navigate(AppDestination.ADVANCED) },
+                        onRss = { navigate(AppDestination.RSS) },
                         onCheckUpdates = updateViewModel::checkForUpdatesNow
                     )
                     AppDestination.DOWNLOAD_SETTINGS -> DownloadSettingsScreen(
@@ -465,6 +477,7 @@ fun DownloadHubApp(
                         destinationTreeUri = destinationTreeUri,
                         isBatteryExempt = viewModel.isBatteryExempt(),
                         onMaxConcurrentChange = viewModel::setMaxConcurrent,
+                        onConnectionsChange = viewModel::setConnectionsPerDownload,
                         onSpeedLimitChange = viewModel::setSpeedLimit,
                         onWifiOnlyChange = viewModel::setWifiOnly,
                         onMaxRetriesChange = viewModel::setMaxRetries,
@@ -474,6 +487,28 @@ fun DownloadHubApp(
                         downloaderVersion = downloaderVersion,
                         ytdlpUpdate = ytdlpUpdate,
                         onRetryYtDlp = viewModel::retryYtDlpSync
+                    )
+                    AppDestination.RSS -> RssScreen(
+                        feeds = rssFeeds,
+                        rules = rssRules,
+                        items = rssItems,
+                        refreshing = rssRefreshing,
+                        onSubscribe = viewModel::subscribeRss,
+                        onRemoveFeed = viewModel::removeRssFeed,
+                        onRefresh = viewModel::refreshRss,
+                        onSaveRules = viewModel::saveRssRules,
+                        onDownload = viewModel::downloadRssItem
+                    )
+                    AppDestination.ADVANCED -> AdvancedSettingsScreen(
+                        settings = advanced,
+                        onSave = viewModel::saveAdvanced,
+                        onImportIpFilter = viewModel::importIpFilter
+                    )
+                    AppDestination.QUEUES -> QueuesScreen(
+                        queues = queues,
+                        onSave = viewModel::saveQueue,
+                        onDelete = viewModel::deleteQueue,
+                        onToggle = viewModel::setQueueStarted
                     )
                     AppDestination.THEMES -> ThemePickerScreen(
                         appTheme = appTheme,
@@ -507,6 +542,7 @@ fun DownloadHubApp(
                 scanning = scanState is PageScanState.Scanning,
                 onDismiss = viewModel::closeEditor,
                 onAdd = viewModel::addLink,
+                onRequestOptions = viewModel::setPendingRequest,
                 // A YouTube link in the sheet belongs to the YouTube tab: the
                 // sheet closes, the tab opens with the link already loading.
                 onOpenYouTubeTab = { link ->
@@ -549,7 +585,14 @@ fun DownloadHubApp(
                 onDelete = { viewModel.delete(item.id) },
                 onOpen = { viewModel.launchOpen(item, open = true) },
                 onOpenWith = { viewModel.launchOpen(item, open = false) },
-                onShare = { viewModel.launchShare(item) }
+                onShare = { viewModel.launchShare(item) },
+                trackersOf = { viewModel.torrentTrackers(item) },
+                peersOf = { viewModel.torrentPeers(item) },
+                onForceRecheck = { viewModel.forceRecheck(item) },
+                onForceReannounce = { viewModel.forceReannounce(item) },
+                queues = queues,
+                onMoveToQueue = { viewModel.moveToQueue(item.id, it) },
+                onSaveRequest = { viewModel.setItemRequest(item.id, it) }
             )
         }
 
@@ -883,6 +926,9 @@ private fun SettingsScreen(
     onAbout: () -> Unit,
     onDownloadSettings: () -> Unit,
     onThemes: () -> Unit,
+    onQueues: () -> Unit = {},
+    onAdvanced: () -> Unit = {},
+    onRss: () -> Unit = {},
     onCheckUpdates: () -> Unit
 ) {
     val context = LocalContext.current
@@ -919,6 +965,21 @@ private fun SettingsScreen(
                 title = "Themes",
                 subtitle = "Two-tone colour scheme, light or dark"
             ) { onThemes() }
+            SettingsNavRow(
+                icon = Icons.Default.Schedule,
+                title = "Queues",
+                subtitle = "Named queues that start and stop on a schedule"
+            ) { onQueues() }
+            SettingsNavRow(
+                icon = Icons.Default.Tune,
+                title = "Advanced",
+                subtitle = "Categories, proxy, speed limits, BitTorrent, IP filter"
+            ) { onAdvanced() }
+            SettingsNavRow(
+                icon = Icons.Default.RssFeed,
+                title = "RSS feeds",
+                subtitle = "Subscribe to feeds and download matching articles automatically"
+            ) { onRss() }
             SettingsNavRow(
                 icon = Icons.Default.Info,
                 title = "About 1 download manager",
@@ -994,6 +1055,9 @@ private fun destinationTitle(destination: AppDestination): String = when (destin
     AppDestination.SETTINGS -> "Settings"
     AppDestination.DOWNLOAD_SETTINGS -> "Download settings"
     AppDestination.THEMES -> "Themes"
+    AppDestination.QUEUES -> "Queues"
+    AppDestination.ADVANCED -> "Advanced"
+    AppDestination.RSS -> "RSS feeds"
     AppDestination.ABOUT -> "About us"
 }
 

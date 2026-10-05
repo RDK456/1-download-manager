@@ -164,6 +164,22 @@ interface DownloadDao {
     @Query("UPDATE downloads SET etag = :etag, lastModified = :lastModified, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateValidators(id: String, etag: String?, lastModified: String?, updatedAt: Long)
 
+    @Query("UPDATE downloads SET queueId = :queueId, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateQueue(id: String, queueId: String, updatedAt: Long)
+
+    /** A deleted queue's downloads go back to Main rather than being stranded. */
+    @Query("UPDATE downloads SET queueId = 'main' WHERE queueId = :queueId")
+    suspend fun returnToMainQueue(queueId: String)
+
+    @Query(
+        """
+        UPDATE downloads
+        SET requestHeaders = :headers, cookies = :cookies, username = :username, password = :password, updatedAt = :updatedAt
+        WHERE id = :id
+        """
+    )
+    suspend fun updateRequest(id: String, headers: String?, cookies: String?, username: String?, password: String?, updatedAt: Long)
+
     /** Bumps the retry counter used by the automatic retry policy. */
     @Query("UPDATE downloads SET retryCount = :retryCount WHERE id = :id")
     suspend fun updateRetryCount(id: String, retryCount: Int)

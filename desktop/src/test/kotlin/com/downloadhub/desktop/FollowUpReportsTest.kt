@@ -197,7 +197,7 @@ class FollowUpReportsTest {
         val screen = File("src/main/kotlin/com/downloadhub/desktop/LibraryScreen.kt").readText()
         val toolbar = screen.substringAfter("private fun LibraryToolbar(")
             .substringBefore("private fun ToolbarButton(")
-        assertTrue("Stop All is still there", toolbar.contains("ToolbarButton(\"Stop All\""))
+        assertTrue("Pause All is still there", toolbar.contains("ToolbarButton(\"Pause All\""))
         assertTrue(
             "and Stop for the selection sits beside Pause:\n$toolbar",
             toolbar.contains("ToolbarButton(\"Stop\", DlmIcons.Stop, enabled = hasSelection")
@@ -223,11 +223,18 @@ class FollowUpReportsTest {
     fun theSelectionIsCountedOnTheButtonsThatActOnIt() {
         val screen = File("src/main/kotlin/com/downloadhub/desktop/LibraryScreen.kt").readText()
         assertTrue("the count reaches the toolbar", screen.contains("selectedCount = selected.size"))
-        listOf("Resume", "Pause", "Stop").forEach { label ->
+        // Each button counts the ticked rows it would act on, not the whole selection:
+        // ticking one paused and one finished download, Resume says 1, not 2.
+        mapOf(
+            "Resume" to "badge = resumeCount",
+            "Pause" to "badge = pauseCount",
+            "Retry" to "badge = retryCount",
+            "Stop" to "badge = selectedCount"
+        ).forEach { (label, badge) ->
             assertTrue(
-                "$label acts on the selection and should say how big it is",
+                "$label acts on the selection and should say how many it will act on",
                 screen.contains("ToolbarButton(\"$label\"") &&
-                    screen.substringAfter("ToolbarButton(\"$label\"").take(200).contains("badge = selectedCount")
+                    screen.substringAfter("ToolbarButton(\"$label\"").take(200).contains(badge)
             )
         }
     }
@@ -266,7 +273,7 @@ class FollowUpReportsTest {
             "the strip must not be inside the detail pane's if-block",
             !screen.contains("if (state.torrentsTab) {\n        // The selected download")
         )
-        assertTrue("and it is drawn", screen.contains("TorrentStatusBar(all)"))
+        assertTrue("and it is drawn", screen.contains("TorrentStatusBar(all"))
         assertTrue(
             "counting the queue rather than only the torrents:\n" +
                 panel.substringAfter("fun TorrentStatusBar").take(700),

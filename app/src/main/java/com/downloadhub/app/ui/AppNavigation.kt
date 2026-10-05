@@ -23,6 +23,12 @@ enum class AppDestination {
     SETTINGS,
     DOWNLOAD_SETTINGS,
     THEMES,
+    /** Named queues and their start/stop schedules. */
+    QUEUES,
+    /** Categories, proxy, speed and BitTorrent settings, IP filter. */
+    ADVANCED,
+    /** RSS feeds and their auto-download rules. */
+    RSS,
     ABOUT;
 
     /** The list tabs, search and YouTube are roots; everything else is a sub-page. */

@@ -51,6 +51,7 @@ fun DownloadSettingsScreen(
     destinationTreeUri: String?,
     isBatteryExempt: Boolean,
     onMaxConcurrentChange: (Int) -> Unit,
+    onConnectionsChange: (Int) -> Unit = {},
     onSpeedLimitChange: (Long) -> Unit,
     onWifiOnlyChange: (Boolean) -> Unit,
     onMaxRetriesChange: (Int) -> Unit,
@@ -117,6 +118,13 @@ fun DownloadSettingsScreen(
                 value = settings.maxConcurrent,
                 range = DownloadSettings.MIN_MAX_CONCURRENT..DownloadSettings.MAX_MAX_CONCURRENT,
                 onChange = onMaxConcurrentChange
+            )
+            StepperRow(
+                title = "Connections per download",
+                subtitle = "Splits a file into parts fetched at once, when the server allows it",
+                value = settings.connectionsPerDownload,
+                range = 1..DownloadSettings.MAX_CONNECTIONS,
+                onChange = onConnectionsChange
             )
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Speed limit", style = MaterialTheme.typography.bodyMedium)

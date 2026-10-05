@@ -130,7 +130,11 @@ data class DownloadItem(
     /** Bytes uploaded over the torrent's whole life, which a share ratio is measured against. */
     val uploadedBytes: Long = 0L,
     /** When it finished downloading. */
-    val completedAt: Long = 0L
+    val completedAt: Long = 0L,
+    /** Which queue starts it. See [QueueRules]. */
+    val queueId: String = QueueRules.MAIN,
+    /** Extra headers, cookies and a login, sent with every request for this file. */
+    val request: HttpRequestOptions = HttpRequestOptions()
 ) {
 
     /**
@@ -164,5 +168,15 @@ data class DownloadItem(
 data class TransferPolicy(
     val maxRetries: Int = 2,
     val speedLimitBytesPerSecond: Long = 0L,
-    val useSpeedLimit: Boolean = false
+    val useSpeedLimit: Boolean = false,
+    /**
+     * Parallel connections for one file. One keeps the old single-stream path; more
+     * splits a file whose server accepts byte ranges into that many pieces.
+     */
+    val connections: Int = 1,
+    /**
+     * The proxy to go through. Null follows the system's proxy selector; Proxy.NO_PROXY
+     * goes direct. See [ProxySetting.toProxy].
+     */
+    val proxy: java.net.Proxy? = null
 )

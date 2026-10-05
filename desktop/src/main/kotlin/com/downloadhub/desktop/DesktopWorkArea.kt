@@ -42,9 +42,14 @@ class DesktopWorkArea(private val settings: () -> DesktopSettings) : WorkArea {
         destinationTreeUri: String?,
         category: DownloadCategory
     ): PublishedTarget {
-        val root = settings().downloadDirFile()
+        val current = settings()
+        val root = current.downloadDirFile()
         if (!root.exists()) root.mkdirs()
-        val dir = File(root, category.destinationFolder())
+        // The user's own categories first: a rule naming this file's extension picks the
+        // folder. Only when none does is the file filed by its built-in type.
+        val rule = com.downloadhub.core.CategoryRules.match(preferredName, current.categoryRules.map { it.toRule() })
+        val dir = rule?.let { com.downloadhub.core.CategoryRules.folderFor(it, root) }
+            ?: File(root, category.destinationFolder())
         if (!dir.exists() && !dir.mkdirs()) {
             // A read-only or otherwise unusable destination is worth falling back from
             // rather than failing the whole download over: the file is already

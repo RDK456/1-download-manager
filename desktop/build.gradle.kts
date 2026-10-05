@@ -36,6 +36,8 @@ dependencies {
     // platform neutral and each app adds the native library it needs.
     implementation(libs.libtorrent4j)
     implementation("org.libtorrent4j:libtorrent4j-windows:2.1.0-39")
+    // Colours the native title bar to match the theme (DwmSetWindowAttribute).
+    implementation("net.java.dev.jna:jna:5.6.0")
 
     testImplementation(libs.junit)
 }
@@ -588,6 +590,11 @@ compose.desktop {
             vendor = "1 download manager"
             windows {
                 menu = true
+                menuGroup = "1 download manager"
+                shortcut = true
+                // Per user: installs without an admin prompt, which is also what lets the
+                // updater run msiexec /qn with nothing on screen. Silent install by hand:
+                //   msiexec /i 1-download-manager-x.y.z.msi /qn
                 perUserInstall = true
                 // Without this the exe, the Start Menu entry and the taskbar all get
                 // jpackage's default Java cup. The artwork is the same as the Android

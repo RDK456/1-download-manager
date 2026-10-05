@@ -10,7 +10,7 @@ import com.downloadhub.app.data.model.DownloadStatus
 
 @Database(
     entities = [DownloadEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(DownloadConverters::class)
@@ -101,13 +101,25 @@ abstract class DownloadDatabase : RoomDatabase() {
          * That is a crash on launch with nothing in the build to point at, which is
          * exactly what happened when the per-download settings were added.
          */
+        /** Named queues, and what an HTTP link sends: headers, cookies, a login. */
+        val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN queueId TEXT NOT NULL DEFAULT 'main'")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN requestHeaders TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN cookies TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN username TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN password TEXT")
+            }
+        }
+
         val ALL: Array<androidx.room.migration.Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,
             MIGRATION_4_5,
             MIGRATION_5_6,
-            MIGRATION_6_7
+            MIGRATION_6_7,
+            MIGRATION_7_8
         )
     }
 }

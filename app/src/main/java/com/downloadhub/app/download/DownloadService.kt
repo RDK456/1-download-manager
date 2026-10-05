@@ -84,7 +84,7 @@ class DownloadService : Service() {
         youtubeDownloader = app.container.youtubeDownloader
         // Named, because TorrentEngine also takes an optional native-library
         // directory and a trailing lambda would bind to the wrong one.
-        torrentEngine = TorrentEngine(torrentRoot = { DownloadStorage(applicationContext).torrentRoot() })
+        torrentEngine = app.container.torrentEngine
         networkMonitor = app.container.networkMonitor
 
         // Post the ongoing notification immediately: without this Android can
@@ -140,9 +140,30 @@ class DownloadService : Service() {
     /** Re-scales the worker pool and re-applies the speed limit when settings change. */
     private fun observeSettings(settings: com.downloadhub.app.data.SettingsRepository) {
         scope.launch {
-            settings.downloadSettings.collectLatest { current ->
-                app.container.speedLimiter.setLimit(current.speedLimitBytesPerSecond)
-                syncWorkers(current.maxConcurrent)
+            settings.downloadSettings.collectLatest { current -> syncWorkers(current.maxConcurrent) }
+        }
+        // Speed limits (normal or alternative), the torrent session's settings and the IP
+        // filter. Re-checked every minute as well as on change, so a scheduled alternative
+        // window starts and ends on time. Torrents get the limit too: it only ever reached
+        // HTTP downloads, so a torrent ran flat out whatever the setting said.
+        scope.launch {
+            var appliedFilter: String? = null
+            kotlinx.coroutines.flow.combine(
+                settings.downloadSettings,
+                settings.advanced,
+                kotlinx.coroutines.flow.flow { while (true) { emit(Unit); delay(SETTINGS_TICK_MILLIS) } }
+            ) { download, advanced, _ -> download to advanced }.collectLatest { (download, advanced) ->
+                app.container.speedLimiter.setLimit(advanced.downloadLimit(download.speedLimitBytesPerSecond))
+                runCatching { torrentEngine.applySettings(advanced.torrentSession(download.speedLimitBytesPerSecond)) }
+                val filterFile = advanced.ipFilterPath.takeIf { advanced.ipFilterEnabled && it.isNotBlank() }?.let { java.io.File(it) }
+                val key = filterFile?.let { it.path + "@" + it.lastModified() }.orEmpty()
+                if (key != appliedFilter) {
+                    val ranges = filterFile?.takeIf { it.isFile }
+                        ?.let { runCatching { com.downloadhub.core.IpFilterParser.parse(it) }.getOrDefault(emptyList()) }
+                        .orEmpty()
+                    runCatching { torrentEngine.setIpFilter(ranges) }
+                    appliedFilter = key
+                }
             }
         }
     }
@@ -209,6 +230,18 @@ class DownloadService : Service() {
         // starts itself when its time arrives, with nothing for the user to touch.
         if (!TransferRules.isStartable(item.startAfterEpochMillis, System.currentTimeMillis())) {
             delay(SCHEDULED_RECHECK_MILLIS)
+            enqueue(id)
+            return
+        }
+        // A stopped queue holds its downloads without holding a worker: the row stays
+        // Queued and is picked up again when the queue starts (which re-sends
+        // ACTION_RECOVER). A queue at its own limit is re-checked shortly.
+        val queue = queueOf(item.queueId)
+        if (!queue.started) return
+        if (queue.maxConcurrent > 0 &&
+            dao.getByStatuses(listOf(DownloadStatus.RUNNING)).count { it.queueId == queue.id } >= queue.maxConcurrent
+        ) {
+            delay(SCHEDULED_RECHECK_MILLIS / 4)
             enqueue(id)
             return
         }
@@ -572,6 +605,21 @@ class DownloadService : Service() {
      * (not just the in-memory sets) avoids stopping between a job finishing and
      * the next one being picked up.
      */
+    private suspend fun queueOf(id: String): com.downloadhub.app.data.AppQueue {
+        val queues = app.container.settings.currentQueues()
+        return queues.firstOrNull { it.id == id } ?: queues.first()
+    }
+
+    /**
+     * What is still to do, leaving out downloads waiting in a stopped queue: those are
+     * not work the service can do, and counting them kept it - and its wake lock -
+     * running all night for a queue scheduled to start in the morning.
+     */
+    private suspend fun pendingWork(): List<DownloadEntity> {
+        val stopped = app.container.settings.currentQueues().filter { !it.started }.map { it.id }.toSet()
+        return dao.getByStatuses(ACTIVE_STATUSES).filterNot { it.status == DownloadStatus.QUEUED && it.queueId in stopped }
+    }
+
     private fun stopIfIdle() {
         if (!queueReady || activeJobs.isNotEmpty() || queuedIds.isNotEmpty()) return
         scope.launch {
@@ -579,11 +627,9 @@ class DownloadService : Service() {
             repeat(4) {
                 delay(250)
                 if (activeJobs.isNotEmpty() || queuedIds.isNotEmpty()) return@launch
-                if (dao.getByStatuses(ACTIVE_STATUSES).isNotEmpty()) return@launch
+                if (pendingWork().isNotEmpty()) return@launch
             }
-            if (activeJobs.isEmpty() && queuedIds.isEmpty() &&
-                dao.getByStatuses(ACTIVE_STATUSES).isEmpty()
-            ) {
+            if (activeJobs.isEmpty() && queuedIds.isEmpty() && pendingWork().isEmpty()) {
                 holdWakeLock(false)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -710,6 +756,8 @@ class DownloadService : Service() {
         const val EXTRA_IDS = "download_ids"
         private const val MAX_TORRENT_METADATA_BYTES = 10L * 1024L * 1024L
         private const val RETRY_DELAY_MILLIS = 3_000L
+        /** How often speed and session settings are re-checked, for scheduled alternative limits. */
+        private const val SETTINGS_TICK_MILLIS = 60_000L
         private const val WAKE_LOCK_TAG = "1-download-manager:downloads"
         private const val WAKE_LOCK_TIMEOUT_MILLIS = 3L * 60L * 60L * 1000L
         private const val TAG = "DownloadService"

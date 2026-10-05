@@ -3,11 +3,19 @@ package com.downloadhub.core
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class HttpDownloader(
@@ -35,6 +43,15 @@ class HttpDownloader(
 ) {
     suspend fun download(item: DownloadItem) = withContext(Dispatchers.IO) {
         val work = area.workFile(item.id)
+        val policy = runCatching { policies.policyFor(item.id) }.getOrDefault(TransferPolicy())
+        val connections = policy.connections
+        proxy = policy.proxy
+        val segments = SegmentState.fileFor(work)
+        // A segment file means this download was started split, and its work file is
+        // full-length already - the single-stream path below would read that as done.
+        if ((connections > 1 || segments.isFile) && downloadSegmented(item, work, segments, connections)) {
+            return@withContext
+        }
         var attempt = 0
         var restart = false
 
@@ -43,18 +60,7 @@ class HttpDownloader(
             var existing = if (restart) 0L else work.length()
             if (restart) work.delete()
 
-            val connection = (URL(item.url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 20_000
-                readTimeout = 35_000
-                instanceFollowRedirects = true
-                setRequestProperty("Accept-Encoding", "identity")
-                setRequestProperty("User-Agent", item.userAgent ?: "DownloadHub/1.0")
-                if (existing > 0) {
-                    setRequestProperty("Range", "bytes=$existing-")
-                    item.etag?.let { setRequestProperty("If-Range", it) }
-                        ?: item.lastModified?.let { setRequestProperty("If-Range", it) }
-                }
-            }
+            val connection = open(item, if (existing > 0) "bytes=$existing-" else null)
 
             try {
                 val responseCode = connection.responseCode
@@ -184,6 +190,177 @@ class HttpDownloader(
         Unit
     }
 
+    /** Set from the policy when a download starts; null follows the system proxy. */
+    @Volatile
+    private var proxy: java.net.Proxy? = null
+
+    /** One request, with [range] and its If-Range validator when resuming. */
+    private fun open(item: DownloadItem, range: String?): HttpURLConnection {
+        val url = URL(item.url)
+        val raw = proxy?.let { url.openConnection(it) } ?: url.openConnection()
+        return (raw as HttpURLConnection).apply {
+            connectTimeout = 20_000
+            readTimeout = 35_000
+            instanceFollowRedirects = true
+            setRequestProperty("Accept-Encoding", "identity")
+            setRequestProperty("User-Agent", item.userAgent ?: "DownloadHub/1.0")
+            // After the engine's own headers, so one typed for this download wins.
+            item.request.applyTo(this)
+            if (range != null) {
+                setRequestProperty("Range", range)
+                item.etag?.let { setRequestProperty("If-Range", it) }
+                    ?: item.lastModified?.let { setRequestProperty("If-Range", it) }
+            }
+        }
+    }
+
+    /** The server stopped answering byte ranges, so the split copy cannot be finished. */
+    private class RangesRefused(message: String) : IOException(message)
+
+    /**
+     * Fetches the file over several connections at once, one byte range each.
+     *
+     * Returns false - having left nothing behind - when the server does not take ranges or
+     * will not say how big the file is, and the caller falls back to one stream.
+     */
+    private suspend fun downloadSegmented(
+        item: DownloadItem,
+        work: File,
+        segmentFile: File,
+        connections: Int
+    ): Boolean = coroutineScope {
+        var state = SegmentState.read(segmentFile)
+        if (state == null) {
+            segmentFile.delete()
+            // A partial from one stream - started before the connection count was raised -
+            // is finished the way it was begun rather than thrown away.
+            if (work.length() > 0L) return@coroutineScope false
+            val total = probeRangeTotal(item) ?: return@coroutineScope false
+            // Below two segments' worth the split costs more than it saves.
+            if (total < 2 * SegmentState.MIN_SEGMENT_BYTES) return@coroutineScope false
+            state = SegmentState.plan(total, connections)
+            work.delete()
+            RandomAccessFile(work, "rw").use { it.setLength(total) }
+            state.write(segmentFile)
+        }
+        val plan = state
+        val total = plan.total
+
+        try {
+            FileChannel.open(work.toPath(), StandardOpenOption.WRITE).use { channel ->
+                val ticker = launch { reportProgress(item.id, plan, segmentFile) }
+                try {
+                    // Its own scope, so a worker's failure comes out of it as that failure
+                    // rather than as the cancellation of everything around it.
+                    coroutineScope {
+                        plan.segments.filter { !it.isComplete }
+                            .forEach { segment -> launch(Dispatchers.IO) { fetchSegment(item, segment, channel) } }
+                    }
+                } finally {
+                    ticker.cancel()
+                    // Whatever happened - paused, failed, done - the next resume starts
+                    // from what is actually on disk.
+                    channel.force(false)
+                    plan.write(segmentFile)
+                }
+            }
+        } catch (refused: RangesRefused) {
+            // The file changed on the server or it stopped taking ranges: the pieces
+            // already fetched cannot be trusted together, so start again in one stream.
+            segmentFile.delete()
+            work.delete()
+            return@coroutineScope false
+        }
+
+        segmentFile.delete()
+        promoteCompleted(item, work, downloaded = total, total = total)
+        true
+    }
+
+    /** The full size, if the server answers a one-byte range with a 206 that says it. */
+    private fun probeRangeTotal(item: DownloadItem): Long? {
+        val connection = open(item, "bytes=0-0")
+        return try {
+            if (connection.responseCode != HttpURLConnection.HTTP_PARTIAL) return null
+            val total = parseUnsatisfiedTotal(connection.getHeaderField("Content-Range"))?.takeIf { it > 0 }
+                ?: return null
+            val now = System.currentTimeMillis()
+            val etag = connection.getHeaderField("ETag")
+            val lastModified = connection.getHeaderField("Last-Modified")
+            if (etag != null || lastModified != null) store.updateValidators(item.id, etag, lastModified, now)
+            val mime = connection.contentType?.substringBefore(';')?.trim()
+            store.updateMetadata(item.id, item.fileName, item.mimeType ?: mime, item.category, total, now)
+            total
+        } catch (error: IOException) {
+            null
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /** One worker: fills [segment] from where it got to, retrying a dropped connection. */
+    private suspend fun fetchSegment(item: DownloadItem, segment: Segment, channel: FileChannel) {
+        val buffer = ByteArray(TRANSFER_BUFFER_BYTES)
+        var failures = 0
+        while (!segment.isComplete) {
+            currentCoroutineContext().ensureActive()
+            val from = segment.next
+            val connection = open(item, "bytes=$from-${segment.end}")
+            try {
+                val code = connection.responseCode
+                val start = parseContentRangeStart(connection.getHeaderField("Content-Range"))
+                if (code != HttpURLConnection.HTTP_PARTIAL || start != from) {
+                    throw RangesRefused("Server answered a range with HTTP $code")
+                }
+                connection.inputStream.use { input ->
+                    while (!segment.isComplete) {
+                        currentCoroutineContext().ensureActive()
+                        val wanted = (segment.length - segment.done).coerceAtMost(buffer.size.toLong()).toInt()
+                        val count = input.read(buffer, 0, wanted)
+                        if (count < 0) break
+                        speedLimiter.acquire(count)
+                        itemSpeedLimiter?.acquire(count)
+                        val bytes = ByteBuffer.wrap(buffer, 0, count)
+                        var position = segment.next
+                        while (bytes.hasRemaining()) position += channel.write(bytes, position)
+                        segment.done += count
+                    }
+                }
+                failures = 0
+            } catch (refused: RangesRefused) {
+                throw refused
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: IOException) {
+                if (++failures > SEGMENT_RETRIES) throw error
+                delay(1_000L * failures)
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }
+
+    /** Publishes speed and progress every 400 ms, and saves the segment file every few seconds. */
+    private suspend fun reportProgress(id: String, plan: SegmentState, segmentFile: File) {
+        var lastBytes = plan.downloaded
+        var lastTime = System.currentTimeMillis()
+        var lastSaved = lastTime
+        while (true) {
+            delay(400)
+            val now = System.currentTimeMillis()
+            val bytes = plan.downloaded
+            val speed = (bytes - lastBytes) * 1000L / (now - lastTime).coerceAtLeast(1L)
+            val percent = (bytes * 100L / plan.total).coerceIn(0, 100).toInt()
+            store.updateProgress(id, bytes, plan.total, percent, speed, estimateEta(plan.total, bytes, speed), now)
+            lastBytes = bytes
+            lastTime = now
+            if (now - lastSaved >= 3_000L) {
+                runCatching { plan.write(segmentFile) }
+                lastSaved = now
+            }
+        }
+    }
+
     private suspend fun promoteCompleted(
         item: DownloadItem,
         work: File,
@@ -235,5 +412,7 @@ class HttpDownloader(
 
     private companion object {
         const val TRANSFER_BUFFER_BYTES = 64 * 1024
+        /** Dropped connections one segment survives before the download fails. */
+        const val SEGMENT_RETRIES = 4
     }
 }

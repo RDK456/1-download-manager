@@ -25,6 +25,8 @@ enum class ThemePalette(
     /** A very pale wash of the accent, for containers on a light surface. */
     val lightSurfaceHint: Long
 ) {
+    /** The indigo AB Download Manager is known for; the default for a new install. */
+    AURORA("AURORA", "Aurora", 0xFF4F5BD5, 0xFF8A94FF, 0xFFECEEFD),
     MINT("MINT", "Mint", 0xFF10B981, 0xFF34D399, 0xFFE7F8F1),
     FOREST("FOREST", "Forest", 0xFF15803D, 0xFF4ADE80, 0xFFE8F5EC),
     /**
@@ -179,23 +181,25 @@ fun resolveThemeColors(palette: ThemePalette, mode: ThemeMode): ThemeColors {
         ThemeMode.DARK -> ThemeColors(
             palette = palette,
             mode = mode,
-            background = 0xFF12171A,
-            surface = 0xFF1A2124,
-            raised = 0xFF262F33,
-            band = 0xFF161C1F,
-            onSurface = 0xFFE6EDEE,
-            muted = 0xFFB4C0C2,
-            faint = 0xFF7E8C8E,
+            // Neutral greys rather than a blue-green tint, so every accent sits on the
+            // same quiet ground - the look AB Download Manager's dark theme is known for.
+            background = 0xFF141418,
+            surface = 0xFF1C1C22,
+            raised = 0xFF2A2A32,
+            band = 0xFF18181D,
+            onSurface = 0xFFECECF1,
+            muted = 0xFFB4B4BF,
+            faint = 0xFF80808C,
             accent = accent,
             onAccent = onAccent,
-            accentContainer = shade(accent, 0.62f),
-            onAccentContainer = 0xFFEFFCF4,
-            outline = 0xFF46545A,
-            outlineVariant = 0xFF2C3639,
+            accentContainer = blend(0xFF1C1C22, accent, 0.28f),
+            onAccentContainer = 0xFFF2F3FF,
+            outline = 0xFF4A4A55,
+            outlineVariant = 0xFF2C2C34,
             selection = 0x1AFFFFFF,
             error = 0xFFFFB4AB,
             onError = 0xFF690005,
-            menuPanel = 0xFF1E2629,
+            menuPanel = 0xFF24242B,
             menuEdge = 0x33FFFFFF
         )
 

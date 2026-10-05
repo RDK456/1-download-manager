@@ -13,5 +13,7 @@ class DownloadHubApplication : Application() {
         container = AppContainer(this)
         DownloadNotifications.createChannels(this)
         DownloadRecoveryWorker.schedule(this)
+        com.downloadhub.app.download.QueueScheduleWorker.schedule(this)
+        com.downloadhub.app.download.RssWorker.schedule(this)
     }
 }

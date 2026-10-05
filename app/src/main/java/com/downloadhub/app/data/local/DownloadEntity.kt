@@ -81,5 +81,13 @@ data class DownloadEntity(
     /** When it began seeding, so a time limit has something to count from. */
     val seedingSinceEpochMillis: Long = 0L,
     /** When sharing stopped, if it did. Zero means it has not. */
-    val seedingStoppedAtEpochMillis: Long = 0L
+    val seedingStoppedAtEpochMillis: Long = 0L,
+    // --- added in version 8 ---------------------------------------------------
+    /** Which named queue starts it; see core's QueueRules. */
+    val queueId: String = "main",
+    /** Extra headers as "Name: value" lines, cookies, and a login, for an HTTP link. */
+    val requestHeaders: String? = null,
+    val cookies: String? = null,
+    val username: String? = null,
+    val password: String? = null
 )

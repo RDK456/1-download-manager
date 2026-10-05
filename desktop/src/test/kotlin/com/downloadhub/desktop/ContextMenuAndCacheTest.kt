@@ -162,9 +162,14 @@ class ContextMenuAndCacheTest {
     @Test
     fun anUnfinishedDownloadsBytesLiveInTheCacheAndAreDeletedWithIt() {
         val store = DesktopStore(emptyList())
-        val cached = AppPaths.workDir.resolve("d1")
+        // The names the engine really writes (DesktopWorkArea.workFile). This used to plant
+        // a file called "d1", which nothing ever writes, so the test passed while the real
+        // partial was left on disk.
+        val cached = AppPaths.workDir.resolve("part-d1")
         cached.parentFile?.mkdirs()
         cached.writeText("half a file")
+        val segments = AppPaths.workDir.resolve("part-d1.segments")
+        segments.writeText("v1 10\n0 9 5\n")
         store.add(
             QueuedDownload(
                 id = "d1",
@@ -183,12 +188,13 @@ class ContextMenuAndCacheTest {
                 "cache quietly fills up",
             cached.exists()
         )
+        assertFalse("nor its segment state", segments.exists())
     }
 
     @Test
     fun theCacheSurvivesWhenTheUserAsksToKeepIt() {
         val store = DesktopStore(emptyList())
-        val cached = AppPaths.workDir.resolve("d2")
+        val cached = AppPaths.workDir.resolve("part-d2")
         cached.parentFile?.mkdirs()
         cached.writeText("half a file")
         store.add(
@@ -301,7 +307,7 @@ class ContextMenuAndCacheTest {
     @Test
     fun thePaneOffersOnlyWhatThereIsSomethingBehind() {
         assertEquals(
-            listOf("Details", "Content"),
+            listOf("Details", "Content", "Trackers", "Peers"),
             TorrentTab.values().map { it.label }
         )
         assertEquals(
@@ -309,7 +315,7 @@ class ContextMenuAndCacheTest {
             TorrentTab.forDownload(isTorrent = false)
         )
         assertEquals(
-            listOf(TorrentTab.GENERAL, TorrentTab.CONTENT),
+            listOf(TorrentTab.GENERAL, TorrentTab.CONTENT, TorrentTab.TRACKERS, TorrentTab.PEERS),
             TorrentTab.forDownload(isTorrent = true)
         )
         // A saved name from an older build still resolves to something real.
@@ -317,7 +323,7 @@ class ContextMenuAndCacheTest {
         assertEquals(TorrentTab.CONTENT, TorrentTab.fromName("CONTENT"))
         assertEquals(TorrentTab.GENERAL, TorrentTab.fromName("NONSENSE"))
         // And a name for a tab that no longer exists falls back rather than throwing.
-        assertEquals(TorrentTab.GENERAL, TorrentTab.fromName("PEERS"))
+        assertEquals(TorrentTab.GENERAL, TorrentTab.fromName("HTTP_SOURCES"))
     }
 
     /**

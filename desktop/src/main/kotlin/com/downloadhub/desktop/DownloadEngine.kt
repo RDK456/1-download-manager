@@ -125,31 +125,40 @@ class DownloadEngine(
         override suspend fun policyFor(id: String): TransferPolicy {
             val current = settingsState.value
             val own = store.get(id)?.speedLimitBytesPerSecond ?: 0L
-            val effective = com.downloadhub.core.TransferRules.effectiveSpeedLimit(own, current.speedLimitBytesPerSecond)
+            val effective = com.downloadhub.core.TransferRules.effectiveSpeedLimit(own, current.effectiveDownloadLimit())
             return TransferPolicy(
                 maxRetries = current.maxRetries,
                 speedLimitBytesPerSecond = effective,
-                useSpeedLimit = current.speedLimitEnabled || own > 0L
+                useSpeedLimit = current.speedLimitEnabled || own > 0L,
+                connections = current.connectionsPerDownload.coerceIn(1, 16),
+                proxy = current.proxySetting().toProxy()
             )
         }
     }
 
     // --- queue control ------------------------------------------------------
 
+    private var pumpJob: kotlinx.coroutines.Job? = null
+
     /** Starts every queued item that is not already transferring. */
     fun pump() {
         if (paused) return
-        scope.launch {
-            val limit = settingsState.value.maxConcurrent.coerceIn(1, 16)
+        // One loop. Every caller used to launch another endless one, so each Options
+        // save or queue start added a loop that never went away.
+        if (pumpJob?.isActive == true) return
+        pumpJob = scope.launch {
             while (isActive) {
+                val limit = settingsState.value.maxConcurrent.coerceIn(1, 16)
                 // Re-read every pass, so changing the limit in Settings takes effect on
                 // the next chunk rather than at the next restart.
-                scope.launch { globalLimiter.setLimit(settingsState.value.speedLimitBytesPerSecond) }
+                scope.launch { globalLimiter.setLimit(settingsState.value.effectiveDownloadLimit()) }
                 slots.withLock {
                     val free = limit - running.size
                     if (free <= 0) return@withLock
                     val now = System.currentTimeMillis()
-                    val next = store.snapshot()
+                    val all = store.snapshot()
+                    val queueSettings = settingsState.value
+                    val ordered = all
                           // Only plain HTTP belongs to this engine. A YouTube link is
                           // a web page, not a file: letting the HTTP downloader claim
                           // one saved the returned HTML into the download folder
@@ -171,7 +180,17 @@ class DownloadEngine(
                           // added first held the slots while everything behind it waited.
                           .map { it.toCoreItem() }
                           .sortedWith(com.downloadhub.core.TransferRules.queueOrder())
-                        .take(free)
+                    // A stopped queue starts nothing, and a queue with its own limit
+                    // counts everything of its own that is moving, torrents included.
+                    val next = com.downloadhub.core.QueueRules.admit(
+                        ordered = ordered,
+                        queueOf = { it.queueId },
+                        runningPerQueue = all.filter { it.status == DownloadStatus.RUNNING }
+                            .groupingBy { it.queueId }.eachCount(),
+                        isStarted = { queueSettings.queue(it).started },
+                        limitOf = { queueSettings.queue(it).maxConcurrent },
+                        free = free
+                    )
                     for (item in next) start(item.id)
                 }
                 delay(400)

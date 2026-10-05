@@ -54,10 +54,12 @@ class ToolbarLayoutTest {
             repeats.isEmpty()
         )
         assertEquals(
-            "Stop for the selection and Stop All are different actions and both belong " +
-                "there",
-            setOf("Resume", "Pause", "Stop", "Start Queue", "Stop Queue", "Stop All"),
-            labels.toSet().intersect(setOf("Resume", "Pause", "Stop", "Start Queue", "Stop Queue", "Stop All"))
+            "the selection's three actions, and one resume and one pause for the whole queue - " +
+                "Stop Queue and Stop All both paused everything, so one of them was a duplicate",
+            setOf("Resume", "Pause", "Stop", "Resume All", "Pause All"),
+            labels.toSet().intersect(
+                setOf("Resume", "Pause", "Stop", "Resume All", "Pause All", "Start Queue", "Stop Queue", "Stop All")
+            )
         )
     }
 

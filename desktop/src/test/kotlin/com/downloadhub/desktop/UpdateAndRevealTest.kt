@@ -24,10 +24,14 @@ class UpdateAndRevealTest {
     @Test
     fun theInstallerIsStartedThroughMsiexecNotExecutedDirectly() {
         val updater = File("src/main/kotlin/com/downloadhub/desktop/DesktopUpdate.kt").readText()
-        val body = updater.substringAfter("fun launch(msi: File)").substringBefore("\n    }")
+        val body = updater.substringAfter("fun launchSilently(").substringBefore("\n    }")
         assertTrue(
-            "the .msi must go through Windows Installer:\n$body",
-            body.contains("\"msiexec\"") && body.contains("\"/i\"")
+            "the .msi must go through Windows Installer, with no UI:\n$body",
+            body.contains("msiexec.exe") && body.contains("'/i'") && body.contains("'/qn'")
+        )
+        assertTrue(
+            "and only once this copy has exited, or its files are in use:\n$body",
+            body.contains("Wait-Process -Id")
         )
         assertFalse(
             "the .msi must not be the process command itself, which is error 193:\n$body",
@@ -42,8 +46,18 @@ class UpdateAndRevealTest {
             File(it, "updates").apply { parentFile.mkdirs(); mkdirs() }
         }
         try {
-            val result = UpdateInstaller(dir).launch(File(dir, "no-such-installer.msi"))
+            val installer = UpdateInstaller(dir)
+            val result = installer.launchSilently(File(dir, "no-such-installer.msi"), null)
             assertTrue("a missing installer must fail loudly", result.isFailure)
+
+            // What the install script leaves behind is read once, then forgotten.
+            installer.resultFile.writeText("1603|C:\\x\\setup.msi|C:\\x\\install.log")
+            val last = installer.takeLastResult()!!
+            assertFalse("1603 is a failed install", last.succeeded)
+            assertEquals("C:\\x\\install.log", last.logPath)
+            assertEquals(null, installer.takeLastResult())
+            installer.resultFile.writeText("3010|a|b")
+            assertTrue("3010 is success that wants a reboot", installer.takeLastResult()!!.succeeded)
         } finally {
             dir.parentFile.deleteRecursively()
         }
@@ -119,14 +133,16 @@ class UpdateAndRevealTest {
         val controller = File("src/main/kotlin/com/downloadhub/desktop/DesktopController.kt").readText()
         val body = controller.substringAfter("fun launchInstaller()").substringBefore("\n    }")
         val failAt = body.indexOf("isFailure")
-        val resetAt = body.indexOf("_update.value = UpdateCheck.Idle")
+        // Success now quits so the silent install can replace the files; a failure must be
+        // handled - and return - before that, or the app closes over its own error message.
+        val resetAt = body.indexOf("onQuitRequested()")
         assertTrue(
-            "the failure branch must come before the state is cleared, or the message " +
+            "the failure branch must come before the app quits, or the message " +
                 "is discarded:\n$body",
             failAt >= 0 && resetAt > failAt
         )
         assertTrue(
-            "the failure branch must return, or the clear runs anyway:\n$body",
+            "the failure branch must return, or the quit runs anyway:\n$body",
             body.substring(failAt, resetAt).contains("return")
         )
     }

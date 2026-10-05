@@ -1,6 +1,19 @@
 package com.downloadhub.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import kotlinx.coroutines.flow.drop
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.AlertDialog
@@ -32,6 +45,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -176,6 +190,8 @@ fun LibraryScreen(
      * time, and every rail row that is neither closes both.
      */
     var youTubeOpen by remember { mutableStateOf(false) }
+    /** Whether the RSS panel is open; one of the three panels, like Search and YouTube. */
+    var rssOpen by remember { mutableStateOf(false) }
     /**
      * Which kind of download is being looked at, apart from the Torrents tab.
      *
@@ -184,6 +200,14 @@ fun LibraryScreen(
      * scoped to torrents and YouTube at once, which is not a list anyone asked for.
      */
     var kindFilter by remember { mutableStateOf(LibraryKind.ALL) }
+    /** The queue the list is narrowed to, if a queue row was picked in the rail. */
+    var queueFilter by remember { mutableStateOf<String?>(null) }
+    /** The queue being created or edited, and whether it is new. */
+    var editingQueue by remember { mutableStateOf<Pair<QueueConfig, Boolean>?>(null) }
+    /** Downloads waiting for the "Move to queue" picker. */
+    var moving by remember { mutableStateOf(emptySet<String>()) }
+    var creatingTorrent by remember { mutableStateOf(false) }
+    val queues = state.settings.queuesOrDefault
 
     // A handed-over link opens the section with the link already loading, then
     // is forgotten: later recompositions must not re-fetch it over what was
@@ -222,7 +246,9 @@ fun LibraryScreen(
     var dragColumn by remember { mutableStateOf<com.downloadhub.core.DownloadColumn?>(null) }
     var dragStartWidth by remember { mutableFloatStateOf(0f) }
 
-    val all = state.items.map { it.toCoreItem() }
+    // Remembered against the snapshot, so a recomposition for anything else - a hover, a
+    // dialog - does not re-map and re-sort the whole queue.
+    val all = remember(state.items) { state.items.map { it.toCoreItem() } }
     /**
      * Which kind of download the list is showing.
      *
@@ -237,11 +263,52 @@ fun LibraryScreen(
         group = group,
         search = search,
         kind = kind,
-        sort = sort
+        sort = sort,
+        queueId = queueFilter
     )
-    val visible = DownloadLibrary.visible(all, query)
+    val visible = remember(all, query) { DownloadLibrary.visible(all, query) }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = state.palette.background) {
+    // A message answers one action, so it goes away: after a few seconds, or as soon as
+    // the selection it was about changes. It used to stay in the status bar for good,
+    // reading as if it described whatever was selected next.
+    LaunchedEffect(state.message) {
+        if (state.message != null) {
+            kotlinx.coroutines.delay(MESSAGE_SHOWN_MILLIS)
+            actions.consumeMessage()
+        }
+    }
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { selected }
+            .drop(1)
+            .collect { actions.consumeMessage() }
+    }
+
+    // Keys bubble here from whatever has focus; a text field consumes its own Delete and
+    // Ctrl+A first, so typing in the search box never removes a download.
+    val keyFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { keyFocus.requestFocus() } }
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(keyFocus)
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when {
+                    event.isCtrlPressed && event.key == Key.N -> { onOpenAdd(); true }
+                    event.isCtrlPressed && event.key == Key.A -> { selected = visible.map { it.id }.toSet(); true }
+                    event.key == Key.Delete && selected.isNotEmpty() -> { deleting = selected; selected = emptySet(); true }
+                    event.key == Key.Escape && selected.isNotEmpty() -> { selected = emptySet(); true }
+                    event.key == Key.Enter && selected.size == 1 -> {
+                        all.firstOrNull { it.id in selected && it.status == DownloadStatus.COMPLETED }
+                            ?.let { openWithSystem(it.location) }
+                        true
+                    }
+                    else -> false
+                }
+            },
+        color = state.palette.background
+    ) {
         Column(Modifier.fillMaxSize()) {
             MenuBar(
                 version = state.appVersion,
@@ -251,6 +318,7 @@ fun LibraryScreen(
                 onPauseAll = actions.pauseAll,
                 onResumeAll = actions.resumeAll,
                 onQuit = onQuit,
+                onCreateTorrent = { creatingTorrent = true },
                 extensionRoot = java.io.File(state.extensionPath),
                 pairingToken = state.settings.captureToken
             )
@@ -284,8 +352,25 @@ fun LibraryScreen(
                         // then not back, because clicking All Downloads set the group
                         // and the category - both of which the panels do not read -
                         // and left the panel on screen.
-                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL; kindFilter = LibraryKind.ALL; searchOpen = false; youTubeOpen = false },
-                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL; kindFilter = LibraryKind.ALL; searchOpen = false; youTubeOpen = false },
+                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL; kindFilter = LibraryKind.ALL; queueFilter = null; searchOpen = false; youTubeOpen = false; rssOpen = false },
+                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL; kindFilter = LibraryKind.ALL; queueFilter = null; searchOpen = false; youTubeOpen = false; rssOpen = false },
+                        queues = queues,
+                        queueFilter = queueFilter,
+                        onQueue = { id ->
+                            selected = emptySet()
+                            category = LibraryCategory.ALL
+                            group = LibraryGroup.ALL
+                            kindFilter = LibraryKind.ALL
+                            queueFilter = if (queueFilter == id) null else id
+                            searchOpen = false
+                            youTubeOpen = false
+                            rssOpen = false
+                        },
+                        onQueueStarted = actions.setQueueStarted,
+                        onEditQueue = { editingQueue = it to false },
+                        onNewQueue = {
+                            editingQueue = QueueConfig(id = "q" + System.currentTimeMillis().toString(36), name = "") to true
+                        },
                         // Picking a kind drops the category and the status as well, so the
                         // list is exactly the kind asked for and not the kind intersected
                         // with whatever was selected before. Choosing a second kind is the
@@ -294,17 +379,42 @@ fun LibraryScreen(
                             selected = emptySet()
                             category = LibraryCategory.ALL
                             group = LibraryGroup.ALL
+                            queueFilter = null
                             kindFilter = if (kind == it) LibraryKind.ALL else it
                             searchOpen = false
                             youTubeOpen = false
+                            rssOpen = false
                         },
                         searchOpen = searchOpen,
-                        onToggleSearch = { searchOpen = !searchOpen; youTubeOpen = false },
+                        onToggleSearch = { searchOpen = !searchOpen; youTubeOpen = false; rssOpen = false },
                         youTubeOpen = youTubeOpen,
-                        onToggleYouTube = { youTubeOpen = !youTubeOpen; searchOpen = false }
+                        onToggleYouTube = { youTubeOpen = !youTubeOpen; searchOpen = false; rssOpen = false },
+                        rssOpen = rssOpen,
+                        onToggleRss = { rssOpen = !rssOpen; searchOpen = false; youTubeOpen = false }
                     )
-                    VerticalRule()
-                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                    // No rule: the content is a card of its own, as in AB Download Manager.
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .padding(top = 6.dp, end = 8.dp, bottom = 8.dp)
+                            // A soft shadow under the card lifts it off the window, the way
+                            // AB Download Manager's content panel sits above its background.
+                            .shadow(10.dp, RoundedCornerShape(12.dp), clip = false)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AppTheme.Palette.surface)
+                            .border(1.dp, AppTheme.Palette.outlineVariant, RoundedCornerShape(12.dp))
+                    ) {
+                     if (rssOpen) {
+                        RssPanel(
+                            settings = state.settings,
+                            itemsByFeed = state.rssItems,
+                            refreshing = state.rssRefreshing,
+                            actions = actions,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        return@Column
+                     }
                      if (searchOpen) {
                         SearchPanel(
                             state = searchState,
@@ -354,16 +464,30 @@ fun LibraryScreen(
                         )
                         return@Column
                      }
+                        // What each button would act on, from the ticked rows. A button that
+                        // would do nothing to any of them is disabled rather than pressed.
+                        val ticked = all.filter { it.id in selected }
+                        val resumable = ticked.filter { it.status == DownloadStatus.PAUSED }
+                        val pausable = ticked.filter { it.isActive }
+                        val retryable = ticked.filter {
+                            it.status == DownloadStatus.FAILED || it.status == DownloadStatus.COMPLETED
+                        }
                         LibraryToolbar(
                             hasSelection = selected.isNotEmpty(),
                             selectedCount = selected.size,
                             activeCount = DownloadLibrary.activeCount(all),
                             onNew = onOpenAdd,
-                            onResume = { selected.forEach { actions.resume(it) } },
-                            onPause = { selected.forEach { actions.pause(it) } },
+                            resumeCount = resumable.size,
+                            pauseCount = pausable.size,
+                            retryCount = retryable.size,
+                            onResume = { resumable.forEach { actions.resume(it.id) } },
+                            onPause = { pausable.forEach { actions.pause(it.id) } },
+                            onRetry = { retryable.forEach { actions.retry(it.id) } },
                             onStop = { selected.forEach { actions.stop(it) } },
+                            hasResumable = all.any {
+                                it.status == DownloadStatus.PAUSED || it.status == DownloadStatus.FAILED
+                            },
                             onStartQueue = actions.resumeAll,
-                            onStopQueue = actions.pauseAll,
                             onStopAll = actions.pauseAll,
                             onDelete = { deleting = selected; selected = emptySet() },
                             onOpenFolder = actions.openDownloadFolder,
@@ -406,15 +530,20 @@ fun LibraryScreen(
                         )
                         HorizontalDivider(color = state.palette.outline.copy(alpha = 0.5f))
                         if (visible.isEmpty()) {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(
-                                    "Nothing here. Use New Download to add one.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = state.palette.onSurfaceVariant
-                                )
-                            }
+                            EmptyList(
+                                filtered = all.isNotEmpty(),
+                                onNew = onOpenAdd,
+                                onFind = { searchOpen = true; youTubeOpen = false },
+                                modifier = Modifier.weight(1f).fillMaxWidth()
+                            )
                         } else {
-                            LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                          val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+                          Box(Modifier.weight(1f).fillMaxWidth()) {
+                            androidx.compose.foundation.VerticalScrollbar(
+                                adapter = androidx.compose.foundation.rememberScrollbarAdapter(listState),
+                                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight()
+                            )
+                            LazyColumn(Modifier.fillMaxSize(), state = listState) {
                                 items(visible, key = { it.id }) { item ->
                                     DownloadRow(
                                         item = item,
@@ -437,6 +566,7 @@ fun LibraryScreen(
                                         onResume = { actions.resume(item.id) },
                                         onRetry = { actions.retry(item.id) },
                                         onOpen = { actions.revealDownload(item.location) },
+                                        onOpenFile = { openWithSystem(item.location) },
                                         onOptions = { optionsFor = item.id },
                                         onContext = { x, y ->
                                             contextAt = IntOffset(x, y)
@@ -449,8 +579,9 @@ fun LibraryScreen(
                                         thickness = 1.dp
                                     )
                                 }
+                            }
+                          }
                         }
-                    }
 
                     // The bottom pane, but only when a download is actually selected.
                     //
@@ -491,6 +622,9 @@ fun LibraryScreen(
                             // worth nothing after a restart, so it is held on the store
                             // item rather than persisted in the queue file.
                             fileProgress = detailRow?.torrentFileProgress ?: emptyMap(),
+                            trackersOf = actions.torrentTrackers,
+                            peersOf = actions.torrentPeers,
+                            onAddTrackers = { urls -> actions.addTrackers(detailItem.id, urls) },
                             onFilePriority = { index, priority ->
                                 detailRow?.let { row ->
                                     actions.setFilePriority(row.id, index, priority)
@@ -499,13 +633,9 @@ fun LibraryScreen(
                         )
                     }
 
-                    StatusBar(state, all)
-
-        // The transfer readout, on every tab and whether or not anything is
-        // selected. It used to live inside the Torrents-only detail pane, so it
-        // was drawn only on that tab and only when there was a pane to draw it in -
-        // and it said "N torrents" while sitting under a list of everything.
-        TorrentStatusBar(all)
+                    StatusBar(state, all, onToggleAltSpeed = {
+                        actions.updateSettings(state.settings.copy(altSpeedEnabled = !state.settings.altSpeedEnabled))
+                    })
                 }
                 }
             }
@@ -526,7 +656,8 @@ fun LibraryScreen(
                     actions.setItemOptions(optionsItem.id, rank, speed, startAfter, ratio, minutes)
                     optionsFor = null
                 },
-                onDismiss = { optionsFor = null }
+                onDismiss = { optionsFor = null },
+                onSaveRequest = { request -> actions.setItemRequest(optionsItem.id, request) }
             )
         }
 
@@ -587,6 +718,9 @@ fun LibraryScreen(
                         ContextAction.ExportTorrent -> actions.exportTorrent(item.id)
                         // Always offered, never enabled: see ContextAction.
                         ContextAction.AutomaticManagement -> Unit
+                        ContextAction.MoveToQueue -> moving = setOf(item.id)
+                        ContextAction.ForceRecheck -> actions.forceRecheck(item.id)
+                        ContextAction.ForceReannounce -> actions.forceReannounce(item.id)
                         ContextAction.Remove -> {
                             deleting = setOf(item.id)
                             contextFor = null
@@ -594,6 +728,39 @@ fun LibraryScreen(
                     }
                 },
                 onDismiss = { contextFor = null }
+            )
+        }
+
+        editingQueue?.let { (queue, isNew) ->
+            QueueEditorDialog(
+                queue = queue,
+                isNew = isNew,
+                onSave = { actions.saveQueue(it); editingQueue = null },
+                onDelete = if (isNew || queue.id == com.downloadhub.core.QueueRules.MAIN) null else {
+                    {
+                        actions.deleteQueue(queue.id)
+                        if (queueFilter == queue.id) queueFilter = null
+                        editingQueue = null
+                    }
+                },
+                onDismiss = { editingQueue = null }
+            )
+        }
+
+        if (creatingTorrent) {
+            CreateTorrentDialog(
+                onSeed = actions.addPrepared,
+                onDismiss = { creatingTorrent = false }
+            )
+        }
+
+        if (moving.isNotEmpty()) {
+            QueuePickerDialog(
+                queues = queues,
+                current = all.firstOrNull { it.id in moving }?.queueId,
+                count = moving.size,
+                onPick = { id -> actions.moveToQueue(moving, id); moving = emptySet() },
+                onDismiss = { moving = emptySet() }
             )
         }
 
@@ -728,7 +895,15 @@ private fun CategoryRail(
     onToggleSearch: () -> Unit,
     /** YouTube is a section beside it, for the same reason. */
     youTubeOpen: Boolean,
-    onToggleYouTube: () -> Unit
+    onToggleYouTube: () -> Unit,
+    rssOpen: Boolean = false,
+    onToggleRss: () -> Unit = {},
+    queues: List<QueueConfig> = emptyList(),
+    queueFilter: String? = null,
+    onQueue: (String) -> Unit = {},
+    onQueueStarted: (String, Boolean) -> Unit = { _, _ -> },
+    onEditQueue: (QueueConfig) -> Unit = {},
+    onNewQueue: () -> Unit = {}
 ) {
     // What the table is actually showing, so every number beside it is reachable.
     //
@@ -744,12 +919,16 @@ private fun CategoryRail(
         // deliberate act that lasts for the session.
         var collapsedSections by remember { mutableStateOf(emptySet<String>()) }
         val entries = sidebarEntries()
+        val railScroll = rememberScrollState()
+        Box(Modifier.width(width).fillMaxHeight()) {
+        androidx.compose.foundation.VerticalScrollbar(
+            adapter = androidx.compose.foundation.rememberScrollbarAdapter(railScroll),
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight()
+        )
         Column(
             modifier = Modifier
-                .width(width)
-                .fillMaxHeight()
-                .background(AppTheme.Palette.band)
-                .verticalScroll(rememberScrollState())
+                .fillMaxSize()
+                .verticalScroll(railScroll)
                 .padding(vertical = 6.dp)
         ) {
             // Built from the shared list rather than assembled here. The rail used to print
@@ -798,7 +977,7 @@ private fun CategoryRail(
                     // category, the group and the kind are all part of the same query,
                     // and two highlighted rows read as two choices when there is one.
                     selected = group == entry.group && category == LibraryCategory.ALL &&
-                        kind == LibraryKind.ALL && !searchOpen && !youTubeOpen,
+                        kind == LibraryKind.ALL && queueFilter == null && !searchOpen && !youTubeOpen && !rssOpen,
                     icon = StatusIcons.of(entry.group),
                     compact = compact
                 ) { onGroup(entry.group) }
@@ -807,7 +986,7 @@ private fun CategoryRail(
                     label = entry.category.label,
                     count = railCount(entry, scoped),
                     selected = category == entry.category && group == LibraryGroup.ALL &&
-                        kind == LibraryKind.ALL && !searchOpen && !youTubeOpen,
+                        kind == LibraryKind.ALL && queueFilter == null && !searchOpen && !youTubeOpen && !rssOpen,
                     icon = LibraryCategoryIcons.of(entry.category),
                     compact = compact
                 ) { onCategory(entry.category) }
@@ -817,13 +996,13 @@ private fun CategoryRail(
                 is RailEntry.Kind -> RailRow(
                     label = entry.kind.label,
                     count = railCount(entry, items),
-                    selected = kind == entry.kind && !searchOpen && !youTubeOpen,
+                    selected = kind == entry.kind && !searchOpen && !youTubeOpen && !rssOpen,
                     icon = LibraryKindIcons.of(entry.kind),
                     compact = compact
                 ) { onKind(entry.kind) }
 
                 RailEntry.Search -> RailRow(
-                    label = "Search",
+                    label = "Find torrents",
                     count = 0,
                     selected = searchOpen,
                     icon = Icons.Default.Search,
@@ -831,14 +1010,112 @@ private fun CategoryRail(
                 ) { onToggleSearch() }
 
                 RailEntry.YouTube -> RailRow(
-                    label = "YouTube",
+                    // Not "YouTube": the Kinds heading has a YouTube row that filters the
+                    // list, and two rows with one name did two different things.
+                    label = "Get from YouTube",
                     count = 0,
                     selected = youTubeOpen,
                     icon = DlmIcons.YouTube,
                     compact = compact
                 ) { onToggleYouTube() }
+
+                RailEntry.Rss -> RailRow(
+                    label = "RSS feeds",
+                    count = 0,
+                    selected = rssOpen,
+                    icon = Icons.Default.List,
+                    compact = compact
+                ) { onToggleRss() }
             }
         }
+            // Queues, after the fixed sections: they are the user's own, and there can be
+            // any number of them.
+            GroupHeader(
+                label = "Queues",
+                expanded = "Queues" !in collapsedSections,
+                onToggle = {
+                    collapsedSections = if ("Queues" in collapsedSections) collapsedSections - "Queues" else collapsedSections + "Queues"
+                }
+            )
+            if ("Queues" !in collapsedSections) {
+                queues.forEach { queue ->
+                    QueueRailRow(
+                        queue = queue,
+                        count = items.count { it.queueId == queue.id && it.status != DownloadStatus.COMPLETED },
+                        selected = queueFilter == queue.id && !searchOpen && !youTubeOpen && !rssOpen,
+                        compact = compact,
+                        onClick = { onQueue(queue.id) },
+                        onToggle = { onQueueStarted(queue.id, !queue.started) },
+                        onEdit = { onEditQueue(queue) }
+                    )
+                }
+                RailRow(
+                    label = "New queue",
+                    count = -1,
+                    selected = false,
+                    icon = Icons.Default.Add,
+                    compact = compact,
+                    onClick = onNewQueue
+                )
+            }
+        }
+        }
+}
+
+/**
+ * One queue in the rail: its name, what it still has to do, a start/stop button and a
+ * gear. The row itself narrows the list to the queue, as every other rail row does.
+ */
+@Composable
+private fun QueueRailRow(
+    queue: QueueConfig,
+    count: Int,
+    selected: Boolean,
+    compact: Boolean,
+    onClick: () -> Unit,
+    onToggle: () -> Unit,
+    onEdit: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 1.dp)
+            .hoverFill(selected = selected, shape = RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(start = if (compact) 7.dp else 14.dp, end = if (compact) 4.dp else 8.dp, top = 3.dp, bottom = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.List,
+            null,
+            Modifier.size(15.dp),
+            tint = if (selected) AppTheme.Palette.accent else AppTheme.Palette.faint
+        )
+        Spacer(Modifier.width(9.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                queue.name,
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) AppTheme.Palette.accent else AppTheme.Palette.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                queueSummary(queue) + if (count > 0) " · $count waiting" else "",
+                fontSize = 10.sp,
+                color = if (queue.started) AppTheme.success else AppTheme.Palette.faint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        IconButton(
+            16.dp,
+            if (queue.started) DlmIcons.Stop else Icons.Default.PlayArrow,
+            if (queue.started) "Stop queue" else "Start queue",
+            onToggle
+        )
+        IconButton(16.dp, Icons.Default.Settings, "Edit queue", onEdit)
     }
 }
 
@@ -928,7 +1205,15 @@ private fun RailRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (selected) AppTheme.Palette.accentContainer else Color.Transparent)
+            // A rounded pill inset from the rail's edges, as AB Download Manager draws it.
+            .padding(horizontal = 6.dp, vertical = 1.dp)
+            .hoverFill(selected = selected, shape = RoundedCornerShape(8.dp))
+            // A hairline in the accent on the selected entry, so it reads as chosen even on
+            // a dim container colour.
+            .then(
+                if (selected) Modifier.border(1.dp, AppTheme.Palette.accent.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                else Modifier
+            )
             .clickable(onClick = onClick)
             .padding(
                 start = if (compact) 7.dp else 14.dp,
@@ -960,7 +1245,7 @@ private fun RailRow(
             modifier = Modifier.weight(1f)
         )
         Text(
-            "$count",
+            if (count < 0) "" else "$count",
             fontSize = 11.sp,
             color = if (selected) AppTheme.Palette.accent else AppTheme.Palette.faint
         )
@@ -978,14 +1263,21 @@ private fun LibraryToolbar(
      */
     selectedCount: Int,
     onNew: () -> Unit,
+    /** How many ticked rows each button would act on; zero disables it. */
+    resumeCount: Int,
+    pauseCount: Int,
+    retryCount: Int,
     onResume: () -> Unit,
     onPause: () -> Unit,
+    /** Starts failed downloads again; on a finished one it says where the file is. */
+    onRetry: () -> Unit,
     /**
      * Stops what is ticked. Not Stop All, which stops everything.
      */
     onStop: () -> Unit,
+    /** Anything paused or failed that Resume All would restart. */
+    hasResumable: Boolean,
     onStartQueue: () -> Unit,
-    onStopQueue: () -> Unit,
     onStopAll: () -> Unit,
     onDelete: () -> Unit,
     onOpenFolder: () -> Unit,
@@ -1010,17 +1302,18 @@ private fun LibraryToolbar(
     ) {
         val compact = layout.style == ToolbarStyle.COMPACT
         ToolbarButton("New Download", Icons.Default.Add, highlighted = true, onClick = onNew, compact = compact, buttonWidth = layout.buttonDp)
-        ToolbarButton("Resume", Icons.Default.PlayArrow, enabled = hasSelection, badge = selectedCount, onClick = onResume, compact = compact, buttonWidth = layout.buttonDp)
-        ToolbarButton("Pause", DlmIcons.Pause, enabled = hasSelection, badge = selectedCount, onClick = onPause, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Resume", Icons.Default.PlayArrow, enabled = resumeCount > 0, badge = resumeCount, onClick = onResume, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Pause", DlmIcons.Pause, enabled = pauseCount > 0, badge = pauseCount, onClick = onPause, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Retry", Icons.Default.Refresh, enabled = retryCount > 0, badge = retryCount, onClick = onRetry, compact = compact, buttonWidth = layout.buttonDp)
     // Stop, for the selection only. Beside Pause because the two are the pair everybody
     // reaches for, and beside Stop All because that is the one it mirrors: Stop All stops
     // everything, this stops what is ticked. It needed its own button because pausing a
     // broken download keeps it in the session, still holding its slot, still holding the
     // swarm open - which is not what someone means when they press stop.
     ToolbarButton("Stop", DlmIcons.Stop, enabled = hasSelection, badge = selectedCount, onClick = onStop, compact = compact, buttonWidth = layout.buttonDp)
-        ToolbarButton("Start Queue", Icons.Default.PlayArrow, enabled = activeCount > 0, onClick = onStartQueue, compact = compact, buttonWidth = layout.buttonDp)
-        ToolbarButton("Stop Queue", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopQueue, compact = compact, buttonWidth = layout.buttonDp)
-        ToolbarButton("Stop All", DlmIcons.Stop, enabled = activeCount > 0, onClick = onStopAll, compact = compact, buttonWidth = layout.buttonDp)
+        // Two queue buttons, not three: Stop Queue and Stop All both paused everything.
+        ToolbarButton("Resume All", Icons.Default.PlayArrow, enabled = hasResumable, onClick = onStartQueue, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Pause All", DlmIcons.Pause, enabled = activeCount > 0, onClick = onStopAll, compact = compact, buttonWidth = layout.buttonDp)
         ToolbarButton("Delete", Icons.Default.Delete, enabled = hasSelection, onClick = onDelete, compact = compact, buttonWidth = layout.buttonDp)
         // Next to the search box rather than with the transfer actions: it is about the
         // destination, not about the queue.
@@ -1098,9 +1391,13 @@ private fun ToolbarButton(
 ) {
     val tint = when {
         !enabled -> AppTheme.Palette.faint
-        highlighted -> AppTheme.Palette.accentContainer
+        highlighted -> AppTheme.Palette.accent
         else -> AppTheme.Palette.muted
     }
+    // The icon of the highlighted button sits on the accent fill; the caption does not.
+    // Sharing one tint made the caption the container colour on a surface, which is
+    // near-white on white.
+    val iconTint = if (highlighted && enabled) AppTheme.Palette.onAccent else tint
     /**
      * No height on the button, and none on the caption.
      *
@@ -1119,6 +1416,7 @@ private fun ToolbarButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .width(if (compact) COMPACT_BUTTON_DP.dp else buttonWidth.dp)
+            .then(if (enabled) Modifier.hoverFill(shape = RoundedCornerShape(8.dp)) else Modifier)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 5.dp)
     ) {
@@ -1131,7 +1429,7 @@ private fun ToolbarButton(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(icon, null, Modifier.size(17.dp), tint = tint)
+                    Icon(icon, null, Modifier.size(17.dp), tint = iconTint)
                     // The count, in the icon's top-right corner and drawn over it.
                     //
                     // Over the icon rather than beside the caption because the caption
@@ -1396,6 +1694,11 @@ private fun ToolbarButton(
                     },
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
                 )
+                .border(
+                    1.dp,
+                    if (state == SelectionBoxState.OFF || !enabled) AppTheme.Palette.outline else AppTheme.Palette.accent,
+                    androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
+                )
                 .then(
                     if (enabled) {
                         Modifier.clickable(onClick = onClick)
@@ -1409,7 +1712,7 @@ private fun ToolbarButton(
                 SelectionBoxState.ON ->
                     Icon(
                         Icons.Default.Check, null, Modifier.size(11.dp),
-                        tint = AppTheme.Palette.accentContainer
+                        tint = AppTheme.Palette.onAccent
                     )
 
                 SelectionBoxState.MIXED -> Box(
@@ -1417,7 +1720,7 @@ private fun ToolbarButton(
                         .width(7.dp)
                         .height(2.dp)
                         .background(
-                            AppTheme.Palette.accentContainer,
+                            AppTheme.Palette.onAccent,
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(1.dp)
                         )
                 )
@@ -1484,6 +1787,8 @@ private fun DownloadRow(
     onResume: () -> Unit,
     onRetry: () -> Unit,
     onOpen: () -> Unit,
+    /** Opens the finished file itself, rather than its folder. */
+    onOpenFile: () -> Unit,
     /** Opens this download's own settings. */
     onOptions: () -> Unit,
     /** Right-click: the menu every other torrent client opens. */
@@ -1493,7 +1798,7 @@ private fun DownloadRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (checked) AppTheme.Palette.accentContainer else Color.Transparent)
+            .hoverFill(selected = checked)
             .clickable(onClick = onToggle)
             // The secondary button, read off the raw event rather than taken through
             // `combinedClickable`'s long-press.
@@ -1512,6 +1817,12 @@ private fun DownloadRow(
                     onContext(mouse.x, mouse.y)
                     event.changes.forEach { it.consume() }
                 }
+                // Double-click opens a finished file, as every file manager does.
+                if (mouse != null && mouse.button == java.awt.event.MouseEvent.BUTTON1 &&
+                    mouse.clickCount == 2 && item.status == DownloadStatus.COMPLETED
+                ) {
+                    onOpenFile()
+                }
             }
             .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1523,10 +1834,17 @@ private fun DownloadRow(
                 .background(
                     if (checked) AppTheme.Palette.accent else AppTheme.Palette.surface,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
+                )
+                // An unticked box is surface on surface; the edge is the only thing that
+                // shows it is there.
+                .border(
+                    1.dp,
+                    if (checked) AppTheme.Palette.accent else AppTheme.Palette.outline,
+                    androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
                 ),
             contentAlignment = Alignment.Center
         ) {
-            if (checked) Icon(Icons.Default.Check, null, Modifier.size(11.dp), tint = AppTheme.Palette.accentContainer)
+            if (checked) Icon(Icons.Default.Check, null, Modifier.size(11.dp), tint = AppTheme.Palette.onAccent)
         }
 
         // The dragged width, not a weight. A weight cannot be dragged - the user has no
@@ -1540,27 +1858,38 @@ private fun DownloadRow(
                 .width(ColumnDividers.resolvedWidthOf(layout, widths, tableDp, DownloadColumn.NAME).dp)
                 .padding(end = 6.dp)
         ) {
-            Text(
-                item.fileName,
-                fontSize = 12.sp,
-                color = palette.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (running) {
-                Spacer(Modifier.height(3.dp))
-                LinearProgressIndicator(
-                    progress = { item.progressPercent / 100f },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = AppTheme.Palette.accent,
-                    trackColor = AppTheme.Palette.raised
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // A shape per kind of file, as in AB Download Manager's list.
+                val kindIcon = LibraryCategory.entries
+                    .firstOrNull { it != LibraryCategory.ALL && it.matches(item) }
+                    ?.let(LibraryCategoryIcons::of)
+                    ?: if (item.isTorrent) DlmIcons.Folder else DlmIcons.ArrowDownward
+                Icon(
+                    kindIcon,
+                    null,
+                    Modifier.size(16.dp),
+                    tint = if (running) AppTheme.Palette.accent else AppTheme.Palette.muted
                 )
-            } else {
-                Text(
-                    item.category.name.lowercase().replaceFirstChar { it.uppercase() },
-                    fontSize = 10.sp,
-                    color = palette.onSurfaceVariant
-                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(
+                        item.fileName,
+                        fontSize = 12.sp,
+                        color = palette.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        if (item.totalBytes > 0 && item.status != DownloadStatus.COMPLETED) {
+                            DisplayFormat.bytes(item.bytesDownloaded) + " of " + DisplayFormat.bytes(item.totalBytes)
+                        } else {
+                            item.category.name.lowercase().replaceFirstChar { it.uppercase() }
+                        },
+                        fontSize = 10.sp,
+                        color = palette.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
             }
         }
 
@@ -1574,11 +1903,10 @@ private fun DownloadRow(
             )
         }
         if (layout.showStatus) {
-            Cell(
-                DisplayFormat.status(item),
+            StatusCell(
+                item,
                 ColumnDividers.resolvedWidthOf(layout, widths, tableDp, DownloadColumn.STATUS).dp,
-                palette,
-                colour = statusColour(item.status, palette)
+                statusColour(item.status, palette)
             )
         }
         if (layout.showSpeed) {
@@ -1670,41 +1998,115 @@ private fun IconButton(
 
 private fun statusColour(status: DownloadStatus, palette: androidx.compose.material3.ColorScheme): Color =
     when (status) {
-        DownloadStatus.COMPLETED -> AppTheme.Palette.accent
+        // Done reads as done in every palette: the accent is orange in Sunset and red in
+        // Rose, and a finished download in either looked like a warning.
+        DownloadStatus.COMPLETED -> AppTheme.success
         DownloadStatus.RUNNING -> AppTheme.Palette.accent
         DownloadStatus.FAILED -> palette.error
         else -> palette.onSurfaceVariant
     }
 
+/**
+ * What an empty list says. A blank queue gets the two ways in; a filter that matches
+ * nothing says so, because "nothing here" on a full queue reads as lost downloads.
+ */
 @Composable
-private fun StatusBar(state: DesktopUiState, all: List<DownloadItem>) {
-    Surface(color = AppTheme.Palette.band) {
+private fun EmptyList(filtered: Boolean, onNew: () -> Unit, onFind: () -> Unit, modifier: Modifier) {
+    Column(
+        modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(DlmIcons.ArrowDownward, null, Modifier.size(36.dp), tint = AppTheme.Palette.faint)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            if (filtered) "Nothing matches this filter" else "No downloads yet",
+            style = MaterialTheme.typography.titleSmall,
+            color = AppTheme.Palette.onSurface
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (filtered) "Pick All Downloads in the sidebar to see everything."
+            else "Paste a link or magnet, open a .torrent, or search for one. Ctrl+N works too.",
+            fontSize = 12.sp,
+            color = AppTheme.Palette.muted
+        )
+        if (!filtered) {
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.material3.Button(onClick = onNew) { Text("New download") }
+                androidx.compose.material3.OutlinedButton(onClick = onFind) { Text("Find torrents") }
+            }
+        }
+    }
+}
+
+/** Hands a finished file to whatever Windows opens it with. Off the UI thread: the shell can stall. */
+internal fun openWithSystem(path: String?) {
+    val file = path?.let { java.io.File(it) }?.takeIf { it.exists() } ?: return
+    Thread { runCatching { java.awt.Desktop.getDesktop().open(file) } }.start()
+}
+
+
+/**
+ * One strip along the bottom: the transfer readout on the left, the last message on the
+ * right. There used to be two stacked strips that each said half of this.
+ */
+@Composable
+private fun StatusBar(state: DesktopUiState, all: List<DownloadItem>, onToggleAltSpeed: () -> Unit = {}) {
+    Surface(
+        color = AppTheme.Palette.band,
+        // A hairline above, so the strip reads as the card's footer rather than its last row.
+        border = androidx.compose.foundation.BorderStroke(1.dp, AppTheme.Palette.outlineVariant)
+    ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 5.dp),
+            modifier = Modifier.fillMaxWidth().padding(end = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Spacer(Modifier.weight(1f))
+            // The readout keeps its natural width and the message takes what is left. The
+            // message had no weight, so a long one squeezed the readout until every word
+            // wrapped one letter per line.
+            TorrentStatusBar(all)
+            Spacer(Modifier.width(16.dp))
+            Text(
+                state.message.orEmpty(),
+                fontSize = 11.sp,
+                color = AppTheme.Palette.accent,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.End,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(16.dp))
+            // qBittorrent's turtle: alternative speed limits, on and off with one click.
+            // Lit when it applies, whether switched on by hand or by its schedule.
+            val altOn = state.settings.altSpeedActive()
+            Text(
+                if (altOn) {
+                    "Alt speed ↓" + DisplayFormat.bytes(state.settings.altDownloadLimitBytesPerSecond) + "/s"
+                } else {
+                    "Alt speed off"
+                },
+                fontSize = 11.sp,
+                color = if (altOn) AppTheme.Palette.onAccent else AppTheme.Palette.muted,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (altOn) AppTheme.Palette.accent else Color.Transparent)
+                    .border(1.dp, if (altOn) AppTheme.Palette.accent else AppTheme.Palette.outlineVariant, RoundedCornerShape(6.dp))
+                    .clickable(onClick = onToggleAltSpeed)
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            )
+            Spacer(Modifier.width(12.dp))
             Text(
                 "${DownloadLibrary.activeCount(all)} active",
                 fontSize = 11.sp,
-                color = AppTheme.Palette.muted
+                color = AppTheme.Palette.muted,
+                maxLines = 1,
+                softWrap = false
             )
-            Spacer(Modifier.width(16.dp))
-            Text(
-                DisplayFormat.speed(DownloadLibrary.totalSpeed(all)),
-                fontSize = 11.sp,
-                color = AppTheme.Palette.muted
-            )
-            if (state.message != null) {
-                Spacer(Modifier.width(16.dp))
-                Text(
-                    state.message,
-                    fontSize = 11.sp,
-                    color = AppTheme.Palette.accent
-                )
-            }
         }
     }
 }
@@ -1744,5 +2146,10 @@ internal fun QueuedDownload.toCoreItem() = DownloadItem(
     seeds = seeds,
     peerCount = peerCount,
     uploadedBytes = uploadedBytes,
-    completedAt = completedAt
+    completedAt = completedAt,
+    queueId = queueId,
+    request = com.downloadhub.core.HttpRequestOptions(requestHeaders, cookies, username, password)
 )
+
+/** How long a status message stays before clearing itself. */
+private const val MESSAGE_SHOWN_MILLIS = 6_000L

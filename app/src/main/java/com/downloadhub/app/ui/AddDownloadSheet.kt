@@ -31,6 +31,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -83,7 +84,9 @@ fun AddDownloadSheet(
      */
     onOpenYouTubeTab: (String) -> Unit,
     onPickTorrent: (Uri) -> Unit,
-    onScanPage: (String) -> Unit
+    onScanPage: (String) -> Unit,
+    /** Headers, cookies and login typed for this link; sent just before onAdd. */
+    onRequestOptions: (com.downloadhub.core.HttpRequestOptions) -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val clipboard = LocalClipboardManager.current
@@ -91,6 +94,8 @@ fun AddDownloadSheet(
     var fileName by rememberSaveable(seed.fileName) { mutableStateOf(seed.fileName.orEmpty()) }
     var quality by rememberSaveable(seed.link) { mutableStateOf(seed.quality) }
     var audioFormat by rememberSaveable(seed.link) { mutableStateOf(seed.audioFormat) }
+    var request by remember(seed.link) { mutableStateOf(com.downloadhub.core.HttpRequestOptions()) }
+    var showRequest by remember(seed.link) { mutableStateOf(false) }
     var category by remember(seed.source) {
         mutableStateOf(
             seed.category ?: when (seed.quality) {
@@ -219,10 +224,24 @@ fun AddDownloadSheet(
                     }
                 }
                 CategorySelector(category) { category = it }
+                // What the link sends: only some sites need it, so it stays folded away.
+                if (effectiveSource == DownloadSource.HTTP) {
+                    if (showRequest) {
+                        RequestFields(
+                            initial = request,
+                            actionLabel = null,
+                            onAction = {},
+                            onChange = { request = it }
+                        )
+                    } else {
+                        TextButton(onClick = { showRequest = true }) { Text("Headers, cookies and login...") }
+                    }
+                }
             }
 
             Button(
                 onClick = {
+                    if (!request.isEmpty) onRequestOptions(request)
                     onAdd(
                         link,
                         fileName.takeIf { it.isNotBlank() },
