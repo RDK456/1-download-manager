@@ -181,7 +181,8 @@ class CaptureServer(
             url = link,
             referer = json.referer?.take(1024),
             fileName = json.fileName?.take(256),
-            cookies = json.cookies?.take(8 * 1024)
+            cookies = json.cookies?.take(8 * 1024),
+            review = json.review == true
         )
     }
 
@@ -233,7 +234,9 @@ data class CapturePayload(
     val referer: String? = null,
     val fileName: String? = null,
     /** The site's cookies for the link, as a Cookie header value, so a signed-in download works. */
-    val cookies: String? = null
+    val cookies: String? = null,
+    /** Sent from the right-click menu: always show the Add Download window. */
+    val review: Boolean? = null
 )
 
 /** A validated link ready to be queued. */
@@ -242,5 +245,6 @@ data class CaptureRequest(
     val referer: String? = null,
     val fileName: String? = null,
     /** The site's cookies for the link, as a Cookie header value, so a signed-in download works. */
-    val cookies: String? = null
+    val cookies: String? = null,
+    val review: Boolean = false
 )

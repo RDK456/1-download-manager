@@ -223,8 +223,10 @@ object LinkParser {
         mimeType: String? = null
     ): String {
         contentDispositionName.find(contentDisposition.orEmpty())?.let { match ->
-            val encoded = match.groupValues.getOrNull(1)
-            val plain = match.groupValues.getOrNull(2)
+            // An unmatched group is "", not null: without ifEmpty a plain `filename=`
+            // took the encoded branch, decoded "" and fell back to the URL's last segment.
+            val encoded = match.groupValues.getOrNull(1)?.ifEmpty { null }
+            val plain = match.groupValues.getOrNull(2)?.ifEmpty { null }
             val candidate = if (encoded != null) {
                 runCatching { URLDecoder.decode(encoded, StandardCharsets.UTF_8.name()) }.getOrNull()
             } else {

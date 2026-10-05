@@ -58,6 +58,8 @@ fun main(args: Array<String>) {
     // Before any connection is made: the "Use the Windows proxy" setting relies on the
     // default proxy selector reading the system proxy, which it only does if told at start.
     System.setProperty("java.net.useSystemProxies", "true")
+    // After the line above, so the selector it wraps already follows the Windows proxy.
+    AddressFallbackTunnel.install()
     // One copy, always. Every click on the app's icon used to start another one, each
     // with its own window and its own writes to the same queue file - and a magnet link
     // opened from a browser started a second copy rather than showing the first.
@@ -147,6 +149,12 @@ fun main(args: Array<String>) {
              * each time is what makes a resized dialog snap back to its default every
              * time it opens.
              */
+            // A dialog, not a top-level window: owned by the app, kept above it, and left
+            // floating by tiling window managers instead of being tiled into a strip.
+            val quickAddState = androidx.compose.ui.window.rememberDialogState(
+                position = WindowPosition(Alignment.Center),
+                size = DpSize(640.dp, 420.dp)
+            )
             val preDownloadState = rememberWindowState(
                 position = WindowPosition(Alignment.Center),
                 size = DpSize(980.dp, 640.dp)
@@ -360,6 +368,36 @@ fun main(args: Array<String>) {
                         if (LinkParser.sourceFor(pending.link) == DownloadSource.YOUTUBE) {
                             pendingAdd = null
                             youTubePrefill = pending.link
+                            return@let
+                        }
+                        // A plain link has no files to choose: AB Download Manager's short
+                        // window - category, folder, name, size - rather than the torrent one.
+                        if (!pending.isTorrent) {
+                            androidx.compose.ui.window.DialogWindow(
+                                onCloseRequest = { pendingAdd = null },
+                                title = "Add Download - 1 download manager",
+                                state = quickAddState,
+                                resizable = true
+                            ) {
+                                LaunchedEffect(window) {
+                                    window.iconImages = AppArtwork.windowIcons()
+                                    window.minimumSize = java.awt.Dimension(520, 300)
+                                }
+                                QuickAddDialog(
+                                    pending = pending,
+                                    root = state.settings.downloadDirFile(),
+                                    rules = state.settings.categoryRules.map { it.toRule() },
+                                    onPickDirectory = { pickFolder(File(state.settings.downloadDir)) },
+                                    onExpand = { open ->
+                                        quickAddState.size = DpSize(640.dp, if (open) 660.dp else 420.dp)
+                                    },
+                                    onConfirm = { request ->
+                                        pendingAdd = null
+                                        controller.actions.addPrepared(request)
+                                    },
+                                    onDismiss = { pendingAdd = null }
+                                )
+                            }
                             return@let
                         }
                         Window(

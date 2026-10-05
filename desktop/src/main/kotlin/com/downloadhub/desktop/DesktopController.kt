@@ -700,7 +700,8 @@ class DesktopController(
         request.referer?.takeIf { it.isNotBlank() }?.let { capturedReferers[request.url] = it }
         request.cookies?.takeIf { it.isNotBlank() }?.let { capturedCookies[request.url] = it }
         val review = onDownloadNeedsReview
-        if (review != null && !settingsState.value.browserCaptureAutoQueue) {
+        // The right-click menu always asks; a caught download asks only if the setting says so.
+        if (review != null && (request.review || !settingsState.value.browserCaptureAutoQueue)) {
             review(request.url)
             return
         }

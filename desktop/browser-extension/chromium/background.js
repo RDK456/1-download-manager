@@ -54,6 +54,7 @@ async function sendToApp(url, options = {}) {
         referer: options.referer || "",
         fileName: options.fileName || "",
         cookies: options.cookies || "",
+        review: Boolean(options.review),
       }),
     });
     if (response.status === 403) {
@@ -135,5 +136,50 @@ downloadsApi.downloads.onCreated.addListener(async (item) => {
     await downloadsApi.downloads.erase({ id: item.id });
   } catch (error) {
     // Already finished or gone; the app has its own copy either way.
+  }
+});
+
+// ---- right-click "Download with 1DM" ------------------------------------------------
+//
+// On a link, an image, a video or audio element, or selected text containing a link.
+// Sent whatever the "catch every download" switch says: choosing it is the user asking.
+const menuApi = typeof browser !== "undefined" ? browser : chrome;
+const menus = menuApi.menus || menuApi.contextMenus;
+
+menuApi.runtime.onInstalled.addListener(async () => {
+  await menus.removeAll();
+  menus.create({
+    id: "dlm-download",
+    title: "Download with 1DM",
+    contexts: ["link", "image", "video", "audio"],
+  });
+  menus.create({
+    id: "dlm-download-selection",
+    title: "Download link with 1DM",
+    contexts: ["selection"],
+  });
+});
+
+function firstLinkIn(text) {
+  const match = (text || "").match(/(magnet:\?\S+|https?:\/\/\S+)/i);
+  return match ? match[1] : "";
+}
+
+menus.onClicked.addListener(async (info, tab) => {
+  const url =
+    info.menuItemId === "dlm-download-selection"
+      ? firstLinkIn(info.selectionText)
+      : info.linkUrl || info.srcUrl || "";
+  if (!url) return;
+  const result = await sendToApp(url, {
+    referer: info.pageUrl || "",
+    review: true, // chosen from the menu: show the Add Download window
+    cookies: /^https?:/i.test(url) ? await cookieHeaderFor(url) : "",
+  });
+  const text = result.ok
+    ? "Sent to 1 download manager"
+    : "1 download manager: " + (result.reason || "not connected");
+  if (tab && tab.id !== undefined) {
+    menuApi.tabs.sendMessage(tab.id, { type: "dlm-toast", text }).catch(() => {});
   }
 });

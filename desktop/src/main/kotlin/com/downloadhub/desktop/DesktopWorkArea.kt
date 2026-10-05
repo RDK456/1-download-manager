@@ -42,6 +42,11 @@ class DesktopWorkArea(private val settings: () -> DesktopSettings) : WorkArea {
         destinationTreeUri: String?,
         category: DownloadCategory
     ): PublishedTarget {
+        // A folder chosen in the Add Download window wins over the category rules; the
+        // window already resolved the category to that folder when it was offered.
+        destinationTreeUri?.takeIf { it.isNotBlank() }?.let { chosen ->
+            return publishInto(source, preferredName, File(chosen))
+        }
         val current = settings()
         val root = current.downloadDirFile()
         if (!root.exists()) root.mkdirs()

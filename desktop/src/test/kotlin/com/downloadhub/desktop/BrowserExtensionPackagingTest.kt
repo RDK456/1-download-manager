@@ -21,6 +21,16 @@ class BrowserExtensionPackagingTest {
     private fun build(dir: String) =
         listOf(File(dir), File("../desktop/$dir")).firstOrNull { it.isDirectory }
 
+    /** Mozilla rejects a new Firefox extension, or a new version, without this declaration. */
+    @Test
+    fun firefoxDeclaresItsDataCollection() {
+        val text = manifest("firefox").readText()
+        assertTrue(
+            "the Firefox manifest needs browser_specific_settings.gecko.data_collection_permissions",
+            text.contains("\"data_collection_permissions\"")
+        )
+    }
+
     @Test
     fun bothBuildsExist() {
         listOf("chromium", "firefox").forEach { build ->

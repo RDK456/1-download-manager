@@ -163,3 +163,8 @@ function probeApp() {
 
 probeApp();
 setInterval(probeApp, 4000);
+
+// A short confirmation for the right-click "Download with 1DM".
+chrome.runtime.onMessage.addListener((message) => {
+  if (message && message.type === "dlm-toast") notify(message.text);
+});

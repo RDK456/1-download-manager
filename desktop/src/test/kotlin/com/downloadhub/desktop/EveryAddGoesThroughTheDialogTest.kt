@@ -78,7 +78,7 @@ class EveryAddGoesThroughTheDialogTest {
             "and the fallback is not unconditional - it applies only before the window " +
                 "exists, or when the user turned on adding browser downloads straight " +
                 "away:\n$body",
-            body.contains("if (review != null && !settingsState.value.browserCaptureAutoQueue)")
+            body.contains("if (review != null && (request.review || !settingsState.value.browserCaptureAutoQueue))")
         )
     }
 

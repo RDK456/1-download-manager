@@ -223,7 +223,9 @@ class DownloadEngine(
                     // The shared one, not a new bucket per download.
                     speedLimiter = globalLimiter,
                     itemSpeedLimiter = itemLimiter,
-                    destinationTreeUri = { null }
+                    // The folder chosen in the Add Download window, until the download
+                    // finishes and outputPath becomes the file itself.
+                    destinationTreeUri = { item.outputPath?.takeIf { it.isNotBlank() && !java.io.File(it).isFile } }
                 )
                 downloader.download(item.toCoreItem())
             } catch (error: Throwable) {
