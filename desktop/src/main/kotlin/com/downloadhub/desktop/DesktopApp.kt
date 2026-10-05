@@ -81,7 +81,8 @@ fun SettingsDialog(
     onToggleCapture: (Boolean) -> Unit,
     extensionReady: Boolean,
     extensionPath: String,
-    onOpenExtensionFolder: () -> Unit
+    onOpenExtensionFolder: () -> Unit,
+    onAddToBrowser: (InstalledBrowser) -> Unit = {}
 ) {
     var section by remember { mutableStateOf(SettingsSection.APPEARANCE) }
     var folder by remember { mutableStateOf(settings.downloadDir) }
@@ -368,14 +369,34 @@ fun SettingsDialog(
                                 )
                                 SelectionContainerCompat(settings.captureToken)
                             }
-                            Spacer(Modifier.height(10.dp))
+                            SectionHeading("Add to your browser")
+                            // Every browser Windows has registered, read off the main thread.
+                            var browsers by remember { mutableStateOf<List<InstalledBrowser>?>(null) }
+                            LaunchedEffect(Unit) {
+                                browsers = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BrowserInstall.find() }
+                            }
+                            when {
+                                browsers == null -> Text("Looking for browsers...", style = MaterialTheme.typography.bodySmall)
+                                browsers!!.isEmpty() -> Text(
+                                    "No browser found. Use the folder below.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                else -> browsers!!.forEach { browser ->
+                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                        Text(browser.name, modifier = Modifier.weight(1f))
+                                        OutlinedButton(onClick = { onAddToBrowser(browser) }) { Text("Add to ${browser.name}") }
+                                    }
+                                }
+                            }
                             Text(
-                                "Install the extension: open the folder, then in Chrome or Edge choose " +
-                                    "Extensions, turn on Developer mode, and pick that folder.",
+                                "Chrome, Edge, Brave and the like open on their Extensions page with the folder " +
+                                    "beside it: turn on Developer mode and drag the folder in. Firefox and Zen show " +
+                                    "their own install prompt. Either way it connects to the app by itself - browsers " +
+                                    "do not let any program install an extension without you agreeing.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(Modifier.height(4.dp))
+                            Spacer(Modifier.height(10.dp))
                             SelectionContainerCompat(extensionPath)
                             OutlinedButton(onClick = onOpenExtensionFolder) {
                                 Text(if (extensionReady) "Open extension folder" else "Extract and open folder")

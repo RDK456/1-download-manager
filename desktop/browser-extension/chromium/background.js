@@ -34,31 +34,58 @@ async function isAppReachable(port) {
  * Returns a short status string rather than throwing, because every caller is a
  * click handler that has nothing useful to do with an exception.
  */
+/**
+ * Asks the app for its pairing code, so nothing has to be copied across by hand.
+ * The app hands it only to a browser extension, never to a web page.
+ */
+async function pairWithApp(port) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/pair`, {
+      method: "POST",
+      headers: { "X-DLM-Pair": "1" },
+    });
+    if (!response.ok) return "";
+    const data = await response.json();
+    if (!data.token) return "";
+    await (typeof browser !== "undefined" ? browser : chrome).storage.local.set({ token: data.token });
+    return data.token;
+  } catch (error) {
+    return "";
+  }
+}
+
 async function sendToApp(url, options = {}) {
   if (!url) {
     return { ok: false, reason: "no link" };
   }
-  const { port, token } = await getConfig();
+  const config = await getConfig();
+  const port = config.port;
+  let token = config.token || (await pairWithApp(port));
   if (!token) {
-    return { ok: false, reason: "not paired" };
+    return { ok: false, reason: "app not running" };
   }
-  try {
-    const response = await fetch(`http://127.0.0.1:${port}/queue`, {
+  const body = JSON.stringify({
+    url: url,
+    referer: options.referer || "",
+    fileName: options.fileName || "",
+    cookies: options.cookies || "",
+    review: Boolean(options.review),
+  });
+  const post = (code) =>
+    fetch(`http://127.0.0.1:${port}/queue`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-DLM-Token": token,
-      },
-      body: JSON.stringify({
-        url: url,
-        referer: options.referer || "",
-        fileName: options.fileName || "",
-        cookies: options.cookies || "",
-        review: Boolean(options.review),
-      }),
+      headers: { "Content-Type": "application/json", "X-DLM-Token": code },
+      body: body,
     });
+  try {
+    let response = await post(token);
     if (response.status === 403) {
-      return { ok: false, reason: "token rejected" };
+      // The app's code changed (reinstalled, or reset): pair again once and retry.
+      const fresh = await pairWithApp(port);
+      if (fresh) response = await post(fresh);
+    }
+    if (response.status === 403) {
+      return { ok: false, reason: "pairing refused" };
     }
     if (!response.ok) {
       return { ok: false, reason: `app said ${response.status}` };
@@ -79,11 +106,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "status") {
     getConfig().then(async (config) => {
-      sendResponse({
-        port: config.port,
-        paired: Boolean(config.token),
-        reachable: await isAppReachable(config.port),
-      });
+      const reachable = await isAppReachable(config.port);
+      const token = config.token || (reachable ? await pairWithApp(config.port) : "");
+      sendResponse({ port: config.port, paired: Boolean(token), reachable });
     });
     return true;
   }
@@ -183,3 +208,11 @@ menus.onClicked.addListener(async (info, tab) => {
     menuApi.tabs.sendMessage(tab.id, { type: "dlm-toast", text }).catch(() => {});
   }
 });
+
+// Pairs as soon as the extension is installed or the browser starts, if the app is up.
+async function pairIfNeeded() {
+  const config = await getConfig();
+  if (!config.token) await pairWithApp(config.port);
+}
+(typeof browser !== "undefined" ? browser : chrome).runtime.onInstalled.addListener(pairIfNeeded);
+(typeof browser !== "undefined" ? browser : chrome).runtime.onStartup.addListener(pairIfNeeded);

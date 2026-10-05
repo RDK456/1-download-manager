@@ -97,6 +97,9 @@ class ExtensionInstaller(private val installDir: File = File(AppPaths.home, "bro
         }
     }.getOrDefault(false)
 
+    /** The up-to-date extracted build for a browser family, or null if it could not be written. */
+    fun folder(build: String): File? = if (installBuild(build)) File(installDir, build) else null
+
     /** The path to show the user, since they have to select it themselves. */
     fun pathForDisplay(): String = installDir.absolutePath
 }

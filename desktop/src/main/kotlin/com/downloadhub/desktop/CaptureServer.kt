@@ -134,6 +134,20 @@ class CaptureServer(
             return
         }
 
+        // The extension asks for the pairing code itself; see CaptureRules.mayPair for
+        // why only an extension can get it.
+        if (path == "/pair") {
+            if (method != "POST") {
+                respond(client, 405, """{"ok":false,"error":"use POST"}""")
+            } else if (!CaptureRules.mayPair(headers["host"], headers["x-dlm-pair"], headers["origin"])) {
+                respond(client, 403, """{"ok":false,"error":"not an extension"}""")
+            } else {
+                respond(client, 200, """{"ok":true,"token":"$token"}""")
+                onMessage("Browser extension connected")
+            }
+            return
+        }
+
         if (path != "/queue") {
             respond(client, 404, """{"ok":false,"error":"not found"}""")
             return

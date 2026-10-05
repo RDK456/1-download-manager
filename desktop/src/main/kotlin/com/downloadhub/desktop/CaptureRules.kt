@@ -39,6 +39,28 @@ object CaptureRules {
         return difference == 0
     }
 
+    /**
+     * True when a request may be handed the pairing code, so the extension pairs itself
+     * instead of the user copying the code across.
+     *
+     * A web page cannot add a custom header to a request to another site without a CORS
+     * preflight, and this server approves none - so the X-DLM-Pair header alone rules
+     * pages out, and an http(s) Origin is refused as a second lock. A browser extension
+     * with host permission skips the preflight, which makes it the caller that gets
+     * through. The loopback Host check is the same DNS-rebinding guard as [isAuthorised].
+     */
+    fun mayPair(hostHeader: String?, pairHeader: String?, origin: String?): Boolean {
+        val host = hostHeader?.substringBefore(':')?.trim()?.lowercase(Locale.US)
+        if (host == null || host !in ALLOWED_HOSTS) return false
+        if (pairHeader?.trim() != "1") return false
+        val from = origin?.trim()?.lowercase(Locale.US) ?: return true
+        return EXTENSION_ORIGINS.any { from.startsWith(it) }
+    }
+
+    private val EXTENSION_ORIGINS = listOf(
+        "chrome-extension://", "moz-extension://", "safari-web-extension://", "extension://"
+    )
+
     /** Validates a submitted link, returning null when it is not something we can queue. */
     fun normaliseLink(raw: String?): String? {
         val link = raw?.trim().orEmpty()

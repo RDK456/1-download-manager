@@ -468,7 +468,8 @@ fun main(args: Array<String>) {
                             onToggleCapture = controller.actions.setBrowserCapture,
                             extensionReady = state.extensionReady,
                             extensionPath = state.extensionPath,
-                            onOpenExtensionFolder = controller.actions.openExtensionFolder
+                            onOpenExtensionFolder = controller.actions.openExtensionFolder,
+                            onAddToBrowser = controller.actions.addExtensionTo
                         )
                     }
 

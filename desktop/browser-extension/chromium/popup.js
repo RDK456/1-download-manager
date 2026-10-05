@@ -8,14 +8,14 @@ const ext = typeof browser !== "undefined" ? browser : chrome;
 autoInput.addEventListener("change", () => ext.storage.local.set({ autoCapture: autoInput.checked }));
 
 function render(status) {
-  if (!status.paired) {
-    state.className = "bad";
-    state.textContent = "Not paired. Copy the pairing code from the app's Settings page.";
-    return;
-  }
   if (!status.reachable) {
     state.className = "bad";
-    state.textContent = "The app is not running. Start it and reload this page.";
+    state.textContent = "The app is not running. Start it and this connects by itself.";
+    return;
+  }
+  if (!status.paired) {
+    state.className = "bad";
+    state.textContent = "Could not connect by itself. Paste the pairing code from the app's Settings > Browser.";
     return;
   }
   state.className = "ok";

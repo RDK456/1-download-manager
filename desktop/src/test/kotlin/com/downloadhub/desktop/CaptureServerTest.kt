@@ -38,6 +38,35 @@ class CaptureServerTest {
         return code to text
     }
 
+    /** Raw, because HttpURLConnection will not send an Origin header - which is what a browser sends. */
+    private fun pair(server: CaptureServer, vararg headers: String): Pair<Int, String> {
+        java.net.Socket("127.0.0.1", server.boundPort).use { socket ->
+            val request = buildString {
+                append("POST /pair HTTP/1.1\r\nHost: 127.0.0.1:${server.boundPort}\r\nContent-Length: 0\r\n")
+                headers.forEach { append(it).append("\r\n") }
+                append("\r\n")
+            }
+            socket.getOutputStream().write(request.toByteArray())
+            val reply = socket.getInputStream().bufferedReader().readText()
+            return reply.substringAfter(' ').substringBefore(' ').toInt() to reply.substringAfter("\r\n\r\n")
+        }
+    }
+
+    @Test
+    fun anExtensionPairsItselfAndAWebPageCannot() {
+        val server = CaptureServer(token, onQueue = {})
+        try {
+            server.start()
+            val (code, body) = pair(server, "X-DLM-Pair: 1", "Origin: chrome-extension://abcdefghijklmnop")
+            assertEquals(200, code)
+            assertTrue("the extension must be handed the app's code", body.contains(token))
+            assertEquals(403, pair(server, "X-DLM-Pair: 1", "Origin: https://evil.example").first)
+            assertEquals(403, pair(server, "Origin: chrome-extension://abcdefghijklmnop").first)
+        } finally {
+            server.stop()
+        }
+    }
+
     @Test
     fun theServerBindsToLoopback() {
         val server = CaptureServer(token, onQueue = {})

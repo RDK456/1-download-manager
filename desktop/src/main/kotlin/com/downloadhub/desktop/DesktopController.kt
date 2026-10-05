@@ -188,6 +188,8 @@ data class DesktopActions(
     val consumeMessage: () -> Unit,
     val setTorrentsTab: (Boolean) -> Unit,
     val openExtensionFolder: () -> Unit,
+    /** Opens a browser where the extension is added, with the extension ready for it. */
+    val addExtensionTo: (InstalledBrowser) -> Unit = {},
     /**
      * Opens the folder a finished download sits in, with the file selected.
      *
@@ -976,6 +978,18 @@ class DesktopController(
         refresh()
     }
 
+    /** Opens [browser] on its extension install, then says the one thing left to do there. */
+    fun addExtensionTo(browser: InstalledBrowser) {
+        val opened = BrowserInstall.open(browser) { build -> extension.folder(build) }
+        _messages.value = when {
+            !opened -> "Could not open ${browser.name}. The extension is in ${extension.pathForDisplay()}"
+            browser.family == BrowserFamily.CHROMIUM ->
+                "In ${browser.name}: turn on Developer mode, then drag the opened 'chromium' folder onto the page. It connects by itself."
+            else -> "${browser.name} is asking to add the extension. Accept it and it connects by itself."
+        }
+        refresh()
+    }
+
     /**
      * Opens the download folder in Explorer.
      *
@@ -1242,6 +1256,7 @@ class DesktopController(
         consumeMessage = ::consumeMessage,
         setTorrentsTab = ::setTorrentsTab,
         openExtensionFolder = ::openExtensionFolder,
+        addExtensionTo = ::addExtensionTo,
         openDownloadFolder = ::openDownloadFolder,
         revealDownload = ::revealDownload,
         checkForUpdates = ::checkForUpdates,
