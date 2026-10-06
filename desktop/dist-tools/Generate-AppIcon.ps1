@@ -1,7 +1,8 @@
 # Draws the Windows application icon from the same glyph as the Android one.
 #
 # The Android launcher icon is app/src/main/res/drawable/ic_launcher_foreground.xml
-# (Material Symbols Rounded "download", filled, weight 700, in white) over
+# (Material Symbols Rounded "download" and a "counter_1" badge, filled, weight 700,
+# in white) over
 # ic_launcher_background.xml (the app's indigo). This renders that same path into a
 # multi-size .ico, so the two platforms are the same drawing. Change one, re-run this.
 #
@@ -23,8 +24,9 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName PresentationCore, WindowsBase
 
-# Google's glyph exactly as published, in its 960-unit box (y from -960 to 0).
+# Google's glyphs exactly as published, in their 960-unit box (y from -960 to 0).
 $Glyph = 'M462.05-345.05Q453.1-349.09 446-356L284-518q-14-14.27-13.5-33.64Q271-571 284.61-585q14.79-14.15 34.09-13.58Q338-598 352-584l81 81v-275q0-19.63 13.68-33.81Q460.35-826 480.18-826q19.82 0 33.32 14.19Q527-797.63 527-778v275l82-81q13.8-14 32.25-14.58 18.45-.58 32.91 13.5Q689-571 688.5-551.18T674-517L514-356q-7.17 6.91-16.33 10.95-9.16 4.05-17.91 4.05-8.76 0-17.71-4.05ZM229-135q-39.05 0-66.52-27.48Q135-189.95 135-229v-96q0-19.75 13.68-33.38Q162.35-372 182.18-372q19.82 0 33.32 13.62Q229-344.75 229-325v96h502v-96q0-19.75 13.68-33.38Q758.35-372 778.09-372q19.73 0 33.82 13.62Q826-344.75 826-325v96q0 39.05-27.77 66.52Q770.46-135 731-135H229Z'
+$One = 'M480.4-55q-88.87 0-166.12-33.08-77.25-33.09-135.18-91.02-57.93-57.93-91.02-135.12Q55-391.41 55-480.36q0-88.96 33.08-166.29 33.09-77.32 90.86-134.81 57.77-57.48 135.03-91.01Q391.24-906 480.28-906t166.49 33.45q77.44 33.46 134.85 90.81t90.89 134.87Q906-569.34 906-480.27q0 89.01-33.53 166.25t-91.01 134.86q-57.49 57.62-134.83 90.89Q569.28-55 480.4-55ZM461-612v300q0 14.87 10.57 24.94Q482.14-277 497.05-277t24.93-10.35Q532-297.7 532-313v-323q0-19.75-13.62-33.38Q504.75-683 485-683h-72q-14.87 0-24.94 10.09-10.06 10.09-10.06 25t10.35 25.41Q398.7-612 414-612h47Z'
 
 $Top = [System.Windows.Media.Color]::FromRgb(0x74, 0x80, 0xF0)
 $Bottom = [System.Windows.Media.Color]::FromRgb(0x3F, 0x4A, 0xB8)
@@ -35,11 +37,13 @@ function New-IconBitmap([int]$side) {
     $dc = $visual.RenderOpen()
     $brush = New-Object System.Windows.Media.LinearGradientBrush $Top, $Bottom, (New-Object System.Windows.Point 0, 0), (New-Object System.Windows.Point 1, 1)
     $dc.DrawRoundedRectangle($brush, $null, (New-Object System.Windows.Rect 0, 0, $side, $side), (14 * $u), (14 * $u))
-    # Glyph box -> launcher viewport (centred on 54,54 at 0.066) -> the 22..86 crop.
-    $k = 0.066 * $u
-    $dc.PushTransform((New-Object System.Windows.Media.MatrixTransform $k, 0, 0, $k, ((54 - 22 - 480 * 0.066) * $u), ((54 - 22 + 480 * 0.066) * $u)))
-    $dc.DrawGeometry([System.Windows.Media.Brushes]::White, $null, [System.Windows.Media.Geometry]::Parse($Glyph))
-    $dc.Pop()
+    # Each glyph: its box -> the launcher viewport (as the vector's groups) -> the 22..86 crop.
+    foreach ($g in @(@($Glyph, 50, 58, 0.058), @($One, 68, 38, 0.0247))) {
+        $k = $g[3] * $u
+        $dc.PushTransform((New-Object System.Windows.Media.MatrixTransform $k, 0, 0, $k, (($g[1] - 22 - 480 * $g[3]) * $u), (($g[2] - 22 + 480 * $g[3]) * $u)))
+        $dc.DrawGeometry([System.Windows.Media.Brushes]::White, $null, [System.Windows.Media.Geometry]::Parse($g[0]))
+        $dc.Pop()
+    }
     $dc.Close()
 
     $target = New-Object System.Windows.Media.Imaging.RenderTargetBitmap $side, $side, 96, 96, ([System.Windows.Media.PixelFormats]::Pbgra32)

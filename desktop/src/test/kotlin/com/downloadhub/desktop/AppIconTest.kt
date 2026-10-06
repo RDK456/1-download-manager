@@ -39,28 +39,40 @@ class AppIconTest {
     }
 
     /**
-     * The launcher crops an adaptive icon to a shape inscribed in the central 72x72,
-     * so anything reaching the corners is clipped on a circular mask and not on a
-     * squircle - the same artwork then looks right on one phone and wrong on another.
-     */
-    /**
-     * The launcher crops an adaptive icon to a shape inscribed in the central 72x72, so
-     * anything reaching the corners is clipped on a circular mask and not on a squircle.
-     * The glyph's box is 135 to 826 on both axes (y negative, as Material publishes it);
-     * the group's scale and pivot must land that inside 18..90.
+     * The launcher crops an adaptive icon to a circle of radius 33 around (54,54) on its
+     * roundest mask, so anything outside it is clipped on one phone and not another.
+     * Each glyph's published box (the arrow 135 to 826, the badge's disc 55 to 906, y
+     * negative as Material publishes it) is mapped through its group and checked against
+     * that circle, corner by corner for the arrow and as a disc for the badge.
      */
     @Test
     fun theArtworkStaysInsideTheLaunchersMask() {
-        val foreground = vector("ic_launcher_foreground.xml")
-        fun attr(name: String) = Regex("android:$name=\"(-?[0-9.]+)\"").find(foreground)?.groupValues?.get(1)?.toDouble()
-            ?: error("the foreground group has no $name")
-        val scale = attr("scaleX")
-        assertTrue("the glyph is not scaled evenly", scale == attr("scaleY"))
-        fun mapX(v: Double) = (v - attr("pivotX")) * scale + attr("pivotX") + attr("translateX")
-        fun mapY(v: Double) = (v - attr("pivotY")) * scale + attr("pivotY") + attr("translateY")
-        listOf(mapX(135.0), mapX(826.0), mapY(-826.0), mapY(-135.0)).forEach { edge ->
-            assertTrue("the glyph reaches $edge but the mask keeps only 18..90", edge in 18.0..90.0)
+        val groups = Regex("<group([^>]*pivotX[^>]*)>").findAll(vector("ic_launcher_foreground.xml")).map { it.groupValues[1] }.toList()
+        assertTrue("expected the arrow and the badge, found ${groups.size} groups", groups.size == 2)
+        fun place(group: String): (Double, Double) -> Pair<Double, Double> {
+            fun attr(name: String) = Regex("android:$name=\"(-?[0-9.]+)\"").find(group)?.groupValues?.get(1)?.toDouble()
+                ?: error("a group has no $name")
+            val scale = attr("scaleX")
+            assertTrue("a glyph is not scaled evenly", scale == attr("scaleY"))
+            return { x, y ->
+                ((x - attr("pivotX")) * scale + attr("pivotX") + attr("translateX")) to
+                    ((y - attr("pivotY")) * scale + attr("pivotY") + attr("translateY"))
+            }
         }
+        fun fromCentre(p: Pair<Double, Double>) = Math.hypot(p.first - 54, p.second - 54)
+
+        // The arrow's tray has rounded corners of about 94 units, so its true extent is a
+        // little inside the corner points: allow that much.
+        val arrow = place(groups[0])
+        val roundness = 94 * (1 - 1 / Math.sqrt(2.0)) * Math.sqrt(2.0) * 0.058
+        listOf(135.0 to -826.0, 826.0 to -826.0, 135.0 to -135.0, 826.0 to -135.0).forEach { (x, y) ->
+            val reach = fromCentre(arrow(x, y)) - roundness
+            assertTrue("the arrow reaches $reach from the centre; the mask keeps 33", reach <= 33.0)
+        }
+        val badge = place(groups[1])
+        val centre = badge(480.5, -480.5)
+        val radius = badge(906.0, -480.5).first - centre.first
+        assertTrue("the badge reaches ${fromCentre(centre) + radius}; the mask keeps 33", fromCentre(centre) + radius <= 33.0)
     }
 
     /** The Windows build has to be given an icon, or the exe falls back to the Java cup. */
@@ -102,21 +114,26 @@ class AppIconTest {
     }
 
     /**
-     * One glyph everywhere: the launcher, the themed icon, the top bar, the .ico generator
-     * and the runtime tray/window icon all carry the same Material path, character for
-     * character. A second copy that drifts is how the tray and the .ico stop matching.
+     * One drawing everywhere: the launcher, the themed icon, the top bar, the .ico
+     * generator and the runtime tray/window icon all carry the same two Material paths,
+     * character for character. A copy that drifts is how the tray and the .ico stop
+     * matching.
      */
     @Test
-    fun everySurfaceDrawsTheSameGlyph() {
-        val glyph = Regex("pathData=\"([^\"]+)\"").find(vector("ic_launcher_foreground.xml"))?.groupValues?.get(1)
-            ?: error("no path in the foreground")
-        assertTrue("that is not the glyph", glyph.length > 200)
+    fun everySurfaceDrawsTheSameGlyphs() {
+        val glyphs = Regex("pathData=\"([^\"]+)\"").findAll(vector("ic_launcher_foreground.xml")).map { it.groupValues[1] }.toList()
+        assertTrue("expected the arrow and the badge", glyphs.size == 2 && glyphs.all { it.length > 200 })
         mapOf(
             "the themed icon" to vector("ic_launcher_monochrome.xml"),
             "the top-bar mark" to vector("ic_app_mark.xml"),
             "the .ico generator" to generator(),
             "the runtime icon" to File("src/main/kotlin/com/downloadhub/desktop/AppArtwork.kt").readText()
-        ).forEach { (surface, text) -> assertTrue("$surface draws a different glyph", text.contains(glyph)) }
+        ).forEach { (surface, text) -> glyphs.forEach { assertTrue("$surface draws a different glyph", text.contains(it)) } }
+        // And at the same places: the arrow at (50,58) x0.058, the badge at (68,38) x0.0247.
+        listOf(generator(), File("src/main/kotlin/com/downloadhub/desktop/AppArtwork.kt").readText()).forEach { text ->
+            assertTrue("a surface places the arrow differently", text.contains("50") && text.contains("58") && text.contains("0.058"))
+            assertTrue("a surface places the badge differently", text.contains("68") && text.contains("38") && text.contains("0.0247"))
+        }
     }
 
     /** The tray asks the shared drawing rather than keeping a copy of it. */
