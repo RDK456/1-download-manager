@@ -25,9 +25,20 @@ data class ReleaseInfo(
     val displayName: String
         get() = name.ifBlank { "Version $version" }
 
-    /** Prefers an APK asset; falls back to the first asset so links still work. */
-    fun installAsset(): ReleaseAsset? =
-        assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) } ?: assets.firstOrNull()
+    /**
+     * The APK to install: the one built for this phone's processor when the release has it
+     * (about half the size of the universal one, which carries two sets of native code),
+     * else the universal APK, else the first asset so links still work.
+     */
+    fun installAsset(abis: List<String> = deviceAbis()): ReleaseAsset? {
+        val apks = assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
+        abis.forEach { abi ->
+            apks.firstOrNull { it.name.endsWith("-$abi.apk", ignoreCase = true) }?.let { return it }
+        }
+        return apks.firstOrNull { apk -> KNOWN_ABIS.none { apk.name.endsWith("-$it.apk", ignoreCase = true) } }
+            ?: apks.firstOrNull()
+            ?: assets.firstOrNull()
+    }
 
     fun isNewerThan(currentVersion: String): Boolean =
         compareVersions(version, currentVersion) > 0
@@ -64,3 +75,10 @@ private fun versionParts(value: String): List<Int> = value
     .split(Regex("[^0-9]+"))
     .filter { it.isNotBlank() }
     .map { it.toIntOrNull() ?: 0 }
+
+/** The processor types a release publishes an APK for, as suffixes like `-arm64-v8a.apk`. */
+private val KNOWN_ABIS = listOf("arm64-v8a", "x86_64", "armeabi-v7a", "x86")
+
+/** This phone's processor types, best first; empty where there is no Android (unit tests). */
+internal fun deviceAbis(): List<String> =
+    runCatching { android.os.Build.SUPPORTED_ABIS?.toList() }.getOrNull().orEmpty()

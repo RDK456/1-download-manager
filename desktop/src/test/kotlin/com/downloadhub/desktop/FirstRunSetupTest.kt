@@ -2,6 +2,7 @@ package com.downloadhub.desktop
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -27,6 +28,12 @@ class FirstRunSetupTest {
     private fun desktopJar(): File? = buildDir()
         ?.resolve("compose/binaries/main/app/1DownloadManager/app")
         ?.listFiles { f -> f.name.startsWith("desktop-") && f.name.endsWith(".jar") }
+        ?.firstOrNull()
+
+    /** yt-dlp and ffmpeg, in a jar of their own so that updates leave them out. */
+    private fun toolsJar(): File? = buildDir()
+        ?.resolve("compose/binaries/main/app/1DownloadManager/app")
+        ?.listFiles { f -> f.name.startsWith("bundled-tools") && f.name.endsWith(".jar") }
         ?.firstOrNull()
 
     @Test
@@ -65,7 +72,9 @@ class FirstRunSetupTest {
         // Nothing to check before the module has been built.
         org.junit.Assume.assumeTrue("no build output to inspect", resources?.isDirectory == true)
 
-        val lib = File(resources, "lib")
+        // Staged where the bundled-tools jar is packed from, not into the app's own
+        // resources: in the app jar they made every update carry them again.
+        val lib = buildDir()!!.resolve("ytbin")
         assertTrue("yt-dlp is not staged", File(lib, "yt-dlp.exe").isFile)
         // ffmpeg ships now, because every quality YouTube offers is two streams that have
         // to be muxed and there is no merge without it. See the file-count test below for
@@ -122,8 +131,12 @@ class FirstRunSetupTest {
         val entries = java.util.zip.ZipFile(jar!!).use { zip ->
             zip.entries().toList().map { it.name }
         }
-        assertTrue(
-            "yt-dlp must be inside the jar the installer ships",
+        val tools = toolsJar()
+        assertTrue("the installer must ship the bundled-tools jar beside the app jar", tools != null)
+        val toolEntries = java.util.zip.ZipFile(tools!!).use { zip -> zip.entries().toList().map { it.name } }
+        assertTrue("yt-dlp must be inside the tools jar the installer ships", "lib/yt-dlp.exe" in toolEntries)
+        assertFalse(
+            "yt-dlp must not be in the app jar too: that is what made every update carry it",
             entries.any { it == "lib/yt-dlp.exe" }
         )
         // Both variants, each in its own folder: Firefox cannot load the Chromium
@@ -155,11 +168,15 @@ class FirstRunSetupTest {
      */
     @Test
     fun ffmpegShipsAsOneFileRatherThanAnExtractedTree() {
-        val lib = buildDir()?.resolve("resources/main/lib")
-        org.junit.Assume.assumeTrue("no build output to inspect", lib?.isDirectory == true)
+        val tools = toolsJar()
+        org.junit.Assume.assumeTrue("no packaged app image to inspect", tools != null)
 
-        val staged = lib!!.listFiles().orEmpty().filter { it.isFile }
-        val ffmpegFiles = staged.filter { it.name.startsWith("ffmpeg") }
+        class Shipped(val name: String, val length: Long)
+        val ffmpegFiles = java.util.zip.ZipFile(tools!!).use { zip ->
+            zip.entries().toList()
+                .filter { !it.isDirectory && it.name.substringAfterLast('/').startsWith("ffmpeg") }
+                .map { Shipped(it.name.substringAfterLast('/'), it.size) }
+        }
         assertEquals(
             "exactly one ffmpeg artefact must be staged. The extracted tree is ~1000 " +
                 "files, and a thousand files is what broke the install with " +
@@ -176,8 +193,8 @@ class FirstRunSetupTest {
         )
         // And it must be the real thing, not a stub that would fail at the first mux.
         assertTrue(
-            "the staged ffmpeg.exe is only ${ffmpegFiles.single().length()} bytes",
-            ffmpegFiles.single().length() > 50_000_000L
+            "the shipped ffmpeg.exe is only ${ffmpegFiles.single().length} bytes",
+            ffmpegFiles.single().length > 50_000_000L
         )
     }
 

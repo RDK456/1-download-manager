@@ -67,7 +67,13 @@ data class GithubRelease(
      * Installer at all, and runs from anywhere.
      */
     fun portableZip(): GithubAsset? =
-        assets.firstOrNull { it.name.endsWith(".zip", ignoreCase = true) }
+        assets.firstOrNull { it.name.endsWith("-portable.zip", ignoreCase = true) }
+            // Older releases named it differently; never the extension or delta zips.
+            ?: assets.firstOrNull {
+                it.name.endsWith(".zip", ignoreCase = true) &&
+                    !it.name.contains("extension", ignoreCase = true) &&
+                    !it.name.endsWith("-delta.zip", ignoreCase = true)
+            }
 }
 
 @Serializable
@@ -90,12 +96,16 @@ enum class UpdateKind {
     INSTALLER,
 
     /** A portable zip, which has to be unpacked and started. */
-    PORTABLE
+    PORTABLE,
+
+    /** Only the changed files, staged in a folder, swapped in on restart. */
+    DELTA
 }
 
 /** A fetched update, and what it is. */
 data class DownloadedUpdate(val kind: UpdateKind, val file: File) {
-    val isInstaller: Boolean get() = kind == UpdateKind.INSTALLER
+    /** Installs on restart: the installer, or a delta, which installs the same way. */
+    val isInstaller: Boolean get() = kind == UpdateKind.INSTALLER || kind == UpdateKind.DELTA
 }
 
 /** What the update check found. */

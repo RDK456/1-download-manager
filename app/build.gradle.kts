@@ -27,8 +27,8 @@ android {
         applicationId = "com.downloadhub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 50
-        versionName = "1.5.5"
+        versionCode = 51
+        versionName = "1.5.6"
 
         // Single source of truth for the About page and the in-app updater.
         buildConfigField("String", "GITHUB_OWNER", "\"RDK456\"")
@@ -37,9 +37,18 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+    }
 
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+    // One APK per processor beside the universal one. The native code (ffmpeg, Python,
+    // libtorrent) is most of the APK and it is carried twice in the universal build, so
+    // the updater downloads the one for its phone: about half the size. Same two
+    // processors as before: arm64 for phones, x86_64 for emulators and Chromebooks.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = true
         }
     }
 

@@ -787,6 +787,20 @@ class DesktopController(
         _updateTotalBytes.value = asset.size
         refresh()
         scope.launch {
+            // Only the changed files when this install can take them; the full
+            // installer otherwise, exactly as before.
+            if (!portable) {
+                val delta = tryDelta(available.release)
+                if (delta != null) {
+                    _updateProgress.value = -1
+                    _downloadedUpdate.value = delta
+                    refresh()
+                    return@launch
+                }
+                _updateProgress.value = 0
+                _updateBytes.value = 0L
+                _updateTotalBytes.value = asset.size
+            }
             val result = updateInstaller.download(asset.downloadUrl, { percent, done, total ->
                 _updateProgress.value = percent
                 _updateBytes.value = done
@@ -821,8 +835,62 @@ class DesktopController(
      * dialog simply closed. The state is only cleared once the installer is really
      * away.
      */
+    /** What a downloaded delta needs at install time: its file list, the changed files, the install. */
+    private class PendingDelta(val manifest: UpdateManifest, val changed: List<UpdateFile>, val root: File)
+
+    private var pendingDelta: PendingDelta? = null
+
+    /**
+     * Fetches only the files that changed, or null to take the full installer.
+     *
+     * Null whenever anything is not exactly as expected: not an installed copy, no file
+     * list on the release, an install that differs in a file the delta does not carry
+     * (a version further back, or a modified install), or any download or hash failure.
+     */
+    private suspend fun tryDelta(release: GithubRelease): DownloadedUpdate? = runCatching {
+        val root = UpdateInstaller.installedLauncher()?.parentFile ?: return null
+        val listAsset = DeltaUpdate.manifestAsset(release) ?: return null
+        val listFile = updateInstaller.download(listAsset.downloadUrl, { _, _, _ -> }, listAsset.name).getOrThrow()
+        val manifest = DeltaUpdate.parse(listFile.readText())
+        val changed = withContext(Dispatchers.IO) { DeltaUpdate.changedFiles(manifest, root) }
+        if (!DeltaUpdate.covers(manifest, changed)) return null
+        val zipAsset = release.assets.firstOrNull { it.name == manifest.delta?.asset } ?: return null
+        _updateTotalBytes.value = zipAsset.size
+        val zip = updateInstaller.download(zipAsset.downloadUrl, { percent, done, total ->
+            _updateProgress.value = percent
+            _updateBytes.value = done
+            if (total > 0) _updateTotalBytes.value = total
+            refresh()
+        }, zipAsset.name).getOrThrow()
+        val staging = File(AppPaths.updateDir, "delta-${manifest.version}")
+        withContext(Dispatchers.IO) { DeltaUpdate.stage(zip, changed, staging) }
+        pendingDelta = PendingDelta(manifest, changed, root)
+        DownloadedUpdate(UpdateKind.DELTA, staging)
+    }.getOrNull()
+
     fun launchInstaller() {
         val downloaded = _downloadedUpdate.value ?: return
+        val delta = pendingDelta
+        if (downloaded.kind == UpdateKind.DELTA && delta != null) {
+            val started = DeltaUpdate.launchApply(
+                staging = downloaded.file,
+                files = delta.changed.map { it.path },
+                stale = DeltaUpdate.staleJars(delta.manifest, delta.root),
+                root = delta.root,
+                relaunch = UpdateInstaller.installedLauncher(),
+                resultFile = updateInstaller.resultFile,
+                log = File(AppPaths.updateDir, "delta.log")
+            )
+            if (started.isFailure) {
+                _update.value = UpdateCheck.Failed(started.exceptionOrNull()?.message ?: "Could not apply the update")
+                refresh()
+                return
+            }
+            store.persist()
+            capture.stop()
+            onQuitRequested()
+            return
+        }
         if (!downloaded.isInstaller) {
             // Refusing here rather than trying: a zip is not an installer, and this is
             // the path that used to hand one to the shell and appear to do nothing.

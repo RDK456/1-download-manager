@@ -58,6 +58,23 @@ class AppUpdateTest {
         assertNull(release("v1.2.0", emptyList()).installAsset())
     }
 
+    /** The APK built for the phone's processor, half the size; the universal one otherwise. */
+    @Test
+    fun picksTheApkForThisProcessor() {
+        val release = release(
+            tag = "v1.5.6",
+            assets = listOf(
+                ReleaseAsset("1-download-manager-1.5.6.apk", "https://example.com/u.apk", 132),
+                ReleaseAsset("1-download-manager-1.5.6-arm64-v8a.apk", "https://example.com/a.apk", 70),
+                ReleaseAsset("1-download-manager-1.5.6-x86_64.apk", "https://example.com/x.apk", 72)
+            )
+        )
+        assertEquals("1-download-manager-1.5.6-arm64-v8a.apk", release.installAsset(listOf("arm64-v8a", "armeabi-v7a"))?.name)
+        assertEquals("1-download-manager-1.5.6-x86_64.apk", release.installAsset(listOf("x86_64", "x86"))?.name)
+        assertEquals("1-download-manager-1.5.6.apk", release.installAsset(listOf("armeabi-v7a"))?.name)
+        assertEquals("1-download-manager-1.5.6.apk", release.installAsset(emptyList())?.name)
+    }
+
     @Test
     fun parsesGitHubReleasePayload() {
         val json = """

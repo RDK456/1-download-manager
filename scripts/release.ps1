@@ -91,8 +91,8 @@ Set-StrictMode -Version Latest
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Repository = 'RDK456/1-download-manager'
 $GradleFile = Join-Path $RepoRoot 'app\build.gradle.kts'
-$DebugApkBuilt = Join-Path $RepoRoot 'app\build\outputs\apk\debug\app-debug.apk'
-$ReleaseApkBuilt = Join-Path $RepoRoot 'app\build\outputs\apk\release\app-release.apk'
+$DebugApkBuilt = Join-Path $RepoRoot 'app\build\outputs\apk\debug\app-universal-debug.apk'
+$ReleaseApkBuilt = Join-Path $RepoRoot 'app\build\outputs\apk\release\app-universal-release.apk'
 $KeystoreProperties = Join-Path $RepoRoot 'keystore\keystore.properties'
 
 # --- locate toolchain --------------------------------------------------------
@@ -240,7 +240,33 @@ try {
         & $gradlew ':desktop:prepareDistributable' ':desktop:packageZip'
         if ($LASTEXITCODE -ne 0) { throw 'The portable zip failed to build.' }
     }
+
+    # The delta update: this release's file list, and a zip of the files changed since
+    # the previous release's list. The installed app downloads only that zip when it is
+    # one version behind, instead of the whole installer. The previous list is fetched
+    # from the latest published release; without one, only the list is published.
+    $updateAssets = @()
+    if ($hasDesktop) {
+        $previousDir = Join-Path $RepoRoot 'desktop\build\previous-release'
+        if (Test-Path $previousDir) { Remove-Item $previousDir -Recurse -Force }
+        New-Item -ItemType Directory -Force -Path $previousDir | Out-Null
+        $strictPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & $gh release download --repo $Repository --pattern '*-files.json' --dir $previousDir 2>$null
+        $ErrorActionPreference = $strictPreference
+        $previousList = Get-ChildItem $previousDir -Filter '*-files.json' -ErrorAction SilentlyContinue | Select-Object -First 1
+        $listArg = if ($previousList) { "-PpreviousUpdateManifest=$($previousList.FullName)" } else { '-PpreviousUpdateManifest=' }
+        & $gradlew ':desktop:packageUpdateDelta' $listArg
+        if ($LASTEXITCODE -ne 0) { throw 'The delta update files failed to build.' }
+        $updateAssets = @(Get-ChildItem (Join-Path $RepoRoot 'desktop\build\update') -File | ForEach-Object {
+            $dest = Join-Path $RepoRoot $_.Name
+            Copy-Item $_.FullName $dest -Force
+            Write-Host ("UPDATE {0} {1} bytes" -f $_.Name, $_.Length) -ForegroundColor DarkGray
+            $dest
+        })
+    }
     $apkAsset = $null
+    $abiApkAssets = @()
     $apkHash = ''
     $apkSize = 0L
     if (-not $DesktopOnly) {
@@ -251,6 +277,17 @@ try {
         $apkHash = (Get-FileHash $apkAsset -Algorithm SHA256).Hash
         $apkSize = (Get-Item $apkBuilt).Length
         Write-Host ("APK {0} bytes, sha256 {1}" -f $apkSize, $apkHash) -ForegroundColor DarkGray
+        # One APK per processor as well. The updater takes the one for its phone, about
+        # half the size of the universal one; the universal APK keeps its old name and is
+        # uploaded first, so installs from before this pick it as they always did.
+        $abiApkAssets = @(Get-ChildItem (Split-Path $apkBuilt) -Filter '*.apk' | ForEach-Object {
+            if ($_.Name -match '-(arm64-v8a|x86_64)-') {
+                $dest = Join-Path $RepoRoot ("1-download-manager-$newVersion-" + $Matches[1] + ".apk")
+                Copy-Item $_.FullName $dest -Force
+                Write-Host ("APK {0} {1} bytes" -f $Matches[1], $_.Length) -ForegroundColor DarkGray
+                $dest
+            }
+        })
     } else {
         Write-Host 'Desktop-only release: no Android APK will be published.' -ForegroundColor Cyan
     }
@@ -370,8 +407,10 @@ Open this app's Settings -> Check for updates to install this release.
 
     $assets = @()
     if ($apkAsset) { $assets += $apkAsset }
+    $assets += $abiApkAssets
     if ($msiAsset) { $assets += $msiAsset }
     if ($zipAsset) { $assets += $zipAsset }
+    $assets += $updateAssets
 
     # The browser extensions, zipped per browser.
     #

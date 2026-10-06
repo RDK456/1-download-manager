@@ -1,3 +1,4 @@
+import java.security.MessageDigest
 import java.net.URI
 import java.util.concurrent.TimeUnit
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
@@ -192,18 +193,6 @@ val fetchFfmpeg by tasks.registering {
 }
 
 
-/**
- * Copies the bundled executables into the runtime resources so they land in the
- * packaged app's `lib` folder. Must match processResources' own output dir, or the
- * installer ships without them and YouTube silently fails.
- */
-val stageYtBin by tasks.registering(Copy::class) {
-    description = "Stages yt-dlp and ffmpeg into the runtime resources."
-    group = "build setup"
-    dependsOn(fetchYtDlp, fetchFfmpeg)
-    from(ytBinDir)
-    into(layout.buildDirectory.dir("resources/main/lib"))
-}
 
 /**
  * Ships the browser extension as a runtime resource.
@@ -221,7 +210,105 @@ val stageExtension by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("resources/main/browser-extension"))
 }
 
-tasks.named("processResources") { dependsOn(stageYtBin, stageExtension) }
+tasks.named("processResources") { dependsOn(stageExtension) }
+
+/**
+ * yt-dlp and ffmpeg in a jar of their own, on the runtime classpath.
+ *
+ * They used to be resources of the app's own jar, which made that jar 63 MB and made it
+ * change with every release - so an update had to carry both tools again even when only
+ * the code had changed. In their own reproducible jar they keep identical bytes from one
+ * release to the next, and a delta update leaves them out. The app still reads them as
+ * `lib/yt-dlp.exe` and `lib/ffmpeg.exe` from the classpath, so nothing that extracts them
+ * changed.
+ */
+val bundledToolsJar by tasks.registering(Jar::class) {
+    description = "Packs yt-dlp and ffmpeg into their own jar."
+    group = "build setup"
+    dependsOn(fetchYtDlp, fetchFfmpeg)
+    archiveFileName.set("bundled-tools.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("bundled-tools"))
+    from(ytBinDir) { into("lib") }
+}
+
+dependencies { runtimeOnly(files(bundledToolsJar)) }
+
+/**
+ * The files a delta update is made of, for one release.
+ *
+ * `-files.json` lists every file of the app with its SHA-256; the installed app hashes its
+ * own files against it. `-delta.zip` holds the files that differ from the previous
+ * release's list (given as -PpreviousUpdateManifest), so an install one version behind
+ * downloads only those. Run after prepareDistributable, on the folder the installer is
+ * built from, so the list describes exactly what the installer puts on disk.
+ */
+val packageUpdateDelta by tasks.registering {
+    description = "Lists the app's files and zips the ones changed since the previous release."
+    group = "distribution"
+    val image = layout.buildDirectory.dir("compose/binaries/main/app/1DownloadManager")
+    val outDir = layout.buildDirectory.dir("update")
+    val version = appVersion
+    val previous = (project.findProperty("previousUpdateManifest") as String?)?.takeIf { it.isNotBlank() }?.let(::File)
+    doLast {
+        val root = image.get().asFile
+        check(File(root, "1DownloadManager.exe").isFile) { "No app image at $root: run createDistributable first" }
+        val out = outDir.get().asFile.apply { deleteRecursively(); mkdirs() }
+        val sha = { file: File ->
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(1 shl 16)
+                var read = input.read(buffer)
+                while (read >= 0) {
+                    digest.update(buffer, 0, read)
+                    read = input.read(buffer)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        }
+        // path to (sha256, size), in path order
+        val files: List<Pair<String, Pair<String, Long>>> = root.walkTopDown().filter { it.isFile }
+            .map { it.relativeTo(root).invariantSeparatorsPath to (sha(it) to it.length()) }
+            .sortedBy { it.first }
+            .toList()
+        val baseName = "1-download-manager-$version"
+        var deltaJson = ""
+        if (previous != null && previous.isFile) {
+            @Suppress("UNCHECKED_CAST")
+            val parsed = groovy.json.JsonSlurper().parse(previous) as Map<String, Any?>
+            @Suppress("UNCHECKED_CAST")
+            val oldFiles = parsed["files"] as List<Map<String, Any?>>
+            val old = oldFiles.associate { (it["path"] as String) to (it["sha256"] as String) }
+            val changed = files.filter { old[it.first] != it.second.first }
+            val zipName = "$baseName-delta.zip"
+            ZipOutputStream(File(out, zipName).outputStream()).use { zip ->
+                changed.forEach { item ->
+                    zip.putNextEntry(ZipEntry(item.first))
+                    File(root, item.first).inputStream().use { input -> input.copyTo(zip) }
+                    zip.closeEntry()
+                }
+            }
+            deltaJson = ",\n  \"delta\": {\"asset\": \"$zipName\", \"from\": \"${parsed["version"]}\", \"paths\": [" +
+                changed.joinToString(", ") { "\"${it.first}\"" } + "]}"
+            logger.lifecycle(
+                "Delta from ${parsed["version"]}: ${changed.size} of ${files.size} files, " +
+                    "${File(out, zipName).length()} bytes"
+            )
+        } else {
+            logger.lifecycle("No previous file list: publishing the list only, no delta this time.")
+        }
+        val json = "{\n  \"version\": \"$version\",\n  \"files\": [\n" +
+            files.joinToString(",\n") { "    {\"path\": \"${it.first}\", \"sha256\": \"${it.second.first}\", \"size\": ${it.second.second}}" } +
+            "\n  ]$deltaJson\n}\n"
+        File(out, "$baseName-files.json").writeText(json)
+    }
+}
+
+// Same content, same bytes: no timestamps and a fixed entry order, so a jar whose
+// contents did not change is identical to the last release's and stays out of a delta.
+tasks.withType<AbstractArchiveTask>().configureEach {
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
 
 /**
  * The extension as a zip, one per browser, for people who would rather not dig

@@ -38,3 +38,4 @@ keystore/
 # nobody meant to commit and everybody has to remember to delete.
 1-download-manager-extension-*.xpi
 1-download-manager-extension-*.zip
+1-download-manager-*-files.json

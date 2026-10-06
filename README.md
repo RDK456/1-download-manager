@@ -113,7 +113,7 @@ again and every user has to uninstall and reinstall.
 Verify what you are about to publish:
 
 ```powershell
-apksigner verify --print-certs app\build\outputs\apk\release\app-release.apk
+apksigner verify --print-certs app\build\outputs\apk\release\app-universal-release.apk
 ```
 
 `isMinifyEnabled` is deliberately `false`: the JNI engines (libtorrent4j, the yt-dlp/FFmpeg
