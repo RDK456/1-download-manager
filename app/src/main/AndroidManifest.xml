@@ -12,6 +12,8 @@
       in Doze once the app is backgrounded.
     -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- So downloads carry on after the phone restarts (see ResumeReceiver). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Lets Settings offer to exempt the app from battery optimisation. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Lets the in-app updater hand a downloaded release APK to the system installer. -->
@@ -151,6 +153,15 @@
             or leaving the page cancelled it. dataSync keeps it alive in the
             background with an ongoing notification until the APK is fetched.
         -->
+        <receiver
+            android:name=".download.ResumeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".update.UpdateService"
             android:exported="false"

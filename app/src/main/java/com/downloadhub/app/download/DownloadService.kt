@@ -673,9 +673,27 @@ class DownloadService : Service() {
                 lock.release()
                 Log.i(TAG, "Download wake lock released")
             }
+            holdWifiLock(acquire)
         } catch (error: SecurityException) {
             Log.e(TAG, "Cannot hold a wake lock; background transfers may stall", error)
         }
+    }
+
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
+
+    /**
+     * Keeps Wi-Fi at full speed while the screen is off. The wake lock keeps the CPU up,
+     * but without this the radio drops into power-save and a download slows to a crawl
+     * the moment the phone is put down. Held and released together with the wake lock.
+     */
+    @Suppress("DEPRECATION") // HIGH_PERF is the mode that keeps throughput; newer releases ignore it harmlessly.
+    private fun holdWifiLock(acquire: Boolean) {
+        val wifi = applicationContext.getSystemService(android.net.wifi.WifiManager::class.java) ?: return
+        val lock = wifiLock ?: wifi
+            .createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "$WAKE_LOCK_TAG:wifi")
+            .apply { setReferenceCounted(false) }
+            .also { wifiLock = it }
+        if (acquire && !lock.isHeld) lock.acquire() else if (!acquire && lock.isHeld) lock.release()
     }
 
     /**

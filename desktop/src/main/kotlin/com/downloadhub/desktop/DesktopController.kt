@@ -396,9 +396,14 @@ class DesktopController(
     }
 
     fun start() {
+        // Downloads that were moving when the app closed or updated come back queued (see
+        // DesktopStore.load) and carry on by themselves: the HTTP engine and the torrent
+        // loop start queued rows, and YouTube ones go back to yt-dlp here.
         engine.pump()
-        // Resume anything the user paused before closing, and pick up torrents.
         torrents.startLoop()
+        store.snapshot()
+            .filter { it.source == DownloadSource.YOUTUBE && it.status == DownloadStatus.QUEUED }
+            .forEach { item -> scope.launch(Dispatchers.IO) { runYtDlp(item.id) } }
         if (settingsState.value.browserCaptureEnabled) {
             capture.start()
         }
@@ -1237,6 +1242,10 @@ class DesktopController(
                 Unit
             } else if (item?.source == DownloadSource.TORRENT) {
                 torrents.resume(id)
+            } else if (item?.source == DownloadSource.YOUTUBE) {
+                // yt-dlp, never the HTTP engine: that one fetched the YouTube page itself
+                // and saved its HTML as the "video".
+                scope.launch(Dispatchers.IO) { runYtDlp(id) }
             } else {
                 engine.resume(id)
             }
@@ -1707,13 +1716,30 @@ class DesktopController(
         refresh()
     }
 
+    /** YouTube downloads with a yt-dlp running, so a resume and a restart never start one twice. */
+    private val ytRunning: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     private suspend fun runYtDlp(id: String) {
+        if (!ytRunning.add(id)) return
+        try {
+            runYtDlpOnce(id)
+        } finally {
+            ytRunning.remove(id)
+        }
+    }
+
+    private suspend fun runYtDlpOnce(id: String) {
         val item = store.get(id) ?: return
         store.update(id) { it.copy(status = DownloadStatus.RESOLVING) }
         refresh()
 
         val jobDir = File(AppPaths.workDir, "yt-$id")
-        jobDir.deleteRecursively()
+        // yt-dlp's own partial files (.part, .ytdl) are kept so it carries on where it
+        // stopped - after a pause, an app restart or an update - instead of starting over.
+        // Anything else left in the folder is cleared, so a stale file is never mistaken
+        // for this download's result.
+        jobDir.listFiles()?.filterNot { it.name.endsWith(".part") || it.name.endsWith(".ytdl") }
+            ?.forEach { it.deleteRecursively() }
         val result = ytdlp.download(
             YtDlpRequest(
                 url = item.url,

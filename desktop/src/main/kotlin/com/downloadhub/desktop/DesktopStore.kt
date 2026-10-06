@@ -563,17 +563,21 @@ class DesktopStore(initial: List<QueuedDownload> = emptyList()) {
             val restored = runCatching {
                 DesktopJson.format.decodeFromString<List<QueuedDownload>>(file.readText())
             }.getOrDefault(emptyList())
-            // Nothing can be running yet after a restart, so anything mid-flight
-            // comes back paused rather than claiming to transfer.
-            return DesktopStore(
-                restored.map {
-                    if (it.status.isRunning()) it.copy(status = DownloadStatus.PAUSED) else it
-                }
-            )
+            return DesktopStore(restored.map(::resumedAfterRestart))
         }
-
-        private fun DownloadStatus.isRunning() =
-            this == DownloadStatus.RUNNING || this == DownloadStatus.QUEUED ||
-                this == DownloadStatus.RESOLVING
     }
+}
+
+/**
+ * A row as it should come back when the app starts again.
+ *
+ * Anything that was moving when the app closed or updated is queued, so it carries on by
+ * itself from where it stopped. It used to come back PAUSED, which made every update and
+ * every restart quietly stop all downloads until someone pressed Resume. A row the user
+ * paused stays paused, and finished or failed rows are untouched.
+ */
+internal fun resumedAfterRestart(row: QueuedDownload): QueuedDownload = when (row.status) {
+    DownloadStatus.RUNNING, DownloadStatus.RESOLVING, DownloadStatus.QUEUED ->
+        row.copy(status = DownloadStatus.QUEUED, speedBytesPerSecond = 0L)
+    else -> row
 }

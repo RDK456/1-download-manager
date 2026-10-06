@@ -84,6 +84,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -398,10 +400,34 @@ fun DownloadHubApp(
             },            snackbarHost = { SnackbarHost(snackbarHostState) },
             containerColor = MaterialTheme.colorScheme.background
         ) { padding ->
+            // Swipe sideways between the bottom-bar sections, in their bar order. Only on the
+            // sections themselves: sub-pages keep back as the way out. Rows that scroll
+            // sideways (the chips) take the drag first, so they still scroll.
+            val tabs = listOf(AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.SEARCH, AppDestination.YOUTUBE, AppDestination.DISCOVER)
+            val tabIndex = tabs.indexOf(destination)
+            val swipeTabs = if (tabIndex < 0) Modifier else Modifier.pointerInput(tabIndex) {
+                var travelled = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { travelled = 0f },
+                    onHorizontalDrag = { change, dx ->
+                        travelled += dx
+                        change.consume()
+                    },
+                    onDragEnd = {
+                        val step = when {
+                            travelled < -size.width / 4f -> 1
+                            travelled > size.width / 4f -> -1
+                            else -> 0
+                        }
+                        tabs.getOrNull(tabIndex + step)?.takeIf { step != 0 }?.let { navigate(it) }
+                    }
+                )
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
+                    .then(swipeTabs)
             ) {
                 // A short crossfade between tabs, so switching reads as a change of place
                 // rather than a flash.

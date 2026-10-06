@@ -108,6 +108,8 @@ fun main(args: Array<String>) {
         onExit = { requestExit() }
     )
     tray.install()
+    // Full speed while minimized or in the tray: Windows otherwise throttles a window-less process.
+    PowerThrottling.optOut()
     // Keeps a "Start with Windows" entry pointing at this copy after an update or a move.
     Thread { runCatching { AutoStart.refresh() } }.apply { isDaemon = true }.start()
 
