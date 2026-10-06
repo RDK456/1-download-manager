@@ -340,6 +340,14 @@ fun main(args: Array<String>) {
                                 showNew = false
                                 pendingAdd = pending
                             },
+                            // A batch skips the per-download window: a hundred of them, one
+                            // after another, is not a review anyone would sit through.
+                            onBatch = { links ->
+                                showNew = false
+                                links.forEach { link ->
+                                    controller.actions.addPrepared(linkRequest(LinkParser.fileNameFrom(link), link, state.settings))
+                                }
+                            },
                             onDismiss = { showNew = false }
                         )
                     }

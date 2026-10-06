@@ -1,5 +1,13 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.CircleCheck
+import com.composables.icons.lucide.FolderOpen
+import com.composables.icons.lucide.Pause
+import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.RotateCw
+import com.composables.icons.lucide.Share2
+import com.composables.icons.lucide.Trash2
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,15 +18,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -124,7 +123,7 @@ fun DownloadDetailsSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CheckCircle,
+                            imageVector = Lucide.CircleCheck,
                             contentDescription = null,
                             tint = Color(0xFF168A57),
                             modifier = Modifier.size(20.dp)
@@ -192,21 +191,21 @@ fun DownloadDetailsSheet(
             ) {
                 if (item.status.canPauseDetails) {
                     OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.Pause, contentDescription = null)
+                        Icon(Lucide.Pause, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text("Pause")
                     }
                 }
                 if (item.status == DownloadStatus.PAUSED) {
                     Button(onClick = onResume, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Icon(Lucide.Play, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text("Resume")
                     }
                 }
                 if (item.status == DownloadStatus.FAILED) {
                     Button(onClick = onRetry, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Icon(Lucide.RotateCw, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text("Retry")
                     }
@@ -221,7 +220,7 @@ fun DownloadDetailsSheet(
                     enabled = item.status == DownloadStatus.COMPLETED,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Default.FolderOpen, contentDescription = null)
+                    Icon(Lucide.FolderOpen, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
                     Text("Open")
                 }
@@ -230,7 +229,7 @@ fun DownloadDetailsSheet(
                     enabled = item.status == DownloadStatus.COMPLETED,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Default.Share, contentDescription = null)
+                    Icon(Lucide.Share2, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
                     Text("Share")
                 }
@@ -239,7 +238,7 @@ fun DownloadDetailsSheet(
                 onClick = { confirmDelete = true },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.Delete, contentDescription = null)
+                Icon(Lucide.Trash2, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text("Delete download", color = MaterialTheme.colorScheme.error)
             }

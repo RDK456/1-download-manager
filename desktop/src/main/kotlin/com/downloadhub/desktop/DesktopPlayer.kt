@@ -1,5 +1,11 @@
 package com.downloadhub.desktop
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ChevronLeft
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.List
+import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.RotateCw
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,12 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
@@ -329,9 +330,9 @@ fun MiniPlayerBar(onOpenPlayer: () -> Unit) {
                 overflow = TextOverflow.Ellipsis
             )
         }
-        PlayerButton(Icons.Default.KeyboardArrowLeft, "Previous") { DesktopPlayer.previous() }
-        PlayerButton(if (state.playing) DlmIcons.Pause else Icons.Default.PlayArrow, if (state.playing) "Pause" else "Play", big = true) { DesktopPlayer.toggle() }
-        PlayerButton(Icons.Default.KeyboardArrowRight, "Next") { DesktopPlayer.next() }
+        PlayerButton(Lucide.ChevronLeft, "Previous") { DesktopPlayer.previous() }
+        PlayerButton(if (state.playing) DlmIcons.Pause else Lucide.Play, if (state.playing) "Pause" else "Play", big = true) { DesktopPlayer.toggle() }
+        PlayerButton(Lucide.ChevronRight, "Next") { DesktopPlayer.next() }
         Text(clock(position), fontSize = 11.sp, color = AppTheme.Palette.muted, modifier = Modifier.padding(start = 8.dp))
         Slider(
             value = dragging ?: if (state.durationMillis > 0) (position.toFloat() / state.durationMillis).coerceIn(0f, 1f) else 0f,
@@ -346,12 +347,12 @@ fun MiniPlayerBar(onOpenPlayer: () -> Unit) {
         )
         Text(clock(state.durationMillis), fontSize = 11.sp, color = AppTheme.Palette.muted)
         PlayerButton(
-            Icons.Default.Refresh,
+            Lucide.RotateCw,
             "Repeat: " + state.repeat.name.lowercase(),
             tint = if (state.repeat == DesktopPlayer.Repeat.OFF) AppTheme.Palette.faint else AppTheme.Palette.accent
         ) { DesktopPlayer.cycleRepeat() }
         if (state.repeat == DesktopPlayer.Repeat.ONE) Text("1", fontSize = 10.sp, color = AppTheme.Palette.accent)
-        PlayerButton(Icons.Default.List, "Lyrics and library") { onOpenPlayer() }
+        PlayerButton(Lucide.List, "Lyrics and library") { onOpenPlayer() }
         Slider(
             value = state.volume,
             onValueChange = DesktopPlayer::setVolume,

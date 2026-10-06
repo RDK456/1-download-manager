@@ -238,10 +238,8 @@ class YouTubeListingTest {
     @Test
     fun theSectionHasItsOwnGlyph() {
         val icons = File("src/main/kotlin/com/downloadhub/desktop/DlmIcons.kt").readText()
-        val glyph = icons.substringAfter("val YouTube").substringBefore(".build()")
-        assertTrue("the ring is missing:\n$glyph", glyph.contains("stroke = SolidColor"))
-        assertTrue("the triangle is missing:\n$glyph", glyph.contains("fill = SolidColor"))
-        assertTrue("the triangle points are missing:\n$glyph", glyph.contains("lineTo(16f, 12f)"))
+        // Its own Lucide glyph, not one borrowed from another row.
+        assertTrue("YouTube has no glyph of its own", icons.contains("val YouTube: ImageVector get() = Lucide.Youtube"))
     }
 
     /**

@@ -1,5 +1,11 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.CirclePlay
+import com.composables.icons.lucide.ExternalLink
+import com.composables.icons.lucide.File
+import com.composables.icons.lucide.FileAudio
+import com.composables.icons.lucide.Film
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,14 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.AudioFile
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -173,7 +171,7 @@ private fun MediaRow(candidate: MediaCandidate, onClick: () -> Unit) {
             )
         }
         Icon(
-            Icons.Default.OpenInNew,
+            Lucide.ExternalLink,
             contentDescription = "Download",
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(18.dp)
@@ -192,10 +190,10 @@ private fun kindLabel(candidate: MediaCandidate): String {
 }
 
 private fun iconFor(kind: MediaKind): ImageVector = when (kind) {
-    MediaKind.VIDEO -> Icons.Default.Movie
-    MediaKind.AUDIO -> Icons.Default.AudioFile
-    MediaKind.PLAYER -> Icons.Default.PlayCircle
-    MediaKind.FILE -> Icons.Default.InsertDriveFile
+    MediaKind.VIDEO -> Lucide.Film
+    MediaKind.AUDIO -> Lucide.FileAudio
+    MediaKind.PLAYER -> Lucide.CirclePlay
+    MediaKind.FILE -> Lucide.File
 }
 
 private fun colorFor(kind: MediaKind): Color = when (kind) {

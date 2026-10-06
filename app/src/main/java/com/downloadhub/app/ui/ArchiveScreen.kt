@@ -1,5 +1,7 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Search
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -100,6 +102,7 @@ fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Uni
             singleLine = true,
             label = { Text("Search archive.org") },
             placeholder = { Text("Empty: most downloaded") },
+            leadingIcon = { androidx.compose.material3.Icon(Lucide.Search, contentDescription = null) },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { submitted = query.trim() }),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
@@ -142,7 +145,7 @@ private fun ArchiveRow(item: ArchiveItem, loader: ThumbnailCache, onOpen: () -> 
             Column(Modifier.weight(1f)) {
                 Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
-                    listOf(item.mediatype, item.creator, item.sizeBytes.takeIf { it > 0 }?.let(::formatBytes).orEmpty())
+                    listOf(item.typeLabel, item.creator, item.sizeBytes.takeIf { it > 0 }?.let(::formatBytes).orEmpty())
                         .filter { it.isNotBlank() }.joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

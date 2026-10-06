@@ -240,13 +240,16 @@ fun sidebarEntries(): List<RailEntry> = buildList {
         // YouTube beside Search: found versus pasted, the two ways new things arrive.
         if (index == 0) add(RailEntry.YouTube)
         if (index == 0) add(RailEntry.Rss)
-        if (index == 0) add(RailEntry.Books)
-        if (index == 0) add(RailEntry.Movies)
-        if (index == 0) add(RailEntry.Music)
-        if (index == 0) add(RailEntry.Tv)
-        if (index == 0) add(RailEntry.Archive)
-        if (index == 0) add(RailEntry.Player)
     }
+    // The places to find something new, under one heading that folds away. Six of them
+    // between All Downloads and the states made the rail a long scroll before Downloading.
+    add(RailEntry.Heading("Discover"))
+    add(RailEntry.Books)
+    add(RailEntry.Movies)
+    add(RailEntry.Music)
+    add(RailEntry.Tv)
+    add(RailEntry.Archive)
+    add(RailEntry.Player)
     add(RailEntry.Heading("Categories"))
     // ALL is already up above as "All Downloads"; repeating it here under Categories
     // would be the same entry twice with two different counts.

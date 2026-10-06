@@ -1,5 +1,31 @@
 package com.downloadhub.desktop
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.LayoutGrid
+import com.composables.icons.lucide.Library
+import com.composables.icons.lucide.Tv
+import com.composables.icons.lucide.CirclePlay
+import com.composables.icons.lucide.Film
+import com.composables.icons.lucide.BookOpen
+import com.composables.icons.lucide.Rss
+import com.composables.icons.lucide.Globe
+import com.composables.icons.lucide.Magnet
+import com.composables.icons.lucide.CircleAlert
+import com.composables.icons.lucide.CirclePause
+import com.composables.icons.lucide.CircleDashed
+import com.composables.icons.lucide.CircleCheck
+import com.composables.icons.lucide.Download
+import com.composables.icons.lucide.Layers
+import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.List
+import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.RotateCw
+import com.composables.icons.lucide.Search
+import com.composables.icons.lucide.Settings
+import com.composables.icons.lucide.Trash2
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import kotlinx.coroutines.flow.drop
@@ -43,15 +69,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
@@ -349,7 +369,8 @@ fun LibraryScreen(
                         group = group,
                         kind = kind,
                         width = sidebar,
-                        compact = table.narrowSidebar,
+                        // A rail this narrow shows icons only, each named by a tooltip.
+                        compact = sidebar < 100.dp,
                         // Every row that is neither panel closes both. They did not, so the
                         // rail looked broken: you could go from Downloads to Search and
                         // then not back, because clicking All Downloads set the group
@@ -424,8 +445,7 @@ fun LibraryScreen(
                      if (extraPanel == RailEntry.Archive) {
                         ArchivePanel(
                             onDownload = { files ->
-                                files.forEach { file ->
-                                    val name = com.downloadhub.core.LinkParser.sanitizeFileName(file.name.substringAfterLast('/'))
+                                files.zip(com.downloadhub.core.ArchiveOrg.saveNames(files)).forEach { (file, name) ->
                                     actions.addPrepared(linkRequest(name, file.url, state.settings))
                                 }
                             },
@@ -540,15 +560,11 @@ fun LibraryScreen(
                             onSettings = onOpenSettings,
                             layout = toolbar,
                             search = search,
-                            onSearch = { search = it; selected = emptySet() }
+                            onSearch = { search = it; selected = emptySet() },
+                            cardView = state.settings.libraryCards,
+                            onCardView = { actions.updateSettings(state.settings.copy(libraryCards = it)) }
                         )
                         val cardView = state.settings.libraryCards
-                        DashboardCards(
-                            items = all,
-                            cardView = cardView,
-                            onCardView = { actions.updateSettings(state.settings.copy(libraryCards = it)) },
-                            onOpenFolder = actions.openDownloadFolder
-                        )
                         if (!cardView) ColumnHeader(
                             sort = sort,
                             onSort = { sort = it },
@@ -1043,6 +1059,7 @@ private fun CategoryRail(
                 when (entry) {
                     is RailEntry.Heading -> GroupHeader(
                         label = entry.label,
+                        compact = compact,
                         expanded = entry.label !in collapsedSections,
                         onToggle = {
                             collapsedSections = if (entry.label in collapsedSections) {
@@ -1087,7 +1104,7 @@ private fun CategoryRail(
                     label = "Find torrents",
                     count = 0,
                     selected = searchOpen,
-                    icon = Icons.Default.Search,
+                    icon = Lucide.Search,
                     compact = compact
                 ) { onToggleSearch() }
 
@@ -1105,7 +1122,7 @@ private fun CategoryRail(
                     label = "RSS feeds",
                     count = 0,
                     selected = rssOpen,
-                    icon = Icons.Default.List,
+                    icon = Lucide.Rss,
                     compact = compact
                 ) { onToggleRss() }
 
@@ -1113,7 +1130,7 @@ private fun CategoryRail(
                     label = "Free books",
                     count = 0,
                     selected = extraPanel == RailEntry.Books,
-                    icon = DlmIcons.Documents,
+                    icon = Lucide.BookOpen,
                     compact = compact
                 ) { onExtra(RailEntry.Books) }
 
@@ -1121,7 +1138,7 @@ private fun CategoryRail(
                     label = "Free movies",
                     count = 0,
                     selected = extraPanel == RailEntry.Movies,
-                    icon = Icons.Default.PlayArrow,
+                    icon = Lucide.Film,
                     compact = compact
                 ) { onExtra(RailEntry.Movies) }
 
@@ -1137,7 +1154,7 @@ private fun CategoryRail(
                     label = "Player",
                     count = 0,
                     selected = extraPanel == RailEntry.Player,
-                    icon = DlmIcons.Music,
+                    icon = Lucide.CirclePlay,
                     compact = compact
                 ) { onExtra(RailEntry.Player) }
 
@@ -1145,7 +1162,7 @@ private fun CategoryRail(
                     label = "Free TV",
                     count = 0,
                     selected = extraPanel == RailEntry.Tv,
-                    icon = DlmIcons.Videos,
+                    icon = Lucide.Tv,
                     compact = compact
                 ) { onExtra(RailEntry.Tv) }
 
@@ -1153,7 +1170,7 @@ private fun CategoryRail(
                     label = "Internet Archive",
                     count = 0,
                     selected = extraPanel == RailEntry.Archive,
-                    icon = DlmIcons.Documents,
+                    icon = Lucide.Library,
                     compact = compact
                 ) { onExtra(RailEntry.Archive) }
             }
@@ -1162,6 +1179,7 @@ private fun CategoryRail(
             // any number of them.
             GroupHeader(
                 label = "Queues",
+                compact = compact,
                 expanded = "Queues" !in collapsedSections,
                 onToggle = {
                     collapsedSections = if ("Queues" in collapsedSections) collapsedSections - "Queues" else collapsedSections + "Queues"
@@ -1183,7 +1201,7 @@ private fun CategoryRail(
                     label = "New queue",
                     count = -1,
                     selected = false,
-                    icon = Icons.Default.Add,
+                    icon = Lucide.Plus,
                     compact = compact,
                     onClick = onNewQueue
                 )
@@ -1216,7 +1234,7 @@ private fun QueueRailRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            Icons.Default.List,
+            Lucide.List,
             null,
             Modifier.size(15.dp),
             tint = if (selected) AppTheme.Palette.accent else AppTheme.Palette.faint
@@ -1241,11 +1259,11 @@ private fun QueueRailRow(
         }
         IconButton(
             16.dp,
-            if (queue.started) DlmIcons.Stop else Icons.Default.PlayArrow,
+            if (queue.started) DlmIcons.Stop else Lucide.Play,
             if (queue.started) "Stop queue" else "Start queue",
             onToggle
         )
-        IconButton(16.dp, Icons.Default.Settings, "Edit queue", onEdit)
+        IconButton(16.dp, Lucide.Settings, "Edit queue", onEdit)
     }
 }
 
@@ -1255,21 +1273,21 @@ private object LibraryKindIcons {
         // The whole queue gets no icon, like All Downloads: there is nothing in it that
         // is not in one of the other three.
         LibraryKind.ALL -> null
-        LibraryKind.TORRENT -> DlmIcons.Folder
+        LibraryKind.TORRENT -> Lucide.Magnet
         LibraryKind.YOUTUBE -> DlmIcons.YouTube
-        LibraryKind.NORMAL -> DlmIcons.ArrowDownward
+        LibraryKind.NORMAL -> Lucide.Globe
     }
 }
 
 /** An icon for each status filter, so the rail can be read rather than deciphered. */
 private object StatusIcons {
     fun of(group: LibraryGroup): androidx.compose.ui.graphics.vector.ImageVector? = when (group) {
-        LibraryGroup.ALL -> null
-        LibraryGroup.DOWNLOADING -> Icons.Default.PlayArrow
-        LibraryGroup.FINISHED -> Icons.Default.Check
-        LibraryGroup.UNFINISHED -> DlmIcons.ArrowDownward
-        LibraryGroup.PAUSED -> DlmIcons.Pause
-        LibraryGroup.FAILED -> DlmIcons.Stop
+        LibraryGroup.ALL -> Lucide.Layers
+        LibraryGroup.DOWNLOADING -> Lucide.Download
+        LibraryGroup.FINISHED -> Lucide.CircleCheck
+        LibraryGroup.UNFINISHED -> Lucide.CircleDashed
+        LibraryGroup.PAUSED -> Lucide.CirclePause
+        LibraryGroup.FAILED -> Lucide.CircleAlert
     }
 }
 
@@ -1277,8 +1295,20 @@ private object StatusIcons {
     private fun GroupHeader(
         label: String,
         expanded: Boolean = true,
-        onToggle: (() -> Unit)? = null
+        onToggle: (() -> Unit)? = null,
+        /** Icon-only rail: a section is a thin rule, not a word. */
+        compact: Boolean = false
     ) {
+        if (compact) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 8.dp)
+                    .height(1.dp)
+                    .background(AppTheme.Palette.outline.copy(alpha = 0.3f))
+            )
+            return
+        }
         // A chevron, and the whole header is the target.
         //
         // Collapsible because the rail has outgrown the window it was arranged for: with
@@ -1299,27 +1329,27 @@ private object StatusIcons {
                         Modifier
                     }
                 )
-                .padding(start = 10.dp, end = 8.dp, top = 10.dp, bottom = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                // Lined up with the row labels' left edge, with air above: a section label,
+                // as a modern sidebar writes it, and the fold chevron at the far end.
+                .padding(start = 22.dp, end = 18.dp, top = 16.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (onToggle != null) {
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
-                    contentDescription = if (expanded) "Collapse $label" else "Expand $label",
-                    modifier = Modifier.size(15.dp),
-                    tint = AppTheme.Palette.faint
-                )
-            } else {
-                Spacer(Modifier.width(15.dp))
-            }
             Text(
                 label,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
                 color = AppTheme.Palette.faint,
-                maxLines = 1
+                maxLines = 1,
+                modifier = Modifier.weight(1f)
             )
+            if (onToggle != null) {
+                Icon(
+                    imageVector = if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
+                    contentDescription = if (expanded) "Collapse $label" else "Expand $label",
+                    modifier = Modifier.size(14.dp),
+                    tint = AppTheme.Palette.faint
+                )
+            }
         }
     }
 @Composable
@@ -1332,53 +1362,75 @@ private fun RailRow(
     compact: Boolean = false,
     onClick: () -> Unit
 ) {
+    // The chosen row is a solid accent pill with light text; the rest are a quiet icon and
+    // label. Counts show only when there is something to count, so the rail is not a
+    // column of zeros.
+    val shape = RoundedCornerShape(10.dp)
+    val fill = if (selected) Modifier.background(AppTheme.Palette.accent, shape) else Modifier.hoverFill(shape = shape)
+    val iconTint = if (selected) AppTheme.Palette.onAccent else AppTheme.Palette.muted
+    if (compact) {
+        // Icons only: the rail is too narrow for words, so the tooltip names the row.
+        @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+        androidx.compose.foundation.TooltipArea(
+            tooltip = {
+                Text(
+                    if (count > 0) "$label ($count)" else label,
+                    fontSize = 12.sp,
+                    color = AppTheme.Palette.onSurface,
+                    modifier = Modifier
+                        .shadow(4.dp, RoundedCornerShape(6.dp))
+                        .background(AppTheme.Palette.raised, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            },
+            delayMillis = 300
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 2.dp)
+                    .height(40.dp)
+                    .clip(shape)
+                    .then(fill)
+                    .clickable(onClick = onClick),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.material3.Icon(icon ?: Lucide.Layers, label, Modifier.size(20.dp), tint = iconTint)
+            }
+        }
+        return
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // A rounded pill inset from the rail's edges, as AB Download Manager draws it.
-            .padding(horizontal = 6.dp, vertical = 1.dp)
-            .hoverFill(selected = selected, shape = RoundedCornerShape(8.dp))
-            // A hairline in the accent on the selected entry, so it reads as chosen even on
-            // a dim container colour.
-            .then(
-                if (selected) Modifier.border(1.dp, AppTheme.Palette.accent.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
-                else Modifier
-            )
+            .padding(horizontal = 10.dp, vertical = 1.dp)
+            .height(36.dp)
+            .clip(shape)
+            .then(fill)
             .clickable(onClick = onClick)
-            .padding(
-                start = if (compact) 7.dp else 14.dp,
-                end = if (compact) 7.dp else 12.dp,
-                top = 6.dp,
-                bottom = 6.dp
-            ),
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            // Every category gets one, so the rail can be picked out at a glance
-            // instead of read. All and the groups below have none, so they keep the
-            // original indent and the two kinds of row stay distinguishable.
-            androidx.compose.material3.Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (selected) AppTheme.Palette.accent else AppTheme.Palette.faint,
-                modifier = Modifier
-                    .size(15.dp)
-                    .padding(end = 0.dp)
-            )
-            Spacer(Modifier.width(9.dp))
+            androidx.compose.material3.Icon(icon, null, Modifier.size(18.dp), tint = iconTint)
+            Spacer(Modifier.width(12.dp))
         }
         Text(
             label,
-            fontSize = 12.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) AppTheme.Palette.accent else AppTheme.Palette.onSurface,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (selected) AppTheme.Palette.onAccent else AppTheme.Palette.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        Text(
-            if (count < 0) "" else "$count",
-            fontSize = 11.sp,
-            color = if (selected) AppTheme.Palette.accent else AppTheme.Palette.faint
-        )
+        if (count > 0) {
+            Text(
+                "$count",
+                fontSize = 11.sp,
+                color = if (selected) AppTheme.Palette.onAccent.copy(alpha = 0.85f) else AppTheme.Palette.faint
+            )
+        }
     }
 }
 
@@ -1420,7 +1472,9 @@ private fun LibraryToolbar(
      */
     layout: ToolbarLayout,
     search: String,
-    onSearch: (String) -> Unit
+    onSearch: (String) -> Unit,
+    cardView: Boolean,
+    onCardView: (Boolean) -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -1431,20 +1485,24 @@ private fun LibraryToolbar(
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         val compact = layout.style == ToolbarStyle.COMPACT
-        ToolbarButton("New Download", Icons.Default.Add, highlighted = true, onClick = onNew, compact = compact, buttonWidth = layout.buttonDp)
-        ToolbarButton("Resume", Icons.Default.PlayArrow, enabled = resumeCount > 0, badge = resumeCount, onClick = onResume, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("New Download", Lucide.Plus, highlighted = true, onClick = onNew, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarDivider()
+        ToolbarButton("Resume", Lucide.Play, enabled = resumeCount > 0, badge = resumeCount, onClick = onResume, compact = compact, buttonWidth = layout.buttonDp)
         ToolbarButton("Pause", DlmIcons.Pause, enabled = pauseCount > 0, badge = pauseCount, onClick = onPause, compact = compact, buttonWidth = layout.buttonDp)
-        ToolbarButton("Retry", Icons.Default.Refresh, enabled = retryCount > 0, badge = retryCount, onClick = onRetry, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Retry", Lucide.RotateCw, enabled = retryCount > 0, badge = retryCount, onClick = onRetry, compact = compact, buttonWidth = layout.buttonDp)
     // Stop, for the selection only. Beside Pause because the two are the pair everybody
     // reaches for, and beside Stop All because that is the one it mirrors: Stop All stops
     // everything, this stops what is ticked. It needed its own button because pausing a
     // broken download keeps it in the session, still holding its slot, still holding the
     // swarm open - which is not what someone means when they press stop.
     ToolbarButton("Stop", DlmIcons.Stop, enabled = hasSelection, badge = selectedCount, onClick = onStop, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarDivider()
         // Two queue buttons, not three: Stop Queue and Stop All both paused everything.
-        ToolbarButton("Resume All", Icons.Default.PlayArrow, enabled = hasResumable, onClick = onStartQueue, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarButton("Resume All", Lucide.Play, enabled = hasResumable, onClick = onStartQueue, compact = compact, buttonWidth = layout.buttonDp)
         ToolbarButton("Pause All", DlmIcons.Pause, enabled = activeCount > 0, onClick = onStopAll, compact = compact, buttonWidth = layout.buttonDp)
-        ToolbarButton("Delete", Icons.Default.Delete, enabled = hasSelection, onClick = onDelete, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarDivider()
+        ToolbarButton("Delete", Lucide.Trash2, enabled = hasSelection, onClick = onDelete, compact = compact, buttonWidth = layout.buttonDp)
+        ToolbarDivider()
         // Next to the search box rather than with the transfer actions: it is about the
         // destination, not about the queue.
         ToolbarButton("Downloads", DlmIcons.Folder, onClick = onOpenFolder, compact = compact, buttonWidth = layout.buttonDp)
@@ -1477,7 +1535,7 @@ private fun LibraryToolbar(
               overflow = TextOverflow.Ellipsis
             )
           },
-          leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(15.dp)) },
+          leadingIcon = { Icon(Lucide.Search, null, Modifier.size(15.dp)) },
           textStyle = MaterialTheme.typography.bodySmall,
           modifier = Modifier
             .weight(1f)
@@ -1489,7 +1547,9 @@ private fun LibraryToolbar(
       } else {
             Spacer(Modifier.weight(1f))
         }
-        ToolbarButton("Settings", Icons.Default.Settings, onClick = onSettings, compact = compact, buttonWidth = layout.buttonDp)
+        Spacer(Modifier.width(6.dp))
+        ViewToggle(cardView, onCardView)
+        ToolbarButton("Settings", Lucide.Settings, onClick = onSettings, compact = compact, buttonWidth = layout.buttonDp)
     }
 }
 
@@ -1542,24 +1602,58 @@ private fun ToolbarButton(
      * only thing that was actually wrong. Constraining the box instead - by height, on
      * either the text or the button - just moves the clip.
      */
+    // The main action is a labelled pill while there is room; every other action is an
+    // icon with a tooltip. Nine captioned buttons were the most crowded thing on screen.
+    if (highlighted && !compact) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .padding(end = 6.dp)
+                .height(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(AppTheme.Palette.accent)
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 14.dp)
+        ) {
+            Icon(icon, null, Modifier.size(18.dp), tint = AppTheme.Palette.onAccent)
+            Spacer(Modifier.width(8.dp))
+            Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppTheme.Palette.onAccent, maxLines = 1, softWrap = false)
+        }
+        return
+    }
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+    androidx.compose.foundation.TooltipArea(
+        tooltip = {
+            Text(
+                label,
+                fontSize = 12.sp,
+                color = AppTheme.Palette.onSurface,
+                modifier = Modifier
+                    .shadow(4.dp, RoundedCornerShape(6.dp))
+                    .background(AppTheme.Palette.raised, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+        },
+        delayMillis = 400
+    ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(if (compact) COMPACT_BUTTON_DP.dp else buttonWidth.dp)
+            .width(if (compact) buttonWidth.dp else TOOLBAR_CAPTIONED_DP.dp)
             .then(if (enabled) Modifier.hoverFill(shape = RoundedCornerShape(8.dp)) else Modifier)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 5.dp)
+            .padding(vertical = 4.dp)
     ) {
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(28.dp)
                         .background(
                             if (highlighted && enabled) AppTheme.Palette.accent else Color.Transparent,
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(icon, null, Modifier.size(17.dp), tint = iconTint)
+                    Icon(icon, label, Modifier.size(19.dp), tint = iconTint)
                     // The count, in the icon's top-right corner and drawn over it.
                     //
                     // Over the icon rather than beside the caption because the caption
@@ -1583,13 +1677,13 @@ private fun ToolbarButton(
                         }
                     }
                 }
+        // A small caption under the icon, as AB Download Manager labels its toolbar; a
+        // narrow window drops it and the tooltip names the button instead.
         if (!compact) {
             Text(
                 text = label,
-                // Generous relative to the 10 sp of text: the gap is what the line box
-                // would have been short by, and it is why the caption is not sliced.
                 style = androidx.compose.ui.text.TextStyle(
-                    fontSize = 10.sp,
+                    fontSize = 10.5.sp,
                     lineHeight = TOOLBAR_CAPTION_LINE_HEIGHT_SP.sp
                 ),
                 color = tint,
@@ -1598,6 +1692,47 @@ private fun ToolbarButton(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
             )
+        }
+    }
+    }
+}
+
+/** Width of a captioned toolbar button: room for "Resume All" at 10.5 sp, no more. */
+private const val TOOLBAR_CAPTIONED_DP = 62f
+
+/** A thin rule between groups of toolbar actions. */
+@Composable
+private fun ToolbarDivider() {
+    Box(
+        Modifier
+            .padding(horizontal = 4.dp)
+            .width(1.dp)
+            .height(28.dp)
+            .background(AppTheme.Palette.outline.copy(alpha = 0.35f))
+    )
+}
+
+/** Table or Cards, as two icon toggles in the toolbar instead of a row of its own. */
+@Composable
+private fun ViewToggle(cardView: Boolean, onCardView: (Boolean) -> Unit) {
+    val shape = RoundedCornerShape(8.dp)
+    Row(Modifier.clip(shape).border(1.dp, AppTheme.Palette.outline.copy(alpha = 0.45f), shape)) {
+        listOf(false to Lucide.List, true to Lucide.LayoutGrid).forEach { (cards, icon) ->
+            val selected = cards == cardView
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .background(if (selected) AppTheme.Palette.accent.copy(alpha = 0.18f) else Color.Transparent)
+                    .clickable { onCardView(cards) },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = if (cards) "Cards" else "Table",
+                    tint = if (selected) AppTheme.Palette.accent else AppTheme.Palette.muted,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
         }
     }
 }
@@ -1810,10 +1945,17 @@ private fun ToolbarButton(
         enabled: Boolean,
         onClick: () -> Unit
     ) {
+        // Clickable across the full 26 dp column; the box drawn in it is square, as in the rows.
         Box(
             Modifier
                 .width(26.dp)
                 .height(16.dp)
+                .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+            contentAlignment = Alignment.Center
+        ) {
+        Box(
+            Modifier
+                .size(16.dp)
                 .background(
                     when {
                         !enabled -> AppTheme.Palette.surface
@@ -1822,26 +1964,19 @@ private fun ToolbarButton(
                         // so it cannot be read as "all of them".
                         else -> AppTheme.Palette.accent
                     },
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                 )
                 .border(
                     1.dp,
                     if (state == SelectionBoxState.OFF || !enabled) AppTheme.Palette.outline else AppTheme.Palette.accent,
-                    androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
-                )
-                .then(
-                    if (enabled) {
-                        Modifier.clickable(onClick = onClick)
-                    } else {
-                        Modifier
-                    }
+                    androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                 ),
             contentAlignment = Alignment.Center
         ) {
             when (state) {
                 SelectionBoxState.ON ->
                     Icon(
-                        Icons.Default.Check, null, Modifier.size(11.dp),
+                        Lucide.Check, null, Modifier.size(11.dp),
                         tint = AppTheme.Palette.onAccent
                     )
 
@@ -1857,6 +1992,7 @@ private fun ToolbarButton(
 
                 SelectionBoxState.OFF -> Unit
             }
+        }
         }
     }
 
@@ -1957,24 +2093,27 @@ private fun DownloadRow(
             .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            Modifier
-                .width(26.dp)
-                .height(16.dp)
-                .background(
-                    if (checked) AppTheme.Palette.accent else AppTheme.Palette.surface,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
-                )
-                // An unticked box is surface on surface; the edge is the only thing that
-                // shows it is there.
-                .border(
-                    1.dp,
-                    if (checked) AppTheme.Palette.accent else AppTheme.Palette.outline,
-                    androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            if (checked) Icon(Icons.Default.Check, null, Modifier.size(11.dp), tint = AppTheme.Palette.onAccent)
+        // The column stays 26 wide so it lines up with the header; the box drawn in it is
+        // square, because a 26 by 16 box read as an empty pill rather than a tick box.
+        Box(Modifier.width(26.dp).height(16.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .size(16.dp)
+                    .background(
+                        if (checked) AppTheme.Palette.accent else AppTheme.Palette.surface,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                    )
+                    // An unticked box is surface on surface; the edge is the only thing that
+                    // shows it is there.
+                    .border(
+                        1.dp,
+                        if (checked) AppTheme.Palette.accent else AppTheme.Palette.outline,
+                        androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (checked) Icon(Lucide.Check, null, Modifier.size(12.dp), tint = AppTheme.Palette.onAccent)
+            }
         }
 
         // The dragged width, not a weight. A weight cannot be dragged - the user has no
@@ -2071,14 +2210,14 @@ private fun DownloadRow(
                     DownloadStatus.RUNNING, DownloadStatus.QUEUED, DownloadStatus.RESOLVING ->
                         IconButton(16.dp, DlmIcons.Pause, "Pause", onPause)
 
-                    DownloadStatus.PAUSED -> IconButton(16.dp, Icons.Default.PlayArrow, "Resume", onResume)
-                    DownloadStatus.FAILED -> IconButton(16.dp, Icons.Default.Refresh, "Retry", onRetry)
+                    DownloadStatus.PAUSED -> IconButton(16.dp, Lucide.Play, "Resume", onResume)
+                    DownloadStatus.FAILED -> IconButton(16.dp, Lucide.RotateCw, "Retry", onRetry)
                     DownloadStatus.COMPLETED -> IconButton(16.dp, DlmIcons.FolderOpen, "Show in folder", onOpen)
                 }
                 // Always present, unlike the status button above, because these settings
                 // are wanted on a finished download (to set a share limit) as much as on
                 // a running one - and on a paused one more than anything else.
-                IconButton(16.dp, Icons.Default.Settings, "Download options", onOptions)
+                IconButton(16.dp, Lucide.Settings, "Download options", onOptions)
             }
         }
     }

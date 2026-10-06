@@ -1,5 +1,20 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Archive
+import com.composables.icons.lucide.CircleCheck
+import com.composables.icons.lucide.EllipsisVertical
+import com.composables.icons.lucide.File
+import com.composables.icons.lucide.FileText
+import com.composables.icons.lucide.Film
+import com.composables.icons.lucide.Folder
+import com.composables.icons.lucide.Image
+import com.composables.icons.lucide.LayoutGrid
+import com.composables.icons.lucide.Music
+import com.composables.icons.lucide.Pause
+import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.RotateCw
+import com.composables.icons.lucide.Trash2
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,21 +29,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -112,50 +112,50 @@ fun DownloadCard(
                 }
                 when {
                     item.status.canPauseUi -> IconButton(onClick = onPause) {
-                        Icon(Icons.Default.Pause, contentDescription = "Pause download")
+                        Icon(Lucide.Pause, contentDescription = "Pause download")
                     }
                     item.status == DownloadStatus.PAUSED -> IconButton(onClick = onResume) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Resume download")
+                        Icon(Lucide.Play, contentDescription = "Resume download")
                     }
                     item.status == DownloadStatus.FAILED -> IconButton(onClick = onRetry) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Retry download")
+                        Icon(Lucide.RotateCw, contentDescription = "Retry download")
                     }
                 }
                 Box {
                     IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                        Icon(Lucide.EllipsisVertical, contentDescription = "More actions")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         if (item.status.canPauseUi) {
                             DropdownMenuItem(
                                 text = { Text("Pause") },
                                 onClick = { menuOpen = false; onPause() },
-                                leadingIcon = { Icon(Icons.Default.Pause, contentDescription = null) }
+                                leadingIcon = { Icon(Lucide.Pause, contentDescription = null) }
                             )
                         }
                         if (item.status == DownloadStatus.PAUSED) {
                             DropdownMenuItem(
                                 text = { Text("Resume") },
                                 onClick = { menuOpen = false; onResume() },
-                                leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) }
+                                leadingIcon = { Icon(Lucide.Play, contentDescription = null) }
                             )
                         }
                         if (item.status == DownloadStatus.FAILED) {
                             DropdownMenuItem(
                                 text = { Text("Retry") },
                                 onClick = { menuOpen = false; onRetry() },
-                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
+                                leadingIcon = { Icon(Lucide.RotateCw, contentDescription = null) }
                             )
                         }
                         DropdownMenuItem(
                             text = { Text("Details") },
                             onClick = { menuOpen = false; onClick() },
-                            leadingIcon = { Icon(Icons.Default.Description, contentDescription = null) }
+                            leadingIcon = { Icon(Lucide.FileText, contentDescription = null) }
                         )
                         DropdownMenuItem(
                             text = { Text("Delete") },
                             onClick = { menuOpen = false; onDelete() },
-                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) }
+                            leadingIcon = { Icon(Lucide.Trash2, contentDescription = null) }
                         )
                     }
                 }
@@ -314,38 +314,32 @@ private val MEDIA_PREVIEW_EXTENSIONS = setOf(
 
 @Composable
 private fun CompletedFooter(item: DownloadEntity) {
-    Surface(
+    // One quiet line rather than a tinted bar the width of the card: a finished download
+    // is the common case, and a bar on every one made the list twice as tall as it needs.
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFF168A57).copy(alpha = 0.12f),
-        shape = MaterialTheme.shapes.small
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = null,
-                tint = Color(0xFF168A57),
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Completed",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF168A57)
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                formatBytes(item.bytesDownloaded),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-        }
+        Icon(
+            imageVector = Lucide.CircleCheck,
+            contentDescription = null,
+            tint = Color(0xFF22A06B),
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "Completed",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF22A06B)
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            formatBytes(item.bytesDownloaded),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
     }
 }
 
@@ -372,15 +366,15 @@ fun sourceLabel(source: DownloadSource): String = when (source) {
 }
 
 private fun iconFor(item: DownloadEntity): ImageVector = when {
-    item.source == DownloadSource.TORRENT -> Icons.Default.Folder
+    item.source == DownloadSource.TORRENT -> Lucide.Folder
     else -> when (item.category) {
-        DownloadCategory.VIDEO -> Icons.Default.Movie
-        DownloadCategory.AUDIO -> Icons.Default.MusicNote
-        DownloadCategory.IMAGE -> Icons.Default.Image
-        DownloadCategory.COMPRESSED, DownloadCategory.ARCHIVE -> Icons.Default.Archive
-        DownloadCategory.DOCUMENT -> Icons.Default.Description
-        DownloadCategory.PROGRAM -> Icons.Default.Apps
-        DownloadCategory.FILE, DownloadCategory.OTHER -> Icons.Default.InsertDriveFile
+        DownloadCategory.VIDEO -> Lucide.Film
+        DownloadCategory.AUDIO -> Lucide.Music
+        DownloadCategory.IMAGE -> Lucide.Image
+        DownloadCategory.COMPRESSED, DownloadCategory.ARCHIVE -> Lucide.Archive
+        DownloadCategory.DOCUMENT -> Lucide.FileText
+        DownloadCategory.PROGRAM -> Lucide.LayoutGrid
+        DownloadCategory.FILE, DownloadCategory.OTHER -> Lucide.File
     }
 }
 

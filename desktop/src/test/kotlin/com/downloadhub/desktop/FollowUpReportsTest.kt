@@ -253,7 +253,7 @@ class FollowUpReportsTest {
         assertTrue("a heading can be folded", rail.contains("collapsedSections"))
         assertTrue(
             "and the whole heading is the target, with a chevron to say so",
-            rail.contains("onToggle") && screen.contains("KeyboardArrowDown")
+            rail.contains("onToggle") && screen.contains("Lucide.ChevronDown")
         )
         assertTrue(
             "a row in a folded section is not drawn at all, rather than greyed:\n" +

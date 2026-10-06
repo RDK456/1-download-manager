@@ -1,5 +1,9 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ClipboardPaste
+import com.composables.icons.lucide.FolderOpen
+import com.composables.icons.lucide.ScanSearch
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,10 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.FileOpen
-import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -86,7 +86,9 @@ fun AddDownloadSheet(
     onPickTorrent: (Uri) -> Unit,
     onScanPage: (String) -> Unit,
     /** Headers, cookies and login typed for this link; sent just before onAdd. */
-    onRequestOptions: (com.downloadhub.core.HttpRequestOptions) -> Unit = {}
+    onRequestOptions: (com.downloadhub.core.HttpRequestOptions) -> Unit = {},
+    /** Several links, or a numbered range, pasted at once: queued together. */
+    onAddBatch: (List<String>) -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val clipboard = LocalClipboardManager.current
@@ -115,7 +117,10 @@ fun AddDownloadSheet(
         val trimmed = link.trim()
         if (trimmed.isEmpty()) seed.source else LinkParser.sourceFor(trimmed)
     }
-    val isYoutube = effectiveSource == DownloadSource.YOUTUBE
+    // More than one link (a list, or a [1-50] range) is a batch: no per-file options,
+    // everything is queued as it comes.
+    val batch = remember(link) { com.downloadhub.core.BatchLinks.expand(link) }.takeIf { it.size > 1 }
+    val isYoutube = batch == null && effectiveSource == DownloadSource.YOUTUBE
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(onPickTorrent)
@@ -146,13 +151,14 @@ fun AddDownloadSheet(
                 label = {
                     Text(if (effectiveSource == DownloadSource.TORRENT) "Magnet or .torrent URL" else "URL")
                 },
-                singleLine = true,
+                maxLines = 5,
+                supportingText = { Text("One link, several (one per line), or a range like file[01-20].jpg") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 trailingIcon = {
                     IconButton(onClick = {
                         clipboard.getText()?.text?.let { link = it }
                     }) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = "Paste link")
+                        Icon(Lucide.ClipboardPaste, contentDescription = "Paste link")
                     }
                 }
             )
@@ -164,13 +170,22 @@ fun AddDownloadSheet(
                     onClick = { filePicker.launch(TORRENT_MIME_TYPES) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Default.FileOpen, contentDescription = null)
+                    Icon(Lucide.FolderOpen, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("Choose .torrent file from device")
                 }
             }
 
-            if (isYoutube) {
+            if (batch != null) {
+                Text(
+                    "${batch.size} links will be queued" + if (batch.size == com.downloadhub.core.BatchLinks.MAX) " (the most one batch takes)." else ".",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                batch.take(3).forEach {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+                if (batch.size > 3) Text("…", style = MaterialTheme.typography.bodySmall)
+            } else if (isYoutube) {
                 // YouTube lives in its own tab: the listing, every quality the
                 // extractor offers, the queueing. Picking qualities here split the
                 // handling across two places and hid options the tab shows, so the
@@ -217,7 +232,7 @@ fun AddDownloadSheet(
                             Spacer(Modifier.width(8.dp))
                             Text("Checking the page...")
                         } else {
-                            Icon(Icons.Default.TravelExplore, contentDescription = null)
+                            Icon(Lucide.ScanSearch, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text("Check page for media")
                         }
@@ -241,6 +256,10 @@ fun AddDownloadSheet(
 
             Button(
                 onClick = {
+                    if (batch != null) {
+                        onAddBatch(batch)
+                        return@Button
+                    }
                     if (!request.isEmpty) onRequestOptions(request)
                     onAdd(
                         link,
@@ -258,7 +277,7 @@ fun AddDownloadSheet(
                 enabled = !isYoutube && link.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Add to queue")
+                Text(if (batch != null) "Add ${batch.size} to queue" else "Add to queue")
             }
         }
     }

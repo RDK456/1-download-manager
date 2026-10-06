@@ -454,17 +454,51 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * Queues every link of a batch paste at once, each under the name its link gives.
+     * YouTube links take the defaults a single add uses: best quality, M4A for audio.
+     */
+    fun addBatch(links: List<String>) {
+        if (links.isEmpty()) return
+        viewModelScope.launch {
+            val ids = links.mapNotNull { link ->
+                val source = LinkParser.sourceFor(link)
+                val youTube = source == DownloadSource.YOUTUBE
+                runCatching {
+                    repository.create(
+                        DownloadCreateRequest(
+                            source = source,
+                            url = link,
+                            fileName = null,
+                            category = null,
+                            quality = if (youTube) MediaQuality.BEST.value else null,
+                            audioFormat = if (youTube) AudioFormat.M4A.value else null
+                        )
+                    )
+                }.getOrNull()?.id
+            }
+            closeEditor()
+            if (ids.isNotEmpty()) {
+                DownloadService.start(getApplication(), ids)
+                _events.emit(DownloadEvent.Message("Added ${ids.size} of ${links.size} links to the queue"))
+            } else {
+                _events.emit(DownloadEvent.Message("Could not add the links"))
+            }
+        }
+    }
+
     /** Queues Internet Archive files, one or a whole item, filed by their names. */
     fun addArchiveFiles(files: List<com.downloadhub.core.ArchiveFile>) {
         if (files.isEmpty()) return
         viewModelScope.launch {
-            val ids = files.mapNotNull { file ->
+            val names = com.downloadhub.core.ArchiveOrg.saveNames(files)
+            val ids = files.mapIndexedNotNull { i, file ->
                 runCatching {
                     repository.create(
                         DownloadCreateRequest(
                             source = DownloadSource.HTTP,
                             url = file.url,
-                            fileName = LinkParser.sanitizeFileName(file.name.substringAfterLast('/')),
+                            fileName = names[i],
                             category = null
                         )
                     )

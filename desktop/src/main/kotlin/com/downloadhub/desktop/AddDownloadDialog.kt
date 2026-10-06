@@ -81,7 +81,9 @@ import java.util.Locale
 fun NewDownloadDialog(
     onPickTorrent: () -> File?,
     onSubmit: (PendingDownload) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Several links, or a numbered range like `file[01-20].jpg`: queued together. */
+    onBatch: (List<String>) -> Unit = {}
 ) {
     // Starts with a link already on the clipboard, as AB Download Manager does: the usual
     // way to get here is having just copied one.
@@ -91,7 +93,9 @@ fun NewDownloadDialog(
     var problem by remember { mutableStateOf<String?>(null) }
     val linkFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { linkFocus.requestFocus() } }
+    val batch = remember(link) { com.downloadhub.core.BatchLinks.expand(link) }.takeIf { it.size > 1 }
     fun next() {
+        if (batch != null) return onBatch(batch)
         val pending = PendingDownload.forLink(link)
         if (pending == null) {
             problem = "That is not a link, a magnet or a file on this computer."
@@ -116,8 +120,8 @@ fun NewDownloadDialog(
                 OutlinedTextField(
                     value = link,
                     onValueChange = { link = it; problem = null },
-                    label = { Text("Link or magnet") },
-                    singleLine = true,
+                    label = { Text("Link or magnet - or several links, or a range like file[01-20].jpg") },
+                    maxLines = 5,
                     modifier = Modifier.fillMaxWidth().focusRequester(linkFocus).onEnter(link.isNotBlank()) { next() }
                 )
                 Spacer(Modifier.height(8.dp))
@@ -149,7 +153,7 @@ fun NewDownloadDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { next() }, enabled = link.isNotBlank()) { Text("Next") }
+            Button(onClick = { next() }, enabled = link.isNotBlank()) { Text(if (batch != null) "Queue ${batch.size} links" else "Next") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

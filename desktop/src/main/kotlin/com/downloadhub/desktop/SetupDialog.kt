@@ -1,5 +1,9 @@
 package com.downloadhub.desktop
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import com.composables.icons.lucide.CircleAlert
+import com.composables.icons.lucide.CircleCheck
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -139,8 +143,16 @@ private fun SetupRow(item: SetupItem) {
         verticalAlignment = Alignment.Top,
         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
     ) {
-        TickBox(checked = item.ready, onChange = null, enabled = item.ready)
-        Column(Modifier.padding(top = 4.dp).weight(1f)) {
+        // A status, not a choice, so an icon rather than a tick box nobody can press; sized
+        // to the first line and spaced from it, where the box sat flush and 4 dp higher.
+        androidx.compose.material3.Icon(
+            if (item.ready) com.composables.icons.lucide.Lucide.CircleCheck else com.composables.icons.lucide.Lucide.CircleAlert,
+            contentDescription = if (item.ready) "Ready" else "Needs attention",
+            tint = if (item.ready) AppTheme.success else AppTheme.Palette.accent,
+            modifier = Modifier.size(18.dp)
+        )
+        androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
             Text(item.label, fontSize = 12.sp)
             Text(
                 item.detail,

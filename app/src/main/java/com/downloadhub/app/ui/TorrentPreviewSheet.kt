@@ -1,5 +1,10 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.File
+import com.composables.icons.lucide.Folder
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,11 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -171,11 +171,11 @@ private fun ContentLine(
     ) {
         TriStateCheckbox(state = state, onClick = { onTick(indices, state != ToggleableState.On) })
         if (node is ContentNode.Folder) {
-            Icon(if (open) Icons.Default.ExpandMore else Icons.Default.ChevronRight, null, Modifier.size(18.dp))
-            Icon(Icons.Default.Folder, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(if (open) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(18.dp))
+            Icon(Lucide.Folder, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
         } else {
             Spacer(Modifier.width(18.dp))
-            Icon(Icons.AutoMirrored.Filled.InsertDriveFile, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Lucide.File, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(6.dp))
         Text(

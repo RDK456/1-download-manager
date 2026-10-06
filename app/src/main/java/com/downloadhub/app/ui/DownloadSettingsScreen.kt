@@ -1,5 +1,10 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.BatteryWarning
+import com.composables.icons.lucide.FolderOpen
+import com.composables.icons.lucide.Minus
+import com.composables.icons.lucide.Plus
 import android.content.Intent
 import com.downloadhub.app.update.YtDlpUpdateState
 import android.net.Uri
@@ -16,11 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BatteryAlert
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -98,7 +98,7 @@ fun DownloadSettingsScreen(
                 onClick = { folderPicker.launch(null) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Lucide.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Change folder")
             }
@@ -186,7 +186,7 @@ fun DownloadSettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(
-                        Icons.Default.BatteryAlert,
+                        Lucide.BatteryWarning,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -298,7 +298,7 @@ private fun StepperRow(
             )
         }
         IconButton(onClick = { onChange((value - 1).coerceIn(range)) }, enabled = value > range.first) {
-            Icon(Icons.Default.Remove, contentDescription = "Decrease $title")
+            Icon(Lucide.Minus, contentDescription = "Decrease $title")
         }
         Text(
             value.toString(),
@@ -307,7 +307,7 @@ private fun StepperRow(
             modifier = Modifier.width(28.dp)
         )
         IconButton(onClick = { onChange((value + 1).coerceIn(range)) }, enabled = value < range.last) {
-            Icon(Icons.Default.Add, contentDescription = "Increase $title")
+            Icon(Lucide.Plus, contentDescription = "Increase $title")
         }
     }
 }

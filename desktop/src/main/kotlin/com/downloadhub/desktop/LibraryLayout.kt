@@ -150,10 +150,14 @@ fun tableLayoutFor(availableDp: Float): TableLayout = when {
  */
 fun sidebarWidthFor(windowDp: Float): Dp = when {
     windowDp >= 1000f -> 230.dp
-    windowDp >= 780f -> 190.dp
-    windowDp >= 600f -> 160.dp
-    else -> 120.dp
+    windowDp >= 780f -> 200.dp
+    // Below that the rail folds to icons, each named by a tooltip, rather than squeezing
+    // labels into 160 or 120 dp where they were cut off mid-word.
+    else -> RAIL_ICONS_DP.dp
 }
+
+/** The width of the rail when it shows icons only. */
+const val RAIL_ICONS_DP = 64f
 
 // --- the toolbar ------------------------------------------------------------
 //

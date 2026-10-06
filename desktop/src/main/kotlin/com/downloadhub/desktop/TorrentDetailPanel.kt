@@ -1,5 +1,7 @@
 package com.downloadhub.desktop
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.List
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,8 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -652,7 +652,7 @@ fun TorrentStatusBar(items: List<DownloadItem>, modifier: Modifier = Modifier) {
         // tab is a strip nobody learns to read.
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                Icons.Default.List,
+                Lucide.List,
                 contentDescription = null,
                 modifier = Modifier.size(12.dp),
                 tint = muted

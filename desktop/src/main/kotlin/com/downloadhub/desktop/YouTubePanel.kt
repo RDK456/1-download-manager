@@ -209,6 +209,15 @@ fun YouTubePanel(
             }
         }
 
+        // A video opened from inside a playlist lists only itself; offer the rest.
+        val wholePlaylist = if (single) com.downloadhub.core.youTubePlaylistLink(link) else null
+        if (wholePlaylist != null) {
+            TextButton(onClick = {
+                link = wholePlaylist
+                run()
+            }) { Text("This video is in a playlist - download the whole playlist") }
+        }
+
         if (single && entries.size == 1) {
             // One video lists every quality and format the extractor offers -
             // every height, frame rate and codec, each with its real size - so

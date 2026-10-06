@@ -132,9 +132,10 @@ class LibraryLayoutTest {
     @Test
     fun theSidebarNarrowsAsTheWindowDoes() {
         assertEquals(230f, sidebarWidthFor(1180f).value, 0.01f)
-        assertEquals(190f, sidebarWidthFor(900f).value, 0.01f)
-        assertEquals(160f, sidebarWidthFor(700f).value, 0.01f)
-        assertEquals(120f, sidebarWidthFor(500f).value, 0.01f)
+        assertEquals(200f, sidebarWidthFor(900f).value, 0.01f)
+        // Narrow windows fold the rail to icons.
+        assertEquals(RAIL_ICONS_DP, sidebarWidthFor(700f).value, 0.01f)
+        assertEquals(RAIL_ICONS_DP, sidebarWidthFor(500f).value, 0.01f)
         // Never more than half the window, or there is nothing left for the list. This
         // has to hold across every reachable width, not just the round ones.
         (MINIMUM_WINDOW_SIZE.width..1400).forEach { window ->

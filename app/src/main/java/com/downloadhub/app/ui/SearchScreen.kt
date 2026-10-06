@@ -1,5 +1,7 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Search
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -169,6 +171,7 @@ fun SearchScreen(
                 onValueChange = { state.query = it },
                 label = { Text("Search") },
                 placeholder = { Text("What are you looking for?") },
+                leadingIcon = { androidx.compose.material3.Icon(Lucide.Search, contentDescription = null) },
                 singleLine = true,
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                     imeAction = androidx.compose.ui.text.input.ImeAction.Search

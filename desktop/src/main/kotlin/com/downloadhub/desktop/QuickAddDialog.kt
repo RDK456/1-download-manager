@@ -1,5 +1,9 @@
 package com.downloadhub.desktop
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.RotateCw
+import com.composables.icons.lucide.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,9 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -187,7 +188,7 @@ fun QuickAddDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(category.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(18.dp))
+                    Icon(Lucide.ChevronDown, null, Modifier.size(18.dp))
                 }
                 DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                     categories.forEach { choice ->
@@ -229,10 +230,10 @@ fun QuickAddDialog(
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(8.dp))
-            IconButton(onClick = { probeAttempt++ }) { Icon(Icons.Default.Refresh, "Read the size again") }
+            IconButton(onClick = { probeAttempt++ }) { Icon(Lucide.RotateCw, "Read the size again") }
             IconButton(onClick = { showOptions = !showOptions; onExpand(showOptions) }) {
                 Icon(
-                    Icons.Default.Settings,
+                    Lucide.Settings,
                     "Headers, cookies and login",
                     tint = if (showOptions) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )

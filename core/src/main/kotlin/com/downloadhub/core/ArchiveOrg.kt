@@ -24,6 +24,17 @@ data class ArchiveItem(
 ) {
     val pageUrl: String get() = "${ArchiveOrg.BASE}/details/$id"
     val thumbnailUrl: String get() = "${ArchiveOrg.BASE}/services/img/$id"
+
+    /** The archive's media type in words ("movies" is Video, "etree" a concert recording). */
+    val typeLabel: String get() = when (mediatype) {
+        "movies" -> "Video"
+        "audio", "etree" -> "Audio"
+        "texts" -> "Book"
+        "software" -> "Software"
+        "image" -> "Image"
+        "data" -> "Data"
+        else -> mediatype.replaceFirstChar { it.uppercase() }
+    }
 }
 
 /** One file an item holds, as uploaded. */
@@ -87,7 +98,28 @@ object ArchiveOrg {
     fun needsConfirmation(files: List<ArchiveFile>): Boolean =
         files.size > CONFIRM_FILES || files.sumOf { it.sizeBytes } > CONFIRM_BYTES
 
-    private val BOOKKEEPING =listOf("_meta.xml", "_files.xml", "_meta.sqlite", "_reviews.xml", "__ia_thumb.jpg", "_archive.torrent")
+    /**
+     * A file name per file, in order, none the same. A file is saved under its own name
+     * unless another file in the item shares it (`disc1/cover.jpg`, `disc2/cover.jpg`); then
+     * its folders go into the name (`disc1 - cover.jpg`), so both arrive and each says where
+     * it came from. Compared ignoring case, because Windows file names do.
+     */
+    fun saveNames(files: List<ArchiveFile>): List<String> {
+        val base = files.map { it.name.substringAfterLast('/') }
+        val clashing = base.groupingBy { it.lowercase() }.eachCount().filterValues { it > 1 }.keys
+        val seen = mutableMapOf<String, Int>()
+        return files.mapIndexed { i, file ->
+            val wanted = if (base[i].lowercase() in clashing) file.name.replace("/", " - ") else base[i]
+            val name = LinkParser.sanitizeFileName(wanted)
+            // Flattening can still meet ("a/b - c" and "a - b/c"): number the later ones.
+            when (val count = seen.merge(name.lowercase(), 1, Int::plus)!!) {
+                1 -> name
+                else -> if ('.' in name) "${name.substringBeforeLast('.')} ($count).${name.substringAfterLast('.')}" else "$name ($count)"
+            }
+        }
+    }
+
+    private val BOOKKEEPING = listOf("_meta.xml", "_files.xml", "_meta.sqlite", "_reviews.xml", "__ia_thumb.jpg", "_archive.torrent")
 }
 
 /** Where archive.org serves [name] from item [id], each path segment encoded. */

@@ -127,3 +127,17 @@ fun filterKnownEntries(
     entries: List<YouTubeEntry>,
     isKnown: (String) -> Boolean
 ): List<YouTubeEntry> = entries.filterNot { isKnown(it.id) }
+
+/**
+ * The whole playlist behind a link to one video in it (`watch?v=…&list=…`), or null.
+ *
+ * Listing such a link shows just the video - it is what was clicked - so this is what an
+ * "all of the playlist" offer opens instead. YouTube's auto-generated mixes (`RD…`) are
+ * left out: they are a radio station, not a list, and have no playlist page to open.
+ */
+fun youTubePlaylistLink(url: String): String? {
+    if (!LinkParser.isYouTube(url)) return null
+    val id = Regex("""[?&]list=([\w-]+)""").find(url)?.groupValues?.get(1) ?: return null
+    if (id.startsWith("RD")) return null
+    return "https://www.youtube.com/playlist?list=$id"
+}

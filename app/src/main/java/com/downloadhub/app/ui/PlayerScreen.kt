@@ -1,5 +1,12 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Film
+import com.composables.icons.lucide.Music
+import com.composables.icons.lucide.Pause
+import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.SkipBack
+import com.composables.icons.lucide.SkipForward
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,13 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -80,7 +80,7 @@ fun MiniPlayer(onOpen: () -> Unit) {
                 )
             }
             Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (current.isVideo) Icons.Default.Movie else Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.primary)
+                Icon(if (current.isVideo) Lucide.Film else Lucide.Music, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(current.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -91,9 +91,9 @@ fun MiniPlayer(onOpen: () -> Unit) {
                     )
                 }
                 IconButton(onClick = AppPlayer::toggle) {
-                    Icon(if (state.playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (state.playing) "Pause" else "Play")
+                    Icon(if (state.playing) Lucide.Pause else Lucide.Play, if (state.playing) "Pause" else "Play")
                 }
-                if (state.queue.size > 1) IconButton(onClick = AppPlayer::next) { Icon(Icons.Default.SkipNext, "Next") }
+                if (state.queue.size > 1) IconButton(onClick = AppPlayer::next) { Icon(Lucide.SkipForward, "Next") }
             }
         }
     }
@@ -122,11 +122,11 @@ fun PlayerScreen(library: List<AppPlayer.Item>) {
                     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     if (!current.isVideo) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = AppPlayer::previous) { Icon(Icons.Default.SkipPrevious, "Previous") }
+                            IconButton(onClick = AppPlayer::previous) { Icon(Lucide.SkipBack, "Previous") }
                             FilledIconButton(onClick = AppPlayer::toggle, modifier = Modifier.size(56.dp)) {
-                                Icon(if (state.playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, Modifier.size(30.dp))
+                                Icon(if (state.playing) Lucide.Pause else Lucide.Play, null, Modifier.size(30.dp))
                             }
-                            IconButton(onClick = AppPlayer::next) { Icon(Icons.Default.SkipNext, "Next") }
+                            IconButton(onClick = AppPlayer::next) { Icon(Lucide.SkipForward, "Next") }
                         }
                         LyricsCard(current.title)
                     }
@@ -159,7 +159,7 @@ fun PlayerScreen(library: List<AppPlayer.Item>) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    if (item.isVideo) Icons.Default.Movie else Icons.Default.MusicNote,
+                    if (item.isVideo) Lucide.Film else Lucide.Music,
                     null,
                     tint = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )

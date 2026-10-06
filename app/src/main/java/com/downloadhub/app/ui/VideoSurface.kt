@@ -1,5 +1,12 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Maximize
+import com.composables.icons.lucide.Minimize
+import com.composables.icons.lucide.Pause
+import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.SkipBack
+import com.composables.icons.lucide.SkipForward
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
@@ -20,13 +27,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -243,16 +243,16 @@ private fun GestureVideo(fullscreen: Boolean, onFullscreen: () -> Unit, modifier
         if (controls) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f))) {
                 Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
-                    if (state.queue.size > 1) VideoButton(Icons.Default.SkipPrevious, "Previous", AppPlayer::previous)
+                    if (state.queue.size > 1) VideoButton(Lucide.SkipBack, "Previous", AppPlayer::previous)
                     IconButton(onClick = AppPlayer::toggle, modifier = Modifier.size(64.dp)) {
                         Icon(
-                            if (state.playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            if (state.playing) Lucide.Pause else Lucide.Play,
                             if (state.playing) "Pause" else "Play",
                             tint = Color.White,
                             modifier = Modifier.size(44.dp)
                         )
                     }
-                    if (state.queue.size > 1) VideoButton(Icons.Default.SkipNext, "Next", AppPlayer::next)
+                    if (state.queue.size > 1) VideoButton(Lucide.SkipForward, "Next", AppPlayer::next)
                 }
                 Row(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 8.dp),
@@ -277,7 +277,7 @@ private fun GestureVideo(fullscreen: Boolean, onFullscreen: () -> Unit, modifier
                         Text(clock(state.durationMillis), color = Color.White, style = MaterialTheme.typography.labelSmall)
                     }
                     VideoButton(
-                        if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                        if (fullscreen) Lucide.Minimize else Lucide.Maximize,
                         if (fullscreen) "Exit full screen" else "Full screen",
                         onFullscreen
                     )

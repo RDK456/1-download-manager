@@ -1,5 +1,7 @@
 package com.downloadhub.desktop
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ChevronDown
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,8 +25,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -93,7 +93,7 @@ fun TvPanel(modifier: Modifier = Modifier) {
                 var open by remember { mutableStateOf(false) }
                 OutlinedButton(onClick = { open = true }) {
                     Text("Country", fontSize = 12.sp)
-                    Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp))
+                    Icon(Lucide.ChevronDown, null, Modifier.size(16.dp))
                 }
                 DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                     IptvSource.countries.forEach { (code, name) ->

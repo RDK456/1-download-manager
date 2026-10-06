@@ -1,5 +1,7 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ClipboardPaste
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -166,7 +168,7 @@ fun YouTubeScreen(
             .padding(top = 12.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("YouTube", style = MaterialTheme.typography.headlineSmall)
+        // No heading: the top bar already says YouTube.
         Text(
             "A video, playlist, album or channel - the section lists what the " +
                 "link holds, and downloads the rows you tick.",
@@ -180,6 +182,12 @@ fun YouTubeScreen(
             label = { Text("YouTube link") },
             placeholder = { Text("Video, playlist, album or channel") },
             singleLine = true,
+            trailingIcon = {
+                val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                androidx.compose.material3.IconButton(onClick = { clipboard.getText()?.text?.trim()?.let { link = it } }) {
+                    androidx.compose.material3.Icon(Lucide.ClipboardPaste, contentDescription = "Paste link")
+                }
+            },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
                 imeAction = androidx.compose.ui.text.input.ImeAction.Go
@@ -243,6 +251,18 @@ fun YouTubeScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+
+        // A video opened from inside a playlist lists only itself; offer the rest.
+        val wholePlaylist = if (single) com.downloadhub.core.youTubePlaylistLink(fetchedLink) else null
+        if (wholePlaylist != null) {
+            OutlinedButton(
+                onClick = {
+                    link = wholePlaylist
+                    fetchedLink = wholePlaylist
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("This video is in a playlist - download the whole playlist") }
         }
 
         if (single && entries.size == 1) {

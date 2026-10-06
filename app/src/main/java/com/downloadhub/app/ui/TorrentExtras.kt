@@ -1,5 +1,10 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.File
+import com.composables.icons.lucide.Folder
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,11 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -189,11 +189,11 @@ private fun ContentList(id: String, content: TorrentContentView?, onFilesWanted:
         ) {
             TriStateCheckbox(state = state, onClick = { setWanted(indices, state != ToggleableState.On) })
             if (node is ContentNode.Folder) {
-                Icon(if (node.fullPath in expanded) Icons.Default.ExpandMore else Icons.Default.ChevronRight, null, Modifier.size(18.dp))
-                Icon(Icons.Default.Folder, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                Icon(if (node.fullPath in expanded) Lucide.ChevronDown else Lucide.ChevronRight, null, Modifier.size(18.dp))
+                Icon(Lucide.Folder, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
             } else {
                 Spacer(Modifier.width(18.dp))
-                Icon(Icons.AutoMirrored.Filled.InsertDriveFile, null, Modifier.size(18.dp), tint = muted)
+                Icon(Lucide.File, null, Modifier.size(18.dp), tint = muted)
             }
             Spacer(Modifier.width(6.dp))
             Column(Modifier.weight(1f).padding(vertical = 4.dp)) {

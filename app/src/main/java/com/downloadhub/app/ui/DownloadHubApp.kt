@@ -1,5 +1,28 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.ArrowLeft
+import com.composables.icons.lucide.BookOpen
+import com.composables.icons.lucide.CircleCheck
+import com.composables.icons.lucide.CirclePlay
+import com.composables.icons.lucide.Clock
+import com.composables.icons.lucide.CloudDownload
+import com.composables.icons.lucide.Compass
+import com.composables.icons.lucide.Download
+import com.composables.icons.lucide.Film
+import com.composables.icons.lucide.Folder
+import com.composables.icons.lucide.FolderOpen
+import com.composables.icons.lucide.Gauge
+import com.composables.icons.lucide.Info
+import com.composables.icons.lucide.Music
+import com.composables.icons.lucide.Palette
+import com.composables.icons.lucide.Pause
+import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Rss
+import com.composables.icons.lucide.Search
+import com.composables.icons.lucide.Settings
+import com.composables.icons.lucide.SlidersHorizontal
+import com.composables.icons.lucide.Tv
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -26,29 +49,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.LiveTv
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.RssFeed
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -294,7 +294,8 @@ fun DownloadHubApp(
                         // Adding a download is the floating action button's job, so the
                         // root tabs show the app mark instead of a second add button.
                         when (destination) {
-                            AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.SEARCH, AppDestination.YOUTUBE -> {
+                            // Every bottom-bar tab is a root: no back arrow on any of them.
+                            AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.SEARCH, AppDestination.YOUTUBE, AppDestination.DISCOVER -> {
                                 Image(
                                     painter = painterResource(R.drawable.ic_launcher_foreground),
                                     contentDescription = null,
@@ -307,13 +308,15 @@ fun DownloadHubApp(
                                 // Same behaviour as the system back gesture: pop
                                 // one level rather than jumping to a parent by hand.
                                 IconButton(onClick = { nav.back()?.let { navKey = encodeNav(it) } }) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                                    Icon(Lucide.ArrowLeft, contentDescription = "Back")
                                 }
                             }
                         }
                     },
                     actions = {
-                        if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS && !destination.isDiscover) {
+                        // The filter narrows the download list, so it is offered only where
+                        // that list is; on Search and YouTube it did nothing visible.
+                        if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) {
                             BadgedBox(
                                 badge = {
                                     if (hasActiveFilter) {
@@ -337,7 +340,7 @@ fun DownloadHubApp(
                         }
                         if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT) {
                             IconButton(onClick = { navigate(AppDestination.SETTINGS) }) {
-                                Icon(Icons.Default.Settings, contentDescription = "Settings")
+                                Icon(Lucide.Settings, contentDescription = "Settings")
                             }
                         }
                     },
@@ -355,31 +358,31 @@ fun DownloadHubApp(
                         NavigationBarItem(
                             selected = destination == AppDestination.DOWNLOADS,
                             onClick = { navigate(AppDestination.DOWNLOADS) },
-                            icon = { ActiveBadge(mainSummary.active) { Icon(Icons.Default.Download, contentDescription = null) } },
+                            icon = { ActiveBadge(mainSummary.active) { Icon(Lucide.Download, contentDescription = null) } },
                             label = { Text("Downloads") }
                         )
                         NavigationBarItem(
                             selected = destination == AppDestination.TORRENTS,
                             onClick = { navigate(AppDestination.TORRENTS) },
-                            icon = { ActiveBadge(torrentSummary.active) { Icon(Icons.Default.Folder, contentDescription = null) } },
+                            icon = { ActiveBadge(torrentSummary.active) { Icon(Lucide.Folder, contentDescription = null) } },
                             label = { Text("Torrents") }
                         )
                         NavigationBarItem(
                             selected = destination == AppDestination.SEARCH,
                             onClick = { navigate(AppDestination.SEARCH) },
-                            icon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            icon = { Icon(Lucide.Search, contentDescription = null) },
                             label = { Text("Search") }
                         )
                         NavigationBarItem(
                             selected = destination == AppDestination.YOUTUBE,
                             onClick = { navigate(AppDestination.YOUTUBE) },
-                            icon = { Icon(Icons.Default.Movie, contentDescription = null) },
+                            icon = { Icon(Lucide.Film, contentDescription = null) },
                             label = { Text("YouTube") }
                         )
                         NavigationBarItem(
                             selected = destination.isDiscover,
                             onClick = { navigate(AppDestination.DISCOVER) },
-                            icon = { Icon(Icons.Default.Explore, contentDescription = null) },
+                            icon = { Icon(Lucide.Compass, contentDescription = null) },
                             label = { Text("Discover") }
                         )
                     }
@@ -389,7 +392,7 @@ fun DownloadHubApp(
             floatingActionButton = {
                 if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS && !destination.isDiscover) {
                     FloatingActionButton(onClick = { viewModel.openEditor() }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add download")
+                        Icon(Lucide.Plus, contentDescription = "Add download")
                     }
                 }
             },            snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -614,6 +617,7 @@ fun DownloadHubApp(
                 onDismiss = viewModel::closeEditor,
                 onAdd = viewModel::addLink,
                 onRequestOptions = viewModel::setPendingRequest,
+                onAddBatch = viewModel::addBatch,
                 // A YouTube link in the sheet belongs to the YouTube tab: the
                 // sheet closes, the tab opens with the link already loading.
                 onOpenYouTubeTab = { link ->
@@ -723,9 +727,12 @@ private fun KindFilterRow(
     counts: Map<LibraryKind, Int>,
     onKindChange: (LibraryKind) -> Unit
 ) {
-    androidx.compose.foundation.layout.FlowRow(
+    // One line that scrolls, not a FlowRow: four chips wrapped one onto a second line by
+    // itself, which read as a separate control.
+    Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -786,7 +793,7 @@ private fun DownloadsScreen(
             label = {
                 Text(if (showTorrentAction) "Search torrents" else "Search downloads")
             },
-            leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) }
+            leadingIcon = { Icon(Lucide.Search, contentDescription = null) }
         )
         // The kinds, on the Downloads tab only. The Torrents tab is already one kind,
         // and offering three ways to ask for torrents on a screen that is torrents is
@@ -850,7 +857,7 @@ private fun DownloadsScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 32.dp, vertical = 24.dp)
                     ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null)
+                        Icon(Lucide.FolderOpen, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Open a .torrent file")
                     }
@@ -881,43 +888,47 @@ private fun DownloadsScreen(
 }
 
 /**
- * The numbers you open the list to find out, as a row of small cards: what is running,
- * how fast, what is waiting, what is done. Scrolls sideways on a narrow phone rather than
- * squeezing the numbers.
+ * The numbers you open the list to find out, as four cards sharing the width: what is
+ * running, how fast, what is waiting, what is done. They used to scroll sideways, which on
+ * a phone cut the last card in half with nothing to say there was more.
  */
 @Composable
 private fun SummaryBand(summary: TabSummary) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        StatCard(summary.active.toString(), "Active", Icons.Default.Download, MaterialTheme.colorScheme.primary)
-        StatCard(com.downloadhub.core.DisplayFormat.speed(summary.speed), "Speed", Icons.Default.Speed, MaterialTheme.colorScheme.primary)
-        StatCard(summary.queued.toString(), "Queued", Icons.Default.Pause, MaterialTheme.colorScheme.onSurfaceVariant)
-        StatCard(summary.completed.toString(), "Completed", Icons.Default.CheckCircle, MaterialTheme.colorScheme.tertiary)
+        val card = Modifier.weight(1f)
+        StatCard(summary.active.toString(), "Active", Lucide.Download, MaterialTheme.colorScheme.primary, card)
+        // speed() is blank at zero; a card always says its number.
+        StatCard(com.downloadhub.core.DisplayFormat.speed(summary.speed).ifEmpty { "0 B/s" }, "Speed", Lucide.Gauge, MaterialTheme.colorScheme.primary, card)
+        StatCard(summary.queued.toString(), "Queued", Lucide.Pause, MaterialTheme.colorScheme.onSurfaceVariant, card)
+        StatCard(summary.completed.toString(), "Done", Lucide.CircleCheck, MaterialTheme.colorScheme.tertiary, card)
     }
 }
 
 @Composable
-private fun StatCard(value: String, label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tint: androidx.compose.ui.graphics.Color) {
+private fun StatCard(
+    value: String,
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
     Surface(
+        modifier = modifier,
         color = MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.medium,
         tonalElevation = 1.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = androidx.compose.foundation.shape.CircleShape, color = tint.copy(alpha = 0.14f)) {
-                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.padding(7.dp).size(18.dp))
-            }
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.height(6.dp))
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
     }
 }
@@ -992,7 +1003,7 @@ private fun EmptyDownloads(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    Icons.Default.CloudDownload,
+                    Lucide.CloudDownload,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(36.dp)
@@ -1052,32 +1063,32 @@ private fun SettingsScreen(
     ) {
         SettingsSection("General") {
             SettingsNavRow(
-                icon = Icons.Default.Download,
+                icon = Lucide.Download,
                 title = "Download settings",
                 subtitle = "Folder, simultaneous downloads, speed limit, retries"
             ) { onDownloadSettings() }
             SettingsNavRow(
-                icon = Icons.Default.Palette,
+                icon = Lucide.Palette,
                 title = "Themes",
                 subtitle = "Two-tone colour scheme, light or dark"
             ) { onThemes() }
             SettingsNavRow(
-                icon = Icons.Default.Schedule,
+                icon = Lucide.Clock,
                 title = "Queues",
                 subtitle = "Named queues that start and stop on a schedule"
             ) { onQueues() }
             SettingsNavRow(
-                icon = Icons.Default.Tune,
+                icon = Lucide.SlidersHorizontal,
                 title = "Advanced",
                 subtitle = "Categories, proxy, speed limits, BitTorrent, IP filter"
             ) { onAdvanced() }
             SettingsNavRow(
-                icon = Icons.Default.RssFeed,
+                icon = Lucide.Rss,
                 title = "RSS feeds",
                 subtitle = "Subscribe to feeds and download matching articles automatically"
             ) { onRss() }
             SettingsNavRow(
-                icon = Icons.Default.Info,
+                icon = Lucide.Info,
                 title = "About 1 download manager",
                 subtitle = "Version, source code and updates"
             ) { onAbout() }
@@ -1201,37 +1212,37 @@ private fun discoverTiles(): List<DiscoverTile> = listOf(
     DiscoverTile(
         "Free books",
         "Project Gutenberg, Standard Ebooks, Open Library, the Internet Archive and Wikisource",
-        Icons.AutoMirrored.Filled.MenuBook,
+        Lucide.BookOpen,
         AppDestination.BOOKS
     ),
     DiscoverTile(
         "Free movies",
         "Public-domain films, silent films, cartoons and classic TV",
-        Icons.Default.Movie,
+        Lucide.Film,
         AppDestination.MOVIES
     ),
     DiscoverTile(
         "Free music",
         "Shareable live concerts, Creative Commons netlabels and LibriVox audiobooks",
-        Icons.Default.MusicNote,
+        Lucide.Music,
         AppDestination.MUSIC
     ),
     DiscoverTile(
         "Free TV",
         "Freely broadcast channels from around the world, by category or country",
-        Icons.Default.LiveTv,
+        Lucide.Tv,
         AppDestination.TV
     ),
     DiscoverTile(
         "Internet Archive",
         "Browse all of archive.org - video, audio, books, software and apps - and download whole items in one tap",
-        Icons.Default.CloudDownload,
+        Lucide.CloudDownload,
         AppDestination.ARCHIVE
     ),
     DiscoverTile(
         "Player",
         "Your downloaded music and videos, with synced lyrics",
-        Icons.Default.PlayCircle,
+        Lucide.CirclePlay,
         AppDestination.PLAYER
     )
 )

@@ -1,5 +1,7 @@
 package com.downloadhub.desktop
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Search
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -89,6 +91,7 @@ fun ArchivePanel(onDownload: (List<ArchiveFile>) -> Unit, modifier: Modifier = M
                 onValueChange = { query = it },
                 singleLine = true,
                 label = { Text("Search archive.org - leave empty to browse the most downloaded", fontSize = 12.sp) },
+                leadingIcon = { androidx.compose.material3.Icon(Lucide.Search, contentDescription = null) },
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(8.dp))
@@ -136,7 +139,7 @@ private fun ArchiveRow(item: ArchiveItem, onOpen: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(item.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppTheme.Palette.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                listOf(item.mediatype, item.creator, item.sizeBytes.takeIf { it > 0 }?.let(::formatBytes).orEmpty(), "${item.downloads} downloads")
+                listOf(item.typeLabel, item.creator, item.sizeBytes.takeIf { it > 0 }?.let(::formatBytes).orEmpty(), "${item.downloads} downloads")
                     .filter { it.isNotBlank() }.joinToString(" · "),
                 fontSize = 11.sp, color = AppTheme.Palette.muted, maxLines = 1, overflow = TextOverflow.Ellipsis
             )

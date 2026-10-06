@@ -21,6 +21,8 @@ androidxJunit = "1.2.1"
 espresso = "3.6.1"
 
 [libraries]
+# Lucide icons for Compose (Android and desktop): one consistent, larger-reading icon set.
+lucide-icons = { module = "com.composables:icons-lucide", version = "1.1.0" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
