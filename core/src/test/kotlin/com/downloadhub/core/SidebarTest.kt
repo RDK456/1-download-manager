@@ -87,6 +87,7 @@ class SidebarTest {
                     RailEntry.Movies -> "Free movies"
                     RailEntry.Music -> "Free music"
                     RailEntry.Tv -> "Free TV"
+                    RailEntry.Archive -> "Internet Archive"
                     RailEntry.Player -> "Player"
                     is RailEntry.Heading -> null
                 }
@@ -337,7 +338,7 @@ class SidebarTest {
                 is RailEntry.Search -> "search"
                 is RailEntry.YouTube -> "youtube"
                 is RailEntry.Rss -> "rss"
-                is RailEntry.Books, is RailEntry.Movies, is RailEntry.Music, is RailEntry.Tv, is RailEntry.Player -> "section"
+                is RailEntry.Books, is RailEntry.Movies, is RailEntry.Music, is RailEntry.Tv, is RailEntry.Archive, is RailEntry.Player -> "section"
                 is RailEntry.Heading -> "heading"
             }
         }

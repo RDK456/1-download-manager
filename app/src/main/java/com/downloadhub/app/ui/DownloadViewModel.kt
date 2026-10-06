@@ -454,6 +454,31 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /** Queues Internet Archive files, one or a whole item, filed by their names. */
+    fun addArchiveFiles(files: List<com.downloadhub.core.ArchiveFile>) {
+        if (files.isEmpty()) return
+        viewModelScope.launch {
+            val ids = files.mapNotNull { file ->
+                runCatching {
+                    repository.create(
+                        DownloadCreateRequest(
+                            source = DownloadSource.HTTP,
+                            url = file.url,
+                            fileName = LinkParser.sanitizeFileName(file.name.substringAfterLast('/')),
+                            category = null
+                        )
+                    )
+                }.getOrNull()?.id
+            }
+            if (ids.isNotEmpty()) {
+                DownloadService.start(getApplication(), ids)
+                _events.emit(DownloadEvent.Message("Added ${ids.size} item(s) to the queue"))
+            } else {
+                _events.emit(DownloadEvent.Message("Could not add the files"))
+            }
+        }
+    }
+
     /**
      * A YouTube link the add sheet handed over, loaded once by the YouTube tab.
      *

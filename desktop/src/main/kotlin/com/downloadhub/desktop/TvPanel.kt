@@ -149,7 +149,7 @@ fun TvPanel(modifier: Modifier = Modifier) {
                     ChannelCard(
                         channel = channel,
                         canWatch = hasPlayer,
-                        onWatch = { if (!DesktopPlayer.openStream(channel.url)) notice = "Could not start the video player." },
+                        onWatch = { if (!DesktopPlayer.openStream(channel.url, channel.userAgent, channel.referrer)) notice = "Could not start the video player." },
                         onCopy = {
                             Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(channel.url), null)
                             notice = "Copied the link to ${channel.name}."

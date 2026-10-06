@@ -108,14 +108,16 @@ fun PlayerScreen(library: List<AppPlayer.Item>) {
     val context = LocalContext.current
     val state by AppPlayer.state.collectAsState()
     val current = state.current
-    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    // The video stays above the list rather than in it: a video surface scrolled inside a
+    // lazy list flickers and drops frames.
+    Column(Modifier.fillMaxSize()) {
+    if (current?.isVideo == true) {
+        VideoSurface(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+    }
+    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (current != null) {
             item(key = "now") {
                 Column(Modifier.padding(16.dp)) {
-                    if (current.isVideo) {
-                        VideoSurface(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-                    }
-                    Spacer(Modifier.height(8.dp))
                     Text(current.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2)
                     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     if (!current.isVideo) {
@@ -168,6 +170,7 @@ fun PlayerScreen(library: List<AppPlayer.Item>) {
                 HorizontalDivider(Modifier.padding(start = 52.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
             }
         }
+    }
     }
 }
 

@@ -39,4 +39,20 @@ class IptvTest {
         assertEquals("https://iptv-org.github.io/iptv/categories/news.m3u", IptvSource.categoryUrl("news"))
         assertEquals("https://iptv-org.github.io/iptv/countries/in.m3u", IptvSource.countryUrl("in"))
     }
+
+    @Test
+    fun `a channel keeps the user agent and referrer its broadcaster asks for`() {
+        val text = """#EXTM3U
+#EXTINF:-1 tvg-id="a",Picky News
+#EXTVLCOPT:http-user-agent=Mozilla/5.0 (Windows)
+#EXTVLCOPT:http-referrer=https://example.com/
+https://example.com/live.m3u8
+#EXTINF:-1,Plain News
+https://example.org/live.m3u8"""
+        val (picky, plain) = IptvSource.parseM3u(text)
+        assertEquals("Mozilla/5.0 (Windows)", picky.userAgent)
+        assertEquals("https://example.com/", picky.referrer)
+        assertEquals(null, plain.userAgent)
+        assertEquals(null, plain.referrer)
+    }
 }

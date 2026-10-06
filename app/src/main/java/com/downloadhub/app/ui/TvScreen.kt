@@ -125,7 +125,7 @@ fun TvScreen(loader: ThumbnailCache, onWatching: () -> Unit) {
             ) {
                 items(shown, key = { it.url }) { channel ->
                     ChannelCard(channel, loader) {
-                        AppPlayer.play(context, listOf(AppPlayer.Item(channel.url, channel.name, isVideo = true, isLive = true)), 0)
+                        AppPlayer.play(context, listOf(AppPlayer.Item(channel.url, channel.name, isVideo = true, isLive = true, userAgent = channel.userAgent, referrer = channel.referrer)), 0)
                         onWatching()
                     }
                 }

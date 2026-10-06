@@ -219,13 +219,16 @@ private fun FormatButton(label: String, onClick: () -> Unit) {
 }
 
 /** A book queued like any other download: named after the book, filed by the category rules. */
-internal fun bookRequest(book: BookResult, file: BookFile, settings: DesktopSettings): com.downloadhub.core.TorrentAddRequest {
-    val name = BookSources.fileName(book, file)
+internal fun bookRequest(book: BookResult, file: BookFile, settings: DesktopSettings): com.downloadhub.core.TorrentAddRequest =
+    linkRequest(BookSources.fileName(book, file), file.url, settings)
+
+/** A plain link queued under [name], in the folder the category rules give that name. */
+internal fun linkRequest(name: String, url: String, settings: DesktopSettings): com.downloadhub.core.TorrentAddRequest {
     val folder = com.downloadhub.core.SaveCategories
         .forFile(name, settings.downloadDirFile(), settings.categoryRules.map { it.toRule() }).folder
     return com.downloadhub.core.TorrentAddRequest(
         metainfo = com.downloadhub.core.TorrentMetainfo(name, emptyList(), "", 0L, "", "", "", true),
         saveDirectory = folder,
-        link = file.url
+        link = url
     )
 }

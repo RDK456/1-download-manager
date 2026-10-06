@@ -27,8 +27,8 @@ android {
         applicationId = "com.downloadhub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 54
-        versionName = "1.5.9"
+        versionCode = 55
+        versionName = "1.6.0"
 
         // Single source of truth for the About page and the in-app updater.
         buildConfigField("String", "GITHUB_OWNER", "\"RDK456\"")
@@ -151,6 +151,7 @@ dependencies {
     // The built-in player: music, video and the free TV channels (HLS streams).
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
+    implementation(libs.androidx.media3.exoplayer.dash)
     implementation(libs.androidx.media3.ui)
     debugImplementation(libs.androidx.compose.ui.tooling)
 

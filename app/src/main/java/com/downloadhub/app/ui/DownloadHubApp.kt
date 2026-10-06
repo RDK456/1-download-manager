@@ -350,7 +350,7 @@ fun DownloadHubApp(
                 if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
                     Column {
                     // Above the tabs on every screen while something is playing.
-                    MiniPlayer(onOpen = { navigate(AppDestination.PLAYER) })
+                    if (destination != AppDestination.PLAYER) MiniPlayer(onOpen = { navigate(AppDestination.PLAYER) })
                     NavigationBar(modifier = Modifier.navigationBarsPadding()) {
                         NavigationBarItem(
                             selected = destination == AppDestination.DOWNLOADS,
@@ -550,6 +550,10 @@ fun DownloadHubApp(
                     AppDestination.TV -> TvScreen(
                         loader = viewModel.thumbnailCache,
                         onWatching = { navigate(AppDestination.PLAYER) }
+                    )
+                    AppDestination.ARCHIVE -> ArchiveScreen(
+                        loader = viewModel.thumbnailCache,
+                        onDownload = viewModel::addArchiveFiles
                     )
                     AppDestination.PLAYER -> PlayerScreen(
                         library = remember(allItems) { AppPlayer.libraryItems(allItems) }
@@ -1156,6 +1160,7 @@ private fun destinationTitle(destination: AppDestination): String = when (destin
     AppDestination.MUSIC -> "Free music"
     AppDestination.PLAYER -> "Player"
     AppDestination.TV -> "Free TV"
+    AppDestination.ARCHIVE -> "Internet Archive"
     AppDestination.ABOUT -> "About us"
 }
 
@@ -1216,6 +1221,12 @@ private fun discoverTiles(): List<DiscoverTile> = listOf(
         "Freely broadcast channels from around the world, by category or country",
         Icons.Default.LiveTv,
         AppDestination.TV
+    ),
+    DiscoverTile(
+        "Internet Archive",
+        "Browse all of archive.org - video, audio, books, software and apps - and download whole items in one tap",
+        Icons.Default.CloudDownload,
+        AppDestination.ARCHIVE
     ),
     DiscoverTile(
         "Player",

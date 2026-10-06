@@ -210,6 +210,9 @@ sealed interface RailEntry {
     /** Free, legally broadcast TV channels from the public iptv-org list. */
     data object Tv : RailEntry
 
+    /** The whole Internet Archive, every media type, with one-click download of an item. */
+    data object Archive : RailEntry
+
     /** The built-in player, for what has been downloaded. */
     data object Player : RailEntry
 
@@ -241,6 +244,7 @@ fun sidebarEntries(): List<RailEntry> = buildList {
         if (index == 0) add(RailEntry.Movies)
         if (index == 0) add(RailEntry.Music)
         if (index == 0) add(RailEntry.Tv)
+        if (index == 0) add(RailEntry.Archive)
         if (index == 0) add(RailEntry.Player)
     }
     add(RailEntry.Heading("Categories"))
@@ -277,7 +281,7 @@ fun railCount(entry: RailEntry, items: List<DownloadItem>): Int = when (entry) {
     RailEntry.Search -> 0
     // YouTube holds no downloads either: a pasted playlist is not in the queue yet.
     RailEntry.YouTube -> 0
-    RailEntry.Rss, RailEntry.Books, RailEntry.Movies, RailEntry.Music, RailEntry.Tv, RailEntry.Player -> 0
+    RailEntry.Rss, RailEntry.Books, RailEntry.Movies, RailEntry.Music, RailEntry.Tv, RailEntry.Archive, RailEntry.Player -> 0
     is RailEntry.Heading -> 0
 }
 

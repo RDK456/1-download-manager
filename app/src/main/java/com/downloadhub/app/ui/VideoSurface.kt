@@ -4,6 +4,11 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.provider.Settings
+import android.graphics.drawable.ColorDrawable
+import android.os.Build
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.Window
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -22,6 +27,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +51,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -54,6 +61,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.ui.PlayerView
+import com.downloadhub.app.R
 import kotlinx.coroutines.delay
 
 /**
@@ -87,6 +95,16 @@ private fun FullscreenVideo(onExit: () -> Unit) {
             activity?.requestedOrientation = if (size != null && size.height > size.width) ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
             else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             window?.let { w ->
+                // Edge to edge, over the camera cutout too: otherwise the dialog stops short of
+                // the cutout side in landscape and the page underneath shows through.
+                w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                w.setBackgroundDrawable(ColorDrawable(android.graphics.Color.BLACK))
+                w.setDimAmount(0f)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    w.attributes = w.attributes.apply {
+                        layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    }
+                }
                 WindowCompat.getInsetsController(w, w.decorView).apply {
                     hide(WindowInsetsCompat.Type.systemBars())
                     systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -188,14 +206,27 @@ private fun GestureVideo(fullscreen: Boolean, onFullscreen: () -> Unit, modifier
     ) {
         AndroidView(
             factory = { ctx ->
-                PlayerView(ctx).apply {
-                    useController = false
+                // From XML, the only way to pick a TextureView; see video_player.xml.
+                (LayoutInflater.from(ctx).inflate(R.layout.video_player, null) as PlayerView).apply {
                     player = AppPlayer.player(ctx)
                 }
             },
             onRelease = { it.player = null },
             modifier = Modifier.fillMaxSize()
         )
+
+        if (state.buffering && state.error == null) {
+            CircularProgressIndicator(Modifier.align(Alignment.Center).size(40.dp), color = Color.White, strokeWidth = 3.dp)
+        }
+        state.error?.let {
+            Text(
+                it,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.Center).padding(24.dp)
+            )
+        }
 
         hint?.let {
             Text(

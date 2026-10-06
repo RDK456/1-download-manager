@@ -12,7 +12,9 @@ data class IptvChannel(
     val logo: String? = null,
     val groups: List<String> = emptyList(),
     val quality: String = "",
-    val flags: List<String> = emptyList()
+    val flags: List<String> = emptyList(),
+    val userAgent: String? = null,
+    val referrer: String? = null
 ) {
     val geoBlocked: Boolean get() = flags.any { it.equals("Geo-blocked", ignoreCase = true) }
 }
@@ -54,12 +56,23 @@ object IptvSource {
     fun parseM3u(text: String): List<IptvChannel> {
         val channels = mutableListOf<IptvChannel>()
         var pending: String? = null
+        // Some broadcasters only answer a particular player or page; the list says which
+        // in #EXTVLCOPT lines between a channel and its address.
+        val options = mutableMapOf<String, String>()
         text.lineSequence().map { it.trim() }.forEach { line ->
             when {
-                line.startsWith("#EXTINF", ignoreCase = true) -> pending = line
-                line.isEmpty() || line.startsWith("#") -> Unit // #EXTM3U, #EXTVLCOPT and the like
+                line.startsWith("#EXTINF", ignoreCase = true) -> {
+                    pending = line
+                    options.clear()
+                }
+                line.startsWith("#EXTVLCOPT:", ignoreCase = true) ->
+                    line.substringAfter(":").split("=", limit = 2).takeIf { it.size == 2 }?.let { (key, value) -> options[key.trim()] = value.trim() }
+                line.isEmpty() || line.startsWith("#") -> Unit // #EXTM3U and the like
                 pending != null -> {
-                    channels += channelFrom(pending!!, line)
+                    channels += channelFrom(pending!!, line).copy(
+                        userAgent = options["http-user-agent"],
+                        referrer = options["http-referrer"]
+                    )
                     pending = null
                 }
             }

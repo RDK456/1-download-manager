@@ -249,9 +249,17 @@ object DesktopPlayer {
             ?: System.getenv("PATH").orEmpty().split(File.pathSeparator).map { File(it, "mpv.exe") }.firstOrNull { it.isFile }
 
     /** Opens a live stream in VLC or mpv; false when neither is installed to play it. */
-    fun openStream(url: String): Boolean {
+    /** Opens a stream, with the user agent and referrer its broadcaster asks for, if any. */
+    fun openStream(url: String, userAgent: String? = null, referrer: String? = null): Boolean {
         val player = externalPlayer() ?: return false
-        return runCatching { ProcessBuilder(player.absolutePath, url).start() }.isSuccess
+        val mpv = player.name.startsWith("mpv", ignoreCase = true)
+        val command = buildList {
+            add(player.absolutePath)
+            userAgent?.let { add(if (mpv) "--user-agent=$it" else "--http-user-agent=$it") }
+            referrer?.let { add(if (mpv) "--referrer=$it" else "--http-referrer=$it") }
+            add(url)
+        }
+        return runCatching { ProcessBuilder(command).start() }.isSuccess
     }
 
     /** The music and videos among finished downloads, including the files inside torrent folders. */

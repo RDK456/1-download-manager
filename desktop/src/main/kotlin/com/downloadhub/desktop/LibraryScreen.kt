@@ -421,6 +421,18 @@ fun LibraryScreen(
                         TvPanel(modifier = Modifier.fillMaxSize())
                         return@Column
                      }
+                     if (extraPanel == RailEntry.Archive) {
+                        ArchivePanel(
+                            onDownload = { files ->
+                                files.forEach { file ->
+                                    val name = com.downloadhub.core.LinkParser.sanitizeFileName(file.name.substringAfterLast('/'))
+                                    actions.addPrepared(linkRequest(name, file.url, state.settings))
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        return@Column
+                     }
                      if (extraPanel == RailEntry.Player) {
                         PlayerPanel(items = all, modifier = Modifier.fillMaxSize())
                         return@Column
@@ -1136,6 +1148,14 @@ private fun CategoryRail(
                     icon = DlmIcons.Videos,
                     compact = compact
                 ) { onExtra(RailEntry.Tv) }
+
+                RailEntry.Archive -> RailRow(
+                    label = "Internet Archive",
+                    count = 0,
+                    selected = extraPanel == RailEntry.Archive,
+                    icon = DlmIcons.Documents,
+                    compact = compact
+                ) { onExtra(RailEntry.Archive) }
             }
         }
             // Queues, after the fixed sections: they are the user's own, and there can be

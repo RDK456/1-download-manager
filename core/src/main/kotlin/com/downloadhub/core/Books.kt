@@ -217,8 +217,7 @@ object BookSources {
             val name = file.string("name") ?: return@mapNotNull null
             name to (file.string("size")?.toLongOrNull() ?: 0L)
         }
-        fun url(name: String) = "https://archive.org/download/$id/" +
-            name.split('/').joinToString("/") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+        fun url(name: String) = archiveDownloadUrl(id, name)
         return when (catalog) {
             FreeCatalog.BOOKS -> {
                 val order = listOf("EPUB", "PDF", "Kindle", "Text")
