@@ -372,7 +372,13 @@ try {
     $ErrorActionPreference = $strictPreference
 
     # --- 6. release notes ---------------------------------------------------
+    # With no earlier tag (the first release) git describe fails, and under 'Stop'
+    # Windows PowerShell turns that into a terminating error before the release is
+    # published. No previous tag just means the log covers everything.
+    $ErrorActionPreference = 'Continue'
     $previousTag = (& $git describe --tags --abbrev=0 "$tag^" 2>$null)
+    if ($LASTEXITCODE -ne 0) { $previousTag = $null }
+    $ErrorActionPreference = $strictPreference
     $logArgs = @('log', '--pretty=format:- %s')
     if ($previousTag) { $logArgs += "$previousTag..$tag" }
     $commitList = (& $git @logArgs) -join "`n"
