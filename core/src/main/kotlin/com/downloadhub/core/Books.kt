@@ -1,6 +1,7 @@
 package com.downloadhub.core
 
 import java.net.URLEncoder
+import kotlin.random.Random
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -87,30 +88,60 @@ object BookSources {
                 {
                     parseOpenLibrary(fetchText("https://openlibrary.org/search.json?q=$q&ebook_access=public&has_fulltext=true&limit=30&fields=title,author_name,first_publish_year,cover_i,ia,ebook_access,key"))
                 },
-                { archive(query, "mediatype:texts AND NOT collection:inlibrary AND NOT collection:printdisabled AND NOT access-restricted-item:true", ARCHIVE, catalog) },
+                { archiveCollections.getValue(FreeCatalog.BOOKS).single().let { (filter, source) -> archive(query, filter, source, catalog) } },
                 { parseWikisource(fetchText("https://en.wikisource.org/w/api.php?action=query&list=search&srsearch=$q&srnamespace=0&srlimit=20&format=json")) }
             )
-            FreeCatalog.MOVIES -> listOf(
-                { archive(query, "mediatype:movies AND (collection:feature_films OR collection:film_noir OR collection:sci-fi_horror OR collection:comedy_films)", FEATURE_FILMS, catalog) },
-                { archive(query, "mediatype:movies AND collection:silent_films", SILENT_FILMS, catalog) },
-                { archive(query, "mediatype:movies AND collection:animationandcartoons", CARTOONS, catalog) },
-                { archive(query, "mediatype:movies AND collection:classic_tv", CLASSIC_TV, catalog) },
-                { archive(query, "mediatype:movies AND collection:prelinger", PRELINGER, catalog) }
-            )
-            FreeCatalog.MUSIC -> listOf(
-                { archive(query, "mediatype:etree", LIVE_CONCERTS, catalog) },
-                { archive(query, "mediatype:audio AND collection:netlabels", NETLABELS, catalog) },
-                { archive(query, "mediatype:audio AND collection:librivoxaudio", AUDIOBOOKS, catalog) }
-            )
+            else -> archiveCollections.getValue(catalog).map { (filter, source) -> { archive(query, filter, source, catalog) } }
         }
         sources.map { source -> async { runCatching { source() }.getOrDefault(emptyList()) } }.awaitAll().flatten()
     }
 
-    /** One Internet Archive collection search, most downloaded first. */
-    private suspend fun archive(query: String, filter: String, source: String, catalog: FreeCatalog): List<BookResult> {
-        val q = enc("($query) AND $filter")
+    /** The Internet Archive collections each catalog draws on, as (search filter, source name). */
+    private val archiveCollections = mapOf(
+        FreeCatalog.MOVIES to listOf(
+            "mediatype:movies AND (collection:feature_films OR collection:film_noir OR collection:sci-fi_horror OR collection:comedy_films)" to FEATURE_FILMS,
+            "mediatype:movies AND collection:silent_films" to SILENT_FILMS,
+            "mediatype:movies AND collection:animationandcartoons" to CARTOONS,
+            "mediatype:movies AND collection:classic_tv" to CLASSIC_TV,
+            "mediatype:movies AND collection:prelinger" to PRELINGER
+        ),
+        FreeCatalog.MUSIC to listOf(
+            "mediatype:etree" to LIVE_CONCERTS,
+            "mediatype:audio AND collection:netlabels" to NETLABELS,
+            "mediatype:audio AND collection:librivoxaudio" to AUDIOBOOKS
+        ),
+        FreeCatalog.BOOKS to listOf(
+            "mediatype:texts AND NOT collection:inlibrary AND NOT collection:printdisabled AND NOT access-restricted-item:true" to ARCHIVE
+        )
+    )
+
+    /** How deep into each source's most-downloaded list a recommendation may reach, in pages. */
+    private const val RECOMMEND_DEPTH = 40
+
+    /**
+     * Something worth opening before anything is typed: a random page from deep in each
+     * source's most-downloaded list, shuffled together. Every call draws new pages, so
+     * calling it again - opening the screen, or scrolling to the end - shows different
+     * things rather than the same top ten every time.
+     */
+    suspend fun recommended(catalog: FreeCatalog, random: Random = Random.Default): List<BookResult> = coroutineScope {
+        fun page() = 1 + random.nextInt(RECOMMEND_DEPTH)
+        val fromArchive = archiveCollections.getValue(catalog).map { (filter, source) ->
+            async { runCatching { archive("", filter, source, catalog, rows = 12, page = page()) }.getOrDefault(emptyList()) }
+        }
+        val fromGutenberg = async {
+            if (catalog != FreeCatalog.BOOKS) emptyList() else runCatching {
+                parseGutenbergOpds(fetchText("https://www.gutenberg.org/ebooks/search.opds/?sort_order=downloads&start_index=${1 + 25 * (page() - 1)}"))
+            }.getOrDefault(emptyList())
+        }
+        (fromArchive + fromGutenberg).awaitAll().flatten().shuffled(random)
+    }
+
+    /** One Internet Archive collection search, most downloaded first; a blank [query] browses the collection. */
+    private suspend fun archive(query: String, filter: String, source: String, catalog: FreeCatalog, rows: Int = 30, page: Int = 1): List<BookResult> {
+        val q = enc(if (query.isBlank()) filter else "($query) AND $filter")
         return parseArchiveSearch(
-            fetchText("https://archive.org/advancedsearch.php?q=$q&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=year&sort[]=downloads+desc&rows=30&output=json"),
+            fetchText("https://archive.org/advancedsearch.php?q=$q&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=year&sort[]=downloads+desc&rows=$rows&page=$page&output=json"),
             source,
             catalog
         )

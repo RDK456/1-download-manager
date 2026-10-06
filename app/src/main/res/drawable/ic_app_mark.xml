@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The app icon as one drawable, for the top bar: the rounded indigo square with the
+  Material "download" glyph on it. The launcher's adaptive icon cannot be drawn by
+  Compose, and the white foreground alone vanishes on a light top bar.
+
+  The viewport is the central 64 units of the launcher's 108 (22 to 86), the same crop
+  the Windows icon uses, so the glyph fills the square the same way on both.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="64dp"
+    android:height="64dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+
+    <path android:pathData="M14,0h36a14,14 0 0 1 14,14v36a14,14 0 0 1 -14,14h-36a14,14 0 0 1 -14,-14v-36a14,14 0 0 1 14,-14z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="64"
+                android:endY="64"
+                android:startColor="#FF7480F0"
+                android:endColor="#FF3F4AB8" />
+        </aapt:attr>
+    </path>
+
+    <group
+        android:translateX="-22"
+        android:translateY="-22">
+        <group
+            android:pivotX="480"
+        android:pivotY="-480"
+        android:scaleX="0.066"
+        android:scaleY="0.066"
+        android:translateX="-426"
+        android:translateY="534">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M462.05-345.05Q453.1-349.09 446-356L284-518q-14-14.27-13.5-33.64Q271-571 284.61-585q14.79-14.15 34.09-13.58Q338-598 352-584l81 81v-275q0-19.63 13.68-33.81Q460.35-826 480.18-826q19.82 0 33.32 14.19Q527-797.63 527-778v275l82-81q13.8-14 32.25-14.58 18.45-.58 32.91 13.5Q689-571 688.5-551.18T674-517L514-356q-7.17 6.91-16.33 10.95-9.16 4.05-17.91 4.05-8.76 0-17.71-4.05ZM229-135q-39.05 0-66.52-27.48Q135-189.95 135-229v-96q0-19.75 13.68-33.38Q162.35-372 182.18-372q19.82 0 33.32 13.62Q229-344.75 229-325v96h502v-96q0-19.75 13.68-33.38Q758.35-372 778.09-372q19.73 0 33.82 13.62Q826-344.75 826-325v96q0 39.05-27.77 66.52Q770.46-135 731-135H229Z" />
+        </group>
+    </group>
+</vector>

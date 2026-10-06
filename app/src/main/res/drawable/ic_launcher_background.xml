@@ -1,22 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The launcher background: solid black.
+  The launcher background: the app's Material indigo (Aurora, #4F5BD5), lighter at the top left.
 
-  The rounded square is not drawn here on purpose. The launcher supplies its own
-  mask, so a full-bleed background becomes the icon's shape on every launcher, and
-  drawing corners into a vector that is about to be masked produces a double edge
-  that shows on some devices and not others.
-
-  The matching Windows icon does draw its own rounded square, because nothing masks
-  a desktop shortcut. Both come from the same artwork; see
-  desktop/dist-tools/Generate-AppIcon.ps1.
+  Full bleed with no corners on purpose: the launcher supplies its own mask, and
+  corners drawn into a vector that is about to be masked show as a double edge on
+  some devices. The Windows icon draws its own rounded square in the same two
+  colours, because nothing masks a desktop shortcut.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#000000"
-        android:pathData="M0,0h108v108h-108z" />
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108"
+                android:startColor="#FF7480F0"
+                android:endColor="#FF3F4AB8" />
+        </aapt:attr>
+    </path>
 </vector>

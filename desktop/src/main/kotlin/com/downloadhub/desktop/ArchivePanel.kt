@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -34,7 +35,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,7 +48,7 @@ import com.downloadhub.core.ArchiveFile
 import com.downloadhub.core.ArchiveItem
 import com.downloadhub.core.ArchiveOrg
 import com.downloadhub.core.ArchiveType
-import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 /**
  * The whole Internet Archive: search or browse the most downloaded items of any media type
@@ -57,7 +57,6 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun ArchivePanel(onDownload: (List<ArchiveFile>) -> Unit, modifier: Modifier = Modifier) {
-    val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var submitted by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(ArchiveType.ALL) }
@@ -68,11 +67,18 @@ fun ArchivePanel(onDownload: (List<ArchiveFile>) -> Unit, modifier: Modifier = M
     var failed by remember { mutableStateOf<String?>(null) }
     var open by remember { mutableStateOf<ArchiveItem?>(null) }
 
+    var loadingMore by remember { mutableStateOf(false) }
+    val list = rememberLazyListState()
+
+    // With nothing typed, start somewhere random in the most-downloaded list and shuffle
+    // it, so browsing shows different things on every visit.
+    suspend fun fetch(at: Int) = ArchiveOrg.search(submitted, type, at).let { if (submitted.isBlank()) it.shuffled() else it }
+
     LaunchedEffect(submitted, type) {
         loading = true
         failed = null
-        page = 1
-        items = runCatching { ArchiveOrg.search(submitted, type) }
+        page = if (submitted.isBlank()) 1 + Random.nextInt(ArchiveOrg.BROWSE_DEPTH) else 1
+        items = runCatching { fetch(page) }
             .onFailure { failed = "Could not reach the Internet Archive: ${it.message}" }
             .getOrDefault(emptyList())
         more = items.size == ArchiveOrg.PAGE_SIZE
@@ -90,7 +96,7 @@ fun ArchivePanel(onDownload: (List<ArchiveFile>) -> Unit, modifier: Modifier = M
                 value = query,
                 onValueChange = { query = it },
                 singleLine = true,
-                label = { Text("Search archive.org - leave empty to browse the most downloaded", fontSize = 12.sp) },
+                label = { Text("Search archive.org - leave empty for random popular picks", fontSize = 12.sp) },
                 leadingIcon = { androidx.compose.material3.Icon(Lucide.Search, contentDescription = null) },
                 modifier = Modifier.weight(1f).onEnter { submitted = query.trim() }
             )
@@ -105,17 +111,25 @@ fun ArchivePanel(onDownload: (List<ArchiveFile>) -> Unit, modifier: Modifier = M
             items.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(failed ?: "Nothing found.", color = AppTheme.Palette.muted, fontSize = 13.sp)
             }
-            else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-                items(items, key = { it.id }) { item -> ArchiveRow(item) { open = item } }
-                if (more) item {
-                    TextButton(onClick = {
-                        scope.launch {
-                            val next = runCatching { ArchiveOrg.search(submitted, type, page + 1) }.getOrDefault(emptyList())
-                            page++
-                            items = (items + next).distinctBy { it.id }
-                            more = next.size == ArchiveOrg.PAGE_SIZE
+            else -> {
+                if (more) LoadMoreAtEnd(list) {
+                    if (loadingMore) return@LoadMoreAtEnd
+                    loadingMore = true
+                    val next = runCatching { fetch(page + 1) }.getOrNull()
+                    if (next != null) {
+                        page++
+                        items = (items + next).distinctBy { it.id }
+                        more = next.size == ArchiveOrg.PAGE_SIZE
+                    }
+                    loadingMore = false
+                }
+                LazyColumn(state = list, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+                    items(items, key = { it.id }) { item -> ArchiveRow(item) { open = item } }
+                    if (loadingMore) item {
+                        Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                         }
-                    }) { Text("Load more") }
+                    }
                 }
             }
         }

@@ -299,7 +299,7 @@ fun DownloadHubApp(
                             // Every bottom-bar tab is a root: no back arrow on any of them.
                             AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.SEARCH, AppDestination.YOUTUBE, AppDestination.DISCOVER -> {
                                 Image(
-                                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                                    painter = painterResource(R.drawable.ic_app_mark),
                                     contentDescription = null,
                                     modifier = Modifier
                                         .padding(start = 12.dp)

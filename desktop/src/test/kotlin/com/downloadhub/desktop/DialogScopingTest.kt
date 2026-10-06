@@ -167,6 +167,8 @@ class DialogScopingTest {
         val allowed = setOf(
             // The app's own scheme, and the dialog properties beside it.
             "AppTheme.kt",
+            // The app icon: brand art, the same indigo in the tray whatever the theme.
+            "AppArtwork.kt",
             // Browser brand marks: Firefox is orange on every website and so is here.
             "BrowserIntegrationMenu.kt",
             // A scrim is black at every theme - that is what a scrim is.

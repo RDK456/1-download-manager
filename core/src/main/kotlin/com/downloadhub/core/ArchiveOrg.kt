@@ -1,6 +1,7 @@
 package com.downloadhub.core
 
 import java.net.URLEncoder
+import kotlin.random.Random
 
 /** What to browse on the Internet Archive, as the archive's own media types. */
 enum class ArchiveType(val label: String, val mediatypes: String) {
@@ -63,6 +64,44 @@ object ArchiveOrg {
 
     suspend fun search(query: String, type: ArchiveType, page: Int = 1): List<ArchiveItem> =
         parseSearch(fetchText(searchUrl(query, type, page)))
+
+    /**
+     * How many pages deep a blank search may start. Browsing with nothing typed starts at a
+     * random page of the most-downloaded list, so each visit shows different items.
+     */
+    const val BROWSE_DEPTH = 20
+
+    /** Public-domain films, cartoons, concerts, netlabel albums and audiobooks, each with its own torrent. */
+    fun torrentPicksUrl(page: Int): String {
+        val q = "collection:(feature_films OR animationandcartoons OR silent_films OR etree OR netlabels OR librivoxaudio) AND NOT access-restricted-item:true"
+        return "$BASE/advancedsearch.php?q=${URLEncoder.encode(q, "UTF-8")}" +
+            listOf("identifier", "title", "btih", "item_size").joinToString("") { "&fl[]=$it" } +
+            "&sort[]=downloads+desc&rows=30&page=${page.coerceAtLeast(1)}&output=json"
+    }
+
+    /** Torrent recommendations for an empty search: a random page of [torrentPicksUrl], shuffled. */
+    suspend fun torrentPicks(random: Random = Random.Default): List<SearchResult> =
+        parseTorrentPicks(fetchText(torrentPicksUrl(1 + random.nextInt(BROWSE_DEPTH * 2)))).shuffled(random)
+
+    /** Items with a torrent, as search results; the archive's own trackers seed every one. */
+    fun parseTorrentPicks(json: String): List<SearchResult> = parseJson(json).array("response", "docs").mapNotNull { doc ->
+        val hash = doc.string("btih")?.takeIf { it.length == 40 }?.lowercase() ?: return@mapNotNull null
+        val title = doc.string("title") ?: doc.string("identifier") ?: return@mapNotNull null
+        SearchResult(
+            infoHash = hash,
+            name = title,
+            sizeBytes = doc.number("item_size"),
+            seeders = 0,
+            leechers = 0,
+            source = TORRENT_SOURCE,
+            magnet = "magnet:?xt=urn:btih:$hash&dn=${URLEncoder.encode(title, "UTF-8").replace("+", "%20")}" +
+                ARCHIVE_TRACKERS.joinToString("") { "&tr=" + URLEncoder.encode(it, "UTF-8") }
+        ).apply { reportsHealth = false }
+    }
+
+    /** The source id torrent recommendations carry, and the archive's own trackers. */
+    const val TORRENT_SOURCE = "archive"
+    private val ARCHIVE_TRACKERS = listOf("http://bt1.archive.org:6969/announce", "http://bt2.archive.org:6969/announce")
 
     suspend fun files(id: String): List<ArchiveFile> =
         parseFiles(fetchText("$BASE/metadata/${URLEncoder.encode(id, "UTF-8")}"), id)

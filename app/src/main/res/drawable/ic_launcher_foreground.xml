@@ -1,47 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The mark: a folder with a download arrow in it, over the letters 1DM.
+  The mark: Material Symbols Rounded "download", filled, weight 700 - Google's own
+  glyph (Apache 2.0), from fonts.gstatic.com/s/i/short-term/release/materialsymbolsrounded.
+  The bold weight because the regular one thins to nothing on a 16 px taskbar icon.
 
-  Every shape is drawn as a polygon rather than with arcs, deliberately. A vector
-  cannot contain text, so the letters have to be paths, and once the letters are
-  paths it is simpler for the corners to be as well. The Windows icon is rasterised
-  from these same coordinates, so the two platforms are the same drawing rather than
-  two drawings that look alike.
-
-  The bounds are chosen to stay inside the launcher's mask: the platform crops an
-  adaptive icon to a shape inscribed in the central 72x72, so content that reaches
-  the corners of the 108 viewport is clipped on a circular mask and not on a
-  squircle. Everything here sits within a circle of radius 34 around (54,54).
+  The path is the glyph exactly as published, in its 960-unit box (y from -960 to 0);
+  the group centres it on (54,54) at 0.066, so it spans 31 to 77 - inside the circle of
+  radius 33 every launcher mask keeps. The Windows icon (Generate-AppIcon.ps1), the tray
+  and window icon (AppArtwork.kt) and the top-bar mark (ic_app_mark.xml) draw this same
+  path; AppIconTest checks that they do.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-
-    <!-- The folder, with a tab on the left. -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M34,38L36,36L43,36L43,31L45,29L57,29L59,31L59,36L72,36L74,38L74,58L72,60L36,60L34,58Z" />
-
-    <!-- The download arrow, cut out of the folder by being drawn in the background colour. -->
-    <path
-        android:fillColor="#000000"
-        android:pathData="M49,39L59,39L59,48L66,48L54,58L42,48L49,48Z" />
-
-    <!-- 1 -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M42,66L46,66L46,78L42,78L42,71L38,75L36,71Z" />
-
-    <!-- D, with the counter punched out by evenOdd. -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:fillType="evenOdd"
-        android:pathData="M50,66L56,66L59,68L60,72L59,76L56,78L50,78ZM54,69L54,75L56,75L56,69Z" />
-
-    <!-- M -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M63,78L63,66L66,66L68,72L70,66L73,66L73,78L70,78L70,70L69,75L67,75L66,70L66,78Z" />
+    <group
+        android:pivotX="480"
+        android:pivotY="-480"
+        android:scaleX="0.066"
+        android:scaleY="0.066"
+        android:translateX="-426"
+        android:translateY="534">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M462.05-345.05Q453.1-349.09 446-356L284-518q-14-14.27-13.5-33.64Q271-571 284.61-585q14.79-14.15 34.09-13.58Q338-598 352-584l81 81v-275q0-19.63 13.68-33.81Q460.35-826 480.18-826q19.82 0 33.32 14.19Q527-797.63 527-778v275l82-81q13.8-14 32.25-14.58 18.45-.58 32.91 13.5Q689-571 688.5-551.18T674-517L514-356q-7.17 6.91-16.33 10.95-9.16 4.05-17.91 4.05-8.76 0-17.71-4.05ZM229-135q-39.05 0-66.52-27.48Q135-189.95 135-229v-96q0-19.75 13.68-33.38Q162.35-372 182.18-372q19.82 0 33.32 13.62Q229-344.75 229-325v96h502v-96q0-19.75 13.68-33.38Q758.35-372 778.09-372q19.73 0 33.82 13.62Q826-344.75 826-325v96q0 39.05-27.77 66.52Q770.46-135 731-135H229Z" />
+    </group>
 </vector>

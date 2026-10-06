@@ -1,5 +1,7 @@
 package com.downloadhub.desktop
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Shuffle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,14 +13,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.downloadhub.core.ArchiveOrg
 import com.downloadhub.core.DisplayFormat
 import com.downloadhub.core.SearchGroup
 import com.downloadhub.core.SearchOutcome
@@ -318,8 +325,7 @@ fun SearchPanel(
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 results.isEmpty() && busy -> CenteredNote("Asking every source...")
-                results.isEmpty() && message == null && outcome == null ->
-                    CenteredNote("Search the sources for something to download.")
+                results.isEmpty() && message == null && outcome == null -> TorrentPicks(onPick)
                 results.isEmpty() -> CenteredNote("Nothing found for \"${state.query.trim()}\".")
                 visible.isEmpty() -> CenteredNote(
                     "Nothing from the chosen sources. All ${results.size} results are hidden."
@@ -342,7 +348,53 @@ fun SearchPanel(
  * its filter chip. Ids with no entry fall back to the id, which is at least honest.
  */
 private val SOURCE_LABELS: Map<String, String> = defaultSearchSources()
-    .associate { it.id to it.label }
+    .associate { it.id to it.label } + (ArchiveOrg.TORRENT_SOURCE to "Internet Archive")
+
+/**
+ * What the search shows before anything is typed: public-domain films, concerts and
+ * audiobooks from the Internet Archive, each a real torrent the archive seeds. A new
+ * random draw every time the panel opens, and more as the list is scrolled.
+ */
+@Composable
+private fun TorrentPicks(onPick: (String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val list = rememberLazyListState()
+    var picks by remember { mutableStateOf(emptyList<SearchResult>()) }
+    var loading by remember { mutableStateOf(false) }
+    suspend fun more(reset: Boolean = false) {
+        if (loading) return
+        loading = true
+        val next = runCatching { ArchiveOrg.torrentPicks() }.getOrDefault(emptyList())
+        picks = (if (reset) next else picks + next).distinctBy { it.infoHash }
+        loading = false
+    }
+    LaunchedEffect(Unit) { more(reset = true) }
+
+    if (picks.isEmpty()) {
+        if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        else CenteredNote("Search the sources for something to download.")
+        return
+    }
+    LoadMoreAtEnd(list) { more() }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Free picks from the Internet Archive", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppTheme.Palette.onSurface, modifier = Modifier.weight(1f))
+            TextButton(onClick = { scope.launch { list.scrollToItem(0); more(reset = true) } }, enabled = !loading) {
+                Icon(Lucide.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Shuffle", fontSize = 12.sp)
+            }
+        }
+        LazyColumn(Modifier.fillMaxSize(), state = list) {
+            items(picks, key = { it.infoHash }) { pick -> SearchRow(pick) { onPick(pick.magnet) } }
+            if (loading) item {
+                Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun CenteredNote(text: String) {

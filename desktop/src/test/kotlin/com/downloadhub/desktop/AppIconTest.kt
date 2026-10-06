@@ -8,9 +8,9 @@ import java.io.File
  * Keeps one icon across both platforms.
  *
  * The two are the same drawing, not two drawings that happen to look alike: the
- * Android launcher is a set of vector paths, and the Windows icon is rasterised from
- * those same coordinates by desktop/dist-tools/Generate-AppIcon.ps1. That only stays
- * true while the coordinates are actually shared, and nothing at build time enforces
+ * Android launcher is a vector path, and the Windows icon is rendered from that
+ * same path by desktop/dist-tools/Generate-AppIcon.ps1. That only stays
+ * true while the path is actually shared, and nothing at build time enforces
  * that, so it is enforced here.
  */
 class AppIconTest {
@@ -43,32 +43,24 @@ class AppIconTest {
      * so anything reaching the corners is clipped on a circular mask and not on a
      * squircle - the same artwork then looks right on one phone and wrong on another.
      */
+    /**
+     * The launcher crops an adaptive icon to a shape inscribed in the central 72x72, so
+     * anything reaching the corners is clipped on a circular mask and not on a squircle.
+     * The glyph's box is 135 to 826 on both axes (y negative, as Material publishes it);
+     * the group's scale and pivot must land that inside 18..90.
+     */
     @Test
     fun theArtworkStaysInsideTheLaunchersMask() {
         val foreground = vector("ic_launcher_foreground.xml")
-        // Only the path data. Reading the whole file picks up the digits in colour
-        // literals - #FFFFFFFF is full of 8s - and calls them coordinates.
-        val pathData = Regex("pathData=\"([^\"]+)\"")
-            .findAll(foreground)
-            .map { it.groupValues[1] }
-            .toList()
-        assertTrue("no path data found in the foreground", pathData.isNotEmpty())
-        val positions = Regex("(\\d+(?:\\.\\d+)?)")
-            .findAll(pathData.joinToString(" "))
-            .map { it.groupValues[1].toDouble() }
-            .filter { it > 5.0 && it < 100.0 }
-            .toList()
-        assertTrue("no coordinates found", positions.isNotEmpty())
-        val min = positions.min()
-        val max = positions.max()
-        assertTrue(
-            "the artwork reaches $min but the mask starts at 18",
-            min >= 18.0
-        )
-        assertTrue(
-            "the artwork reaches $max but the mask ends at 90",
-            max <= 90.0
-        )
+        fun attr(name: String) = Regex("android:$name=\"(-?[0-9.]+)\"").find(foreground)?.groupValues?.get(1)?.toDouble()
+            ?: error("the foreground group has no $name")
+        val scale = attr("scaleX")
+        assertTrue("the glyph is not scaled evenly", scale == attr("scaleY"))
+        fun mapX(v: Double) = (v - attr("pivotX")) * scale + attr("pivotX") + attr("translateX")
+        fun mapY(v: Double) = (v - attr("pivotY")) * scale + attr("pivotY") + attr("translateY")
+        listOf(mapX(135.0), mapX(826.0), mapY(-826.0), mapY(-135.0)).forEach { edge ->
+            assertTrue("the glyph reaches $edge but the mask keeps only 18..90", edge in 18.0..90.0)
+        }
     }
 
     /** The Windows build has to be given an icon, or the exe falls back to the Java cup. */
@@ -110,52 +102,34 @@ class AppIconTest {
     }
 
     /**
-     * The same coordinates on both sides, which is the whole reason the desktop icon
-     * is generated from the vector rather than drawn a second time.
+     * One glyph everywhere: the launcher, the themed icon, the top bar, the .ico generator
+     * and the runtime tray/window icon all carry the same Material path, character for
+     * character. A second copy that drifts is how the tray and the .ico stop matching.
      */
     @Test
-    fun bothPlatformsUseTheSameCoordinates() {
-        val foreground = vector("ic_launcher_foreground.xml")
-        val script = generator()
-        // Consecutive pairs from the folder and the arrow, which is what makes them
-        // meaningful: an arbitrary pair such as 74,60 does not appear in either file
-        // because those two points are not neighbours in the path.
-        listOf("34,38", "45,29", "72,36", "36,60", "49,39", "66,48", "42,48")
-            .forEach { pair ->
-                assertTrue(
-                    "the point $pair is in the generator but not the Android vector",
-                    script.contains(pair)
-                )
-                assertTrue(
-                    "the point $pair is in the Android vector but not the generator",
-                    foreground.contains(pair)
-                )
-            }
+    fun everySurfaceDrawsTheSameGlyph() {
+        val glyph = Regex("pathData=\"([^\"]+)\"").find(vector("ic_launcher_foreground.xml"))?.groupValues?.get(1)
+            ?: error("no path in the foreground")
+        assertTrue("that is not the glyph", glyph.length > 200)
+        mapOf(
+            "the themed icon" to vector("ic_launcher_monochrome.xml"),
+            "the top-bar mark" to vector("ic_app_mark.xml"),
+            "the .ico generator" to generator(),
+            "the runtime icon" to File("src/main/kotlin/com/downloadhub/desktop/AppArtwork.kt").readText()
+        ).forEach { (surface, text) -> assertTrue("$surface draws a different glyph", text.contains(glyph)) }
     }
 
-    /** The tray is the app icon too, minus the wordmark, which cannot be read at 16 px. */
+    /** The tray asks the shared drawing rather than keeping a copy of it. */
     @Test
     fun theTrayIconUsesTheSameArtwork() {
         val tray = File("src/main/kotlin/com/downloadhub/desktop/SystemTrayIcon.kt").readText()
-        assertTrue(
-            "the tray icon has gone back to the old green arrow",
-            !tray.contains("0x34, 0xD3, 0x99")
-        )
-        // It must ask the shared drawing rather than keeping a copy of it. A second
-        // copy is how the tray and the .ico quietly stop matching.
         assertTrue(
             "the tray draws its own icon instead of using AppArtwork, so there are now " +
                 "two icons to keep in step",
             tray.contains("AppArtwork.icon(32)")
         )
-        val artwork = File("src/main/kotlin/com/downloadhub/desktop/AppArtwork.kt").readText()
-        listOf("34f, 38f", "49f, 39f", "54f, 58f").forEach { point ->
-            assertTrue(
-                "the shared drawing does not draw the launcher point $point",
-                artwork.contains(point)
-            )
-        }
     }
+
 
     /**
      * The title-bar icon has to be set by the app, not inherited from the exe.

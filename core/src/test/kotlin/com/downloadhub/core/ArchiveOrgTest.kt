@@ -55,4 +55,18 @@ class ArchiveOrgTest {
         assertTrue("(doom) AND mediatype:(movies OR audio" in search)
         assertTrue("page=2" in search)
     }
+
+    @Test
+    fun `torrent recommendations are archive items with a torrent, seeded by the archive's trackers`() {
+        val json = """{"response":{"docs":[
+            {"identifier":"his_girl_friday","title":"His Girl Friday","btih":"8B733F925BE0DC728B4B01A1DDB978F4BB6D3451","item_size":1234},
+            {"identifier":"no-torrent","title":"Nothing to seed"}
+        ]}}"""
+        val pick = ArchiveOrg.parseTorrentPicks(json).single()
+        assertEquals("8b733f925be0dc728b4b01a1ddb978f4bb6d3451", pick.infoHash)
+        assertEquals(1234L, pick.sizeBytes)
+        assertTrue(pick.magnet.startsWith("magnet:?xt=urn:btih:8b733f925be0dc728b4b01a1ddb978f4bb6d3451&dn=His%20Girl%20Friday"))
+        assertTrue("bt1.archive.org" in pick.magnet)
+        assertFalse("the archive does not report swarm counts", pick.reportsHealth)
+    }
 }

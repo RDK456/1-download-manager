@@ -2,6 +2,11 @@ package com.downloadhub.app.ui
 
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Search
+import com.composables.icons.lucide.Shuffle
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.downloadhub.core.ArchiveOrg
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -232,8 +237,7 @@ fun SearchScreen(
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 results.isEmpty() && busy -> Centre("Asking every source...")
-                results.isEmpty() && message == null && outcome == null ->
-                    Centre("Search the sources for something to download.")
+                results.isEmpty() && message == null && outcome == null -> TorrentPicks(onPick)
                 results.isEmpty() -> Centre("Nothing found for \"${query.trim()}\".")
                 visible.isEmpty() -> Centre(
                     "Nothing from the chosen sources. All ${results.size} results are hidden."
@@ -304,6 +308,52 @@ private fun SourceFilterRow(
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+/**
+ * What the search shows before anything is typed: public-domain films, concerts and
+ * audiobooks from the Internet Archive, each a real torrent the archive seeds. A new
+ * random draw every time the screen opens, and more as the list is scrolled.
+ */
+@Composable
+private fun TorrentPicks(onPick: (String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val list = rememberLazyListState()
+    var picks by remember { mutableStateOf(emptyList<SearchResult>()) }
+    var loading by remember { mutableStateOf(false) }
+    suspend fun more(reset: Boolean = false) {
+        if (loading) return
+        loading = true
+        val next = runCatching { ArchiveOrg.torrentPicks() }.getOrDefault(emptyList())
+        picks = (if (reset) next else picks + next).distinctBy { it.infoHash }
+        loading = false
+    }
+    LaunchedEffect(Unit) { more(reset = true) }
+
+    if (picks.isEmpty()) {
+        if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        else Centre("Search the sources for something to download.")
+        return
+    }
+    LoadMoreAtEnd(list) { more() }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Free picks from the Internet Archive", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = { scope.launch { list.scrollToItem(0); more(reset = true) } }, enabled = !loading) {
+                Icon(Lucide.Shuffle, contentDescription = "Show different picks")
+            }
+        }
+        LazyColumn(Modifier.fillMaxSize(), state = list) {
+            items(picks, key = { it.infoHash }) { pick ->
+                SearchResultCard(pick, "Internet Archive") { onPick(pick.magnet) }
+            }
+            if (loading) item {
+                Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                }
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ package com.downloadhub.app.ui
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.BookOpen
 import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Shuffle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,7 +21,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
@@ -31,12 +36,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -98,6 +105,20 @@ fun BooksScreen(loader: ThumbnailCache, catalog: FreeCatalog, onDownload: (BookR
     var busy by remember(catalog) { mutableStateOf(false) }
     var searched by remember(catalog) { mutableStateOf(false) }
     var source by remember(catalog) { mutableStateOf<String?>(null) }
+    // Shown until something is searched for: a fresh random draw every time the screen
+    // opens, and more of it as the grid is scrolled to the end.
+    var picks by remember(catalog) { mutableStateOf<List<BookResult>>(emptyList()) }
+    var picking by remember(catalog) { mutableStateOf(false) }
+    val grid = rememberLazyGridState()
+    suspend fun morePicks(reset: Boolean = false) {
+        if (picking) return
+        picking = true
+        val next = BookSources.recommended(catalog)
+        picks = (if (reset) next else picks + next).distinctBy { it.source + "|" + it.pageUrl + "|" + it.title }
+        picking = false
+    }
+    LaunchedEffect(catalog) { morePicks(reset = true) }
+    val showingPicks = !searched || query.isBlank()
 
     fun run() {
         if (query.isBlank() || busy) return
@@ -122,7 +143,7 @@ fun BooksScreen(loader: ThumbnailCache, catalog: FreeCatalog, onDownload: (BookR
             trailingIcon = { if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
         )
-        if (results.isNotEmpty()) {
+        if (!showingPicks && results.isNotEmpty()) {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -134,28 +155,42 @@ fun BooksScreen(loader: ThumbnailCache, catalog: FreeCatalog, onDownload: (BookR
                 }
             }
         }
-        val shown = results.filter { source == null || it.source == source }
+        if (showingPicks) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Picked for you", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                IconButton(onClick = { scope.launch { grid.scrollToItem(0); morePicks(reset = true) } }, enabled = !picking) {
+                    Icon(Lucide.Shuffle, contentDescription = "Show different picks")
+                }
+            }
+        }
+        val shown = if (showingPicks) picks else results.filter { source == null || it.source == source }
         if (shown.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Text(
-                    when {
-                        busy -> "Searching ${catalog.label}..."
-                        searched -> "Nothing found. Try fewer words, or a surname."
-                        else -> catalog.blurb
-                    },
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                when {
+                    busy || (showingPicks && picking) -> CircularProgressIndicator()
+                    else -> Text(
+                        if (showingPicks) "Could not load picks. ${catalog.blurb}" else "Nothing found. Try fewer words, or a surname.",
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         } else {
+            if (showingPicks) LoadMoreAtEnd(grid) { morePicks() }
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(150.dp),
+                state = grid,
                 contentPadding = PaddingValues(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(shown, key = { it.source + "|" + it.pageUrl + "|" + it.title }) { book ->
                     BookCard(book, loader, onDownload)
+                }
+                if (showingPicks && picking) item(span = { GridItemSpan(maxLineSpan) }) {
+                    Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
                 }
             }
         }
@@ -215,4 +250,32 @@ private fun BookCard(book: BookResult, loader: ThumbnailCache, onDownload: (Book
             }
         }
     }
+}
+
+/**
+ * Lazy loading: calls [load] when a grid is scrolled to within [buffer] items of its end,
+ * so the next page arrives before the user reaches the bottom. Fires again only once new
+ * items have pushed the end away, so a load that brings nothing back does not loop.
+ */
+@Composable
+internal fun LoadMoreAtEnd(state: LazyGridState, buffer: Int = 6, load: suspend () -> Unit) {
+    val nearEnd by remember(state) {
+        derivedStateOf {
+            val info = state.layoutInfo
+            info.totalItemsCount > 0 && (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - buffer
+        }
+    }
+    LaunchedEffect(nearEnd) { if (nearEnd) load() }
+}
+
+/** [LoadMoreAtEnd] for a list. */
+@Composable
+internal fun LoadMoreAtEnd(state: LazyListState, buffer: Int = 6, load: suspend () -> Unit) {
+    val nearEnd by remember(state) {
+        derivedStateOf {
+            val info = state.layoutInfo
+            info.totalItemsCount > 0 && (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - buffer
+        }
+    }
+    LaunchedEffect(nearEnd) { if (nearEnd) load() }
 }

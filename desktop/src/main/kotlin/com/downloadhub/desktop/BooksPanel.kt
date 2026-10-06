@@ -1,5 +1,8 @@
 package com.downloadhub.desktop
 
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Shuffle
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,15 +20,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +74,20 @@ fun BooksPanel(
     var busy by remember(catalog) { mutableStateOf(false) }
     var searched by remember(catalog) { mutableStateOf(false) }
     var source by remember(catalog) { mutableStateOf<String?>(null) }
+    // Shown until something is searched for: a fresh random draw every time the panel
+    // opens, and more of it as the grid is scrolled to the end.
+    var picks by remember(catalog) { mutableStateOf<List<BookResult>>(emptyList()) }
+    var picking by remember(catalog) { mutableStateOf(false) }
+    val grid = rememberLazyGridState()
+    suspend fun morePicks(reset: Boolean = false) {
+        if (picking) return
+        picking = true
+        val next = BookSources.recommended(catalog)
+        picks = (if (reset) next else picks + next).distinctBy { it.source + "|" + it.pageUrl + "|" + it.title }
+        picking = false
+    }
+    LaunchedEffect(catalog) { morePicks(reset = true) }
+    val showingPicks = !searched || query.isBlank()
 
     fun run() {
         if (query.isBlank() || busy) return
@@ -92,7 +117,7 @@ fun BooksPanel(
             }
         }
         val sources = catalog.sources
-        if (results.isNotEmpty()) {
+        if (!showingPicks && results.isNotEmpty()) {
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterPill("All (${results.size})", source == null) { source = null }
                 sources.forEach { name ->
@@ -101,15 +126,22 @@ fun BooksPanel(
                 }
             }
         }
-        val shown = results.filter { source == null || it.source == source }
+        if (showingPicks) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Picked for you", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppTheme.Palette.onSurface, modifier = Modifier.weight(1f))
+                TextButton(onClick = { scope.launch { grid.scrollToItem(0); morePicks(reset = true) } }, enabled = !picking) {
+                    Icon(Lucide.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Shuffle", fontSize = 12.sp)
+                }
+            }
+        }
+        val shown = if (showingPicks) picks else results.filter { source == null || it.source == source }
         if (shown.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    when {
-                        busy -> "Searching ${catalog.label}..."
-                        searched -> "Nothing found. Try fewer words, or a surname."
-                        else -> catalog.blurb
-                    },
+                if (busy || (showingPicks && picking)) CircularProgressIndicator()
+                else Text(
+                    if (showingPicks) "Could not load picks. ${catalog.blurb}" else "Nothing found. Try fewer words, or a surname.",
                     color = AppTheme.Palette.muted,
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,
@@ -117,8 +149,10 @@ fun BooksPanel(
                 )
             }
         } else {
+            if (showingPicks) LoadMoreAtEnd(grid) { morePicks() }
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(170.dp),
+                state = grid,
                 contentPadding = PaddingValues(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -126,6 +160,11 @@ fun BooksPanel(
             ) {
                 items(shown, key = { it.source + "|" + it.pageUrl + "|" + it.title }) { book ->
                     BookCard(book, onDownload)
+                }
+                if (showingPicks && picking) item(span = { GridItemSpan(maxLineSpan) }) {
+                    Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    }
                 }
             }
         }
@@ -231,4 +270,32 @@ internal fun linkRequest(name: String, url: String, settings: DesktopSettings): 
         saveDirectory = folder,
         link = url
     )
+}
+
+/**
+ * Lazy loading: calls [load] when a grid is scrolled to within [buffer] items of its end,
+ * so the next page arrives before the user reaches the bottom. Fires again only once new
+ * items have pushed the end away, so a load that brings nothing back does not loop.
+ */
+@Composable
+internal fun LoadMoreAtEnd(state: LazyGridState, buffer: Int = 6, load: suspend () -> Unit) {
+    val nearEnd by remember(state) {
+        derivedStateOf {
+            val info = state.layoutInfo
+            info.totalItemsCount > 0 && (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - buffer
+        }
+    }
+    LaunchedEffect(nearEnd) { if (nearEnd) load() }
+}
+
+/** [LoadMoreAtEnd] for a list. */
+@Composable
+internal fun LoadMoreAtEnd(state: LazyListState, buffer: Int = 6, load: suspend () -> Unit) {
+    val nearEnd by remember(state) {
+        derivedStateOf {
+            val info = state.layoutInfo
+            info.totalItemsCount > 0 && (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - buffer
+        }
+    }
+    LaunchedEffect(nearEnd) { if (nearEnd) load() }
 }
