@@ -62,7 +62,10 @@ data class TabSummary(
     val active: Int = 0,
     val paused: Int = 0,
     val completed: Int = 0,
-    val total: Int = 0
+    val total: Int = 0,
+    val queued: Int = 0,
+    /** Bytes per second across everything running, for the speed card. */
+    val speed: Long = 0L
 )
 
 data class EditorSeed(
@@ -1318,7 +1321,9 @@ private fun List<DownloadEntity>.toSummary() = TabSummary(
     active = count { it.status.isActiveCompat },
     paused = count { it.status == DownloadStatus.PAUSED },
     completed = count { it.status == DownloadStatus.COMPLETED },
-    total = size
+    total = size,
+    queued = count { it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.PAUSED },
+    speed = filter { it.status == DownloadStatus.RUNNING }.sumOf { it.speedBytesPerSecond }
 )
 
 /** A "Compressed" chip should also catch rows that were stored as ARCHIVE. */

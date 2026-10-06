@@ -98,6 +98,8 @@ fun SettingsDialog(
     var deleteCache by remember { mutableStateOf(settings.deleteCacheWhenRemoved) }
     var themePalette by remember { mutableStateOf(ThemePalette.fromValue(settings.themePalette)) }
     var themeMode by remember { mutableStateOf(ThemeMode.fromValue(settings.themeMode)) }
+    // Auto is stored as its own value; the picker still remembers the last fixed mode.
+    var autoTheme by remember { mutableStateOf(settings.themeMode.equals(SystemTheme.AUTO, ignoreCase = true)) }
     var proxyType by remember { mutableStateOf(settings.proxySetting().type) }
     var proxyHost by remember { mutableStateOf(settings.proxyHost) }
     var proxyPort by remember { mutableStateOf(if (settings.proxyPort > 0) settings.proxyPort.toString() else "") }
@@ -160,7 +162,7 @@ fun SettingsDialog(
                     when (section) {
                         SettingsSection.APPEARANCE -> {
                             SectionHeading("Theme")
-                            ThemePicker(themePalette, themeMode) { p, m ->
+                            ThemePicker(themePalette, themeMode, autoTheme, onAuto = { autoTheme = it }) { p, m ->
                                 themePalette = p
                                 themeMode = m
                             }
@@ -430,7 +432,7 @@ fun SettingsDialog(
                         cacheDir = cache.trim(),
                         deleteCacheWhenRemoved = deleteCache,
                         themePalette = themePalette.value,
-                        themeMode = themeMode.value,
+                        themeMode = if (autoTheme) SystemTheme.AUTO else themeMode.value,
                         proxyType = proxyType.name,
                         proxyHost = proxyHost.trim(),
                         proxyPort = proxyPort.toIntOrNull()?.coerceIn(0, 65535) ?: 0,
@@ -542,6 +544,9 @@ private fun CategoryRuleRow(
 private fun ThemePicker(
     palette: ThemePalette,
     mode: ThemeMode,
+    auto: Boolean = false,
+    /** True for Auto; false when a fixed mode is picked. */
+    onAuto: (Boolean) -> Unit = {},
     onChange: (ThemePalette, ThemeMode) -> Unit
 ) {
     Column {
@@ -565,11 +570,13 @@ private fun ThemePicker(
             Spacer(Modifier.height(8.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Auto: light or dark as Windows is set, following it when it changes.
+            if (auto) Button(onClick = { onAuto(true) }) { Text("Auto") } else OutlinedButton(onClick = { onAuto(true) }) { Text("Auto") }
             ThemeMode.entries.forEach { entry ->
-                if (entry == mode) {
-                    Button(onClick = { onChange(palette, entry) }) { Text(entry.label) }
+                if (!auto && entry == mode) {
+                    Button(onClick = { onAuto(false); onChange(palette, entry) }) { Text(entry.label) }
                 } else {
-                    OutlinedButton(onClick = { onChange(palette, entry) }) { Text(entry.label) }
+                    OutlinedButton(onClick = { onAuto(false); onChange(palette, entry) }) { Text(entry.label) }
                 }
             }
         }

@@ -83,6 +83,9 @@ class SidebarTest {
                     RailEntry.Search -> "Search"
                     RailEntry.YouTube -> "YouTube"
                     RailEntry.Rss -> "RSS"
+                    RailEntry.Books -> "Free books"
+                    RailEntry.Tv -> "Free TV"
+                    RailEntry.Player -> "Player"
                     is RailEntry.Heading -> null
                 }
             }
@@ -332,6 +335,7 @@ class SidebarTest {
                 is RailEntry.Search -> "search"
                 is RailEntry.YouTube -> "youtube"
                 is RailEntry.Rss -> "rss"
+                is RailEntry.Books, is RailEntry.Tv, is RailEntry.Player -> "section"
                 is RailEntry.Heading -> "heading"
             }
         }

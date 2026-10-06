@@ -117,9 +117,11 @@ fun main(args: Array<String>) {
             // flat-drawn rows read, so a dialog and the window it sits on are the same
             // theme, and so changing the theme moves both.
             val state by controller.ui.collectAsState()
+            // Auto follows Windows' light or dark setting; the others are what they say.
+            val themeMode = rememberResolvedThemeMode(state.settings.themeMode)
             ProvideDesktopTheme(
                 palette = ThemePalette.fromValue(state.settings.themePalette),
-                mode = ThemeMode.fromValue(state.settings.themeMode)
+                mode = themeMode
             ) {
             val windowState = rememberWindowState(size = DpSize(1180.dp, 720.dp))
             var visible by remember { mutableStateOf(true) }
@@ -236,7 +238,7 @@ fun main(args: Array<String>) {
                     }
 
                     // The title bar follows the theme, so it reads as part of the window.
-                    LaunchedEffect(window, state.settings.themePalette, state.settings.themeMode) {
+                    LaunchedEffect(window, state.settings.themePalette, themeMode) {
                         WindowChrome.apply(window, AppTheme.Palette.colors)
                     }
 

@@ -198,6 +198,15 @@ sealed interface RailEntry {
     /** qBittorrent's RSS reader: feeds and their auto-download rules. */
     data object Rss : RailEntry
 
+    /** Free books: Project Gutenberg, Open Library, the Internet Archive and Wikisource. */
+    data object Books : RailEntry
+
+    /** Free, legally broadcast TV channels from the public iptv-org list. */
+    data object Tv : RailEntry
+
+    /** The built-in player, for what has been downloaded. */
+    data object Player : RailEntry
+
     /** A heading with nothing selectable under it. */
     data class Heading(val label: String) : RailEntry
 }
@@ -222,6 +231,9 @@ fun sidebarEntries(): List<RailEntry> = buildList {
         // YouTube beside Search: found versus pasted, the two ways new things arrive.
         if (index == 0) add(RailEntry.YouTube)
         if (index == 0) add(RailEntry.Rss)
+        if (index == 0) add(RailEntry.Books)
+        if (index == 0) add(RailEntry.Tv)
+        if (index == 0) add(RailEntry.Player)
     }
     add(RailEntry.Heading("Categories"))
     // ALL is already up above as "All Downloads"; repeating it here under Categories
@@ -257,7 +269,7 @@ fun railCount(entry: RailEntry, items: List<DownloadItem>): Int = when (entry) {
     RailEntry.Search -> 0
     // YouTube holds no downloads either: a pasted playlist is not in the queue yet.
     RailEntry.YouTube -> 0
-    RailEntry.Rss -> 0
+    RailEntry.Rss, RailEntry.Books, RailEntry.Tv, RailEntry.Player -> 0
     is RailEntry.Heading -> 0
 }
 

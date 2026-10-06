@@ -192,6 +192,8 @@ fun LibraryScreen(
     var youTubeOpen by remember { mutableStateOf(false) }
     /** Whether the RSS panel is open; one of the three panels, like Search and YouTube. */
     var rssOpen by remember { mutableStateOf(false) }
+    // Free books, free TV, the player: sections that replace the list, one at a time.
+    var extraPanel by remember { mutableStateOf<RailEntry?>(null) }
     /**
      * Which kind of download is being looked at, apart from the Torrents tab.
      *
@@ -352,8 +354,8 @@ fun LibraryScreen(
                         // then not back, because clicking All Downloads set the group
                         // and the category - both of which the panels do not read -
                         // and left the panel on screen.
-                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL; kindFilter = LibraryKind.ALL; queueFilter = null; searchOpen = false; youTubeOpen = false; rssOpen = false },
-                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL; kindFilter = LibraryKind.ALL; queueFilter = null; searchOpen = false; youTubeOpen = false; rssOpen = false },
+                        onCategory = { selected = emptySet(); category = it; group = LibraryGroup.ALL; kindFilter = LibraryKind.ALL; queueFilter = null; searchOpen = false; youTubeOpen = false; rssOpen = false; extraPanel = null },
+                        onGroup = { selected = emptySet(); group = it; category = LibraryCategory.ALL; kindFilter = LibraryKind.ALL; queueFilter = null; searchOpen = false; youTubeOpen = false; rssOpen = false; extraPanel = null },
                         queues = queues,
                         queueFilter = queueFilter,
                         onQueue = { id ->
@@ -365,6 +367,7 @@ fun LibraryScreen(
                             searchOpen = false
                             youTubeOpen = false
                             rssOpen = false
+                            extraPanel = null
                         },
                         onQueueStarted = actions.setQueueStarted,
                         onEditQueue = { editingQueue = it to false },
@@ -384,13 +387,21 @@ fun LibraryScreen(
                             searchOpen = false
                             youTubeOpen = false
                             rssOpen = false
+                            extraPanel = null
                         },
                         searchOpen = searchOpen,
-                        onToggleSearch = { searchOpen = !searchOpen; youTubeOpen = false; rssOpen = false },
+                        onToggleSearch = { searchOpen = !searchOpen; youTubeOpen = false; rssOpen = false; extraPanel = null },
                         youTubeOpen = youTubeOpen,
-                        onToggleYouTube = { youTubeOpen = !youTubeOpen; searchOpen = false; rssOpen = false },
+                        onToggleYouTube = { youTubeOpen = !youTubeOpen; searchOpen = false; rssOpen = false; extraPanel = null },
                         rssOpen = rssOpen,
-                        onToggleRss = { rssOpen = !rssOpen; searchOpen = false; youTubeOpen = false }
+                        onToggleRss = { rssOpen = !rssOpen; searchOpen = false; youTubeOpen = false; extraPanel = null },
+                        extraPanel = extraPanel,
+                        onExtra = { entry ->
+                            extraPanel = if (extraPanel == entry) null else entry
+                            searchOpen = false
+                            youTubeOpen = false
+                            rssOpen = false
+                        }
                     )
                     // No rule: the content is a card of its own, as in AB Download Manager.
                     Column(
@@ -405,6 +416,21 @@ fun LibraryScreen(
                             .background(AppTheme.Palette.surface)
                             .border(1.dp, AppTheme.Palette.outlineVariant, RoundedCornerShape(12.dp))
                     ) {
+                     if (extraPanel == RailEntry.Tv) {
+                        TvPanel(modifier = Modifier.fillMaxSize())
+                        return@Column
+                     }
+                     if (extraPanel == RailEntry.Player) {
+                        PlayerPanel(items = all, modifier = Modifier.fillMaxSize())
+                        return@Column
+                     }
+                     if (extraPanel == RailEntry.Books) {
+                        BooksPanel(
+                            onDownload = { book, file -> actions.addPrepared(bookRequest(book, file, state.settings)) },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        return@Column
+                     }
                      if (rssOpen) {
                         RssPanel(
                             settings = state.settings,
@@ -496,7 +522,14 @@ fun LibraryScreen(
                             search = search,
                             onSearch = { search = it; selected = emptySet() }
                         )
-                        ColumnHeader(
+                        val cardView = state.settings.libraryCards
+                        DashboardCards(
+                            items = all,
+                            cardView = cardView,
+                            onCardView = { actions.updateSettings(state.settings.copy(libraryCards = it)) },
+                            onOpenFolder = actions.openDownloadFolder
+                        )
+                        if (!cardView) ColumnHeader(
                             sort = sort,
                             onSort = { sort = it },
                             layout = table,
@@ -543,6 +576,21 @@ fun LibraryScreen(
                                 items(visible, key = { it.id }) { item ->
                                   // Slides into place on add, remove and re-sort instead of jumping.
                                   Column(Modifier.animateItem()) {
+                                   if (cardView) {
+                                    DownloadCardRow(
+                                        item = item,
+                                        checked = item.id in selected,
+                                        onToggle = {
+                                            selected = if (item.id in selected) selected - item.id else selected + item.id
+                                        },
+                                        onPause = { actions.pause(item.id) },
+                                        onResume = { actions.resume(item.id) },
+                                        onRetry = { actions.retry(item.id) },
+                                        onOpen = { actions.revealDownload(item.location) },
+                                        onOptions = { optionsFor = item.id },
+                                        onRemove = { deleting = setOf(item.id) }
+                                    )
+                                   } else {
                                     DownloadRow(
                                         item = item,
                                         palette = state.palette,
@@ -576,6 +624,7 @@ fun LibraryScreen(
                                         color = state.palette.outline.copy(alpha = 0.25f),
                                         thickness = 1.dp
                                     )
+                                   }
                                   }
                                 }
                             }
@@ -643,6 +692,13 @@ fun LibraryScreen(
                 }
                 }
             }
+            // Under everything, on every screen, while something is playing.
+            MiniPlayerBar(onOpenPlayer = {
+                extraPanel = RailEntry.Player
+                searchOpen = false
+                youTubeOpen = false
+                rssOpen = false
+            })
         }
 
         // Asking is the point. "Remove from the list" and "delete the file" are both
@@ -902,6 +958,8 @@ private fun CategoryRail(
     onToggleYouTube: () -> Unit,
     rssOpen: Boolean = false,
     onToggleRss: () -> Unit = {},
+    extraPanel: RailEntry? = null,
+    onExtra: (RailEntry) -> Unit = {},
     queues: List<QueueConfig> = emptyList(),
     queueFilter: String? = null,
     onQueue: (String) -> Unit = {},
@@ -981,7 +1039,7 @@ private fun CategoryRail(
                     // category, the group and the kind are all part of the same query,
                     // and two highlighted rows read as two choices when there is one.
                     selected = group == entry.group && category == LibraryCategory.ALL &&
-                        kind == LibraryKind.ALL && queueFilter == null && !searchOpen && !youTubeOpen && !rssOpen,
+                        kind == LibraryKind.ALL && queueFilter == null && !searchOpen && !youTubeOpen && !rssOpen && extraPanel == null,
                     icon = StatusIcons.of(entry.group),
                     compact = compact
                 ) { onGroup(entry.group) }
@@ -990,7 +1048,7 @@ private fun CategoryRail(
                     label = entry.category.label,
                     count = railCount(entry, scoped),
                     selected = category == entry.category && group == LibraryGroup.ALL &&
-                        kind == LibraryKind.ALL && queueFilter == null && !searchOpen && !youTubeOpen && !rssOpen,
+                        kind == LibraryKind.ALL && queueFilter == null && !searchOpen && !youTubeOpen && !rssOpen && extraPanel == null,
                     icon = LibraryCategoryIcons.of(entry.category),
                     compact = compact
                 ) { onCategory(entry.category) }
@@ -1000,7 +1058,7 @@ private fun CategoryRail(
                 is RailEntry.Kind -> RailRow(
                     label = entry.kind.label,
                     count = railCount(entry, items),
-                    selected = kind == entry.kind && !searchOpen && !youTubeOpen && !rssOpen,
+                    selected = kind == entry.kind && !searchOpen && !youTubeOpen && !rssOpen && extraPanel == null,
                     icon = LibraryKindIcons.of(entry.kind),
                     compact = compact
                 ) { onKind(entry.kind) }
@@ -1030,6 +1088,30 @@ private fun CategoryRail(
                     icon = Icons.Default.List,
                     compact = compact
                 ) { onToggleRss() }
+
+                RailEntry.Books -> RailRow(
+                    label = "Free books",
+                    count = 0,
+                    selected = extraPanel == RailEntry.Books,
+                    icon = DlmIcons.Documents,
+                    compact = compact
+                ) { onExtra(RailEntry.Books) }
+
+                RailEntry.Player -> RailRow(
+                    label = "Player",
+                    count = 0,
+                    selected = extraPanel == RailEntry.Player,
+                    icon = DlmIcons.Music,
+                    compact = compact
+                ) { onExtra(RailEntry.Player) }
+
+                RailEntry.Tv -> RailRow(
+                    label = "Free TV",
+                    count = 0,
+                    selected = extraPanel == RailEntry.Tv,
+                    icon = DlmIcons.Videos,
+                    compact = compact
+                ) { onExtra(RailEntry.Tv) }
             }
         }
             // Queues, after the fixed sections: they are the user's own, and there can be
@@ -1046,7 +1128,7 @@ private fun CategoryRail(
                     QueueRailRow(
                         queue = queue,
                         count = items.count { it.queueId == queue.id && it.status != DownloadStatus.COMPLETED },
-                        selected = queueFilter == queue.id && !searchOpen && !youTubeOpen && !rssOpen,
+                        selected = queueFilter == queue.id && !searchOpen && !youTubeOpen && !rssOpen && extraPanel == null,
                         compact = compact,
                         onClick = { onQueue(queue.id) },
                         onToggle = { onQueueStarted(queue.id, !queue.started) },

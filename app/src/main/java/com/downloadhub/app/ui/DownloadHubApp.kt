@@ -31,6 +31,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Movie
@@ -304,7 +311,7 @@ fun DownloadHubApp(
                         }
                     },
                     actions = {
-                        if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
+                        if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS && !destination.isDiscover) {
                             BadgedBox(
                                 badge = {
                                     if (hasActiveFilter) {
@@ -339,17 +346,20 @@ fun DownloadHubApp(
             },
             bottomBar = {
                 if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
+                    Column {
+                    // Above the tabs on every screen while something is playing.
+                    MiniPlayer(onOpen = { navigate(AppDestination.PLAYER) })
                     NavigationBar(modifier = Modifier.navigationBarsPadding()) {
                         NavigationBarItem(
                             selected = destination == AppDestination.DOWNLOADS,
                             onClick = { navigate(AppDestination.DOWNLOADS) },
-                            icon = { Icon(Icons.Default.Download, contentDescription = null) },
+                            icon = { ActiveBadge(mainSummary.active) { Icon(Icons.Default.Download, contentDescription = null) } },
                             label = { Text("Downloads") }
                         )
                         NavigationBarItem(
                             selected = destination == AppDestination.TORRENTS,
                             onClick = { navigate(AppDestination.TORRENTS) },
-                            icon = { Icon(Icons.Default.Folder, contentDescription = null) },
+                            icon = { ActiveBadge(torrentSummary.active) { Icon(Icons.Default.Folder, contentDescription = null) } },
                             label = { Text("Torrents") }
                         )
                         NavigationBarItem(
@@ -364,11 +374,18 @@ fun DownloadHubApp(
                             icon = { Icon(Icons.Default.Movie, contentDescription = null) },
                             label = { Text("YouTube") }
                         )
+                        NavigationBarItem(
+                            selected = destination.isDiscover,
+                            onClick = { navigate(AppDestination.DISCOVER) },
+                            icon = { Icon(Icons.Default.Explore, contentDescription = null) },
+                            label = { Text("Discover") }
+                        )
+                    }
                     }
                 }
             },
             floatingActionButton = {
-                if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
+                if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS && !destination.isDiscover) {
                     FloatingActionButton(onClick = { viewModel.openEditor() }) {
                         Icon(Icons.Default.Add, contentDescription = "Add download")
                     }
@@ -501,6 +518,27 @@ fun DownloadHubApp(
                         downloaderVersion = downloaderVersion,
                         ytdlpUpdate = ytdlpUpdate,
                         onRetryYtDlp = viewModel::retryYtDlpSync
+                    )
+                    AppDestination.DISCOVER -> DiscoverScreen(
+                        tiles = discoverTiles(),
+                        onOpen = { navigate(it) }
+                    )
+                    AppDestination.BOOKS -> BooksScreen(
+                        loader = viewModel.thumbnailCache,
+                        onDownload = { book, file ->
+                            viewModel.addLink(
+                                file.url,
+                                com.downloadhub.core.BookSources.fileName(book, file),
+                                DownloadCategory.DOCUMENT
+                            )
+                        }
+                    )
+                    AppDestination.TV -> TvScreen(
+                        loader = viewModel.thumbnailCache,
+                        onWatching = { navigate(AppDestination.PLAYER) }
+                    )
+                    AppDestination.PLAYER -> PlayerScreen(
+                        library = remember(allItems) { AppPlayer.libraryItems(allItems) }
                     )
                     AppDestination.RSS -> RssScreen(
                         feeds = rssFeeds,
@@ -719,7 +757,7 @@ private fun DownloadsScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(onPickTorrent) }
     Column(modifier = Modifier.fillMaxSize()) {
-        SummaryBand(summary.active, summary.completed, summary.total)
+        SummaryBand(summary)
         androidx.compose.material3.OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
@@ -824,34 +862,45 @@ private fun DownloadsScreen(
     }
 }
 
+/**
+ * The numbers you open the list to find out, as a row of small cards: what is running,
+ * how fast, what is waiting, what is done. Scrolls sideways on a narrow phone rather than
+ * squeezing the numbers.
+ */
 @Composable
-private fun SummaryBand(active: Int, completed: Int, total: Int) {
-    Surface(
+private fun SummaryBand(summary: TabSummary) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shape = MaterialTheme.shapes.medium,
-        tonalElevation = 1.dp
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            SummaryValue(active, "Active")
-            SummaryValue(completed, "Complete")
-            SummaryValue(total, "Total")
-        }
+        StatCard(summary.active.toString(), "Active", Icons.Default.Download, MaterialTheme.colorScheme.primary)
+        StatCard(com.downloadhub.core.DisplayFormat.speed(summary.speed), "Speed", Icons.Default.Speed, MaterialTheme.colorScheme.primary)
+        StatCard(summary.queued.toString(), "Queued", Icons.Default.Pause, MaterialTheme.colorScheme.onSurfaceVariant)
+        StatCard(summary.completed.toString(), "Completed", Icons.Default.CheckCircle, MaterialTheme.colorScheme.tertiary)
     }
 }
 
 @Composable
-private fun SummaryValue(value: Int, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value.toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun StatCard(value: String, label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tint: androidx.compose.ui.graphics.Color) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = androidx.compose.foundation.shape.CircleShape, color = tint.copy(alpha = 0.14f)) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.padding(7.dp).size(18.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
@@ -1087,6 +1136,10 @@ private fun destinationTitle(destination: AppDestination): String = when (destin
     AppDestination.QUEUES -> "Queues"
     AppDestination.ADVANCED -> "Advanced"
     AppDestination.RSS -> "RSS feeds"
+    AppDestination.DISCOVER -> "Discover"
+    AppDestination.BOOKS -> "Free books"
+    AppDestination.PLAYER -> "Player"
+    AppDestination.TV -> "Free TV"
     AppDestination.ABOUT -> "About us"
 }
 
@@ -1111,3 +1164,35 @@ private fun Context.findActivity(): Activity? {
     }
     return current as? Activity
 }
+
+/** How many are running, on the tab's icon, so it is visible from any screen. */
+@Composable
+private fun ActiveBadge(count: Int, icon: @Composable () -> Unit) {
+    if (count <= 0) {
+        icon()
+        return
+    }
+    BadgedBox(badge = { Badge { Text(count.toString()) } }) { icon() }
+}
+
+/** What the Discover tab offers. */
+private fun discoverTiles(): List<DiscoverTile> = listOf(
+    DiscoverTile(
+        "Free books",
+        "Project Gutenberg, Open Library, the Internet Archive and Wikisource",
+        Icons.AutoMirrored.Filled.MenuBook,
+        AppDestination.BOOKS
+    ),
+    DiscoverTile(
+        "Free TV",
+        "Freely broadcast channels from around the world, by category or country",
+        Icons.Default.LiveTv,
+        AppDestination.TV
+    ),
+    DiscoverTile(
+        "Player",
+        "Your downloaded music and videos, with synced lyrics",
+        Icons.Default.PlayCircle,
+        AppDestination.PLAYER
+    )
+)

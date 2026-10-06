@@ -184,6 +184,8 @@ data class DesktopSettings(
     /** Downloads the extension catches go straight into the queue instead of the pre-download dialog. */
     val browserCaptureAutoQueue: Boolean = true,
     val closeToTray: Boolean = true,
+    /** The download list as roomy cards instead of AB Download Manager's table. */
+    val libraryCards: Boolean = false,
     val startMinimised: Boolean = false,
     /**
      * Where in-flight and temporary files go. Blank means the app's own profile folder.

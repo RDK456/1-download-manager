@@ -29,10 +29,18 @@ enum class AppDestination {
     ADVANCED,
     /** RSS feeds and their auto-download rules. */
     RSS,
+    /** Free books, free TV and the player, one tap from the bottom bar. */
+    DISCOVER,
+    BOOKS,
+    PLAYER,
+    TV,
     ABOUT;
 
     /** The list tabs, search and YouTube are roots; everything else is a sub-page. */
-    val isRoot: Boolean get() = this == DOWNLOADS || this == TORRENTS || this == SEARCH || this == YOUTUBE
+    val isRoot: Boolean get() = this == DOWNLOADS || this == TORRENTS || this == SEARCH || this == YOUTUBE || this == DISCOVER
+
+    /** Pages that have nothing to do with the download list: no filter, no add button. */
+    val isDiscover: Boolean get() = this == DISCOVER || this == BOOKS || this == PLAYER || this == TV
 }
 
 /** Guard against unbounded growth if a sub-page ever re-navigates to itself. */
