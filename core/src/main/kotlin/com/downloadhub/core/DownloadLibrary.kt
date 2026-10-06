@@ -201,6 +201,12 @@ sealed interface RailEntry {
     /** Free books: Project Gutenberg, Open Library, the Internet Archive and Wikisource. */
     data object Books : RailEntry
 
+    /** Public-domain films, cartoons and classic TV from the Internet Archive. */
+    data object Movies : RailEntry
+
+    /** Shareable live concerts, netlabel releases and LibriVox audiobooks. */
+    data object Music : RailEntry
+
     /** Free, legally broadcast TV channels from the public iptv-org list. */
     data object Tv : RailEntry
 
@@ -232,6 +238,8 @@ fun sidebarEntries(): List<RailEntry> = buildList {
         if (index == 0) add(RailEntry.YouTube)
         if (index == 0) add(RailEntry.Rss)
         if (index == 0) add(RailEntry.Books)
+        if (index == 0) add(RailEntry.Movies)
+        if (index == 0) add(RailEntry.Music)
         if (index == 0) add(RailEntry.Tv)
         if (index == 0) add(RailEntry.Player)
     }
@@ -269,7 +277,7 @@ fun railCount(entry: RailEntry, items: List<DownloadItem>): Int = when (entry) {
     RailEntry.Search -> 0
     // YouTube holds no downloads either: a pasted playlist is not in the queue yet.
     RailEntry.YouTube -> 0
-    RailEntry.Rss, RailEntry.Books, RailEntry.Tv, RailEntry.Player -> 0
+    RailEntry.Rss, RailEntry.Books, RailEntry.Movies, RailEntry.Music, RailEntry.Tv, RailEntry.Player -> 0
     is RailEntry.Heading -> 0
 }
 

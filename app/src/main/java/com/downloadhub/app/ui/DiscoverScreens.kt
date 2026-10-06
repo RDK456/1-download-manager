@@ -58,6 +58,7 @@ import com.downloadhub.app.download.ThumbnailCache
 import com.downloadhub.core.BookFile
 import com.downloadhub.core.BookResult
 import com.downloadhub.core.BookSources
+import com.downloadhub.core.FreeCatalog
 import kotlinx.coroutines.launch
 
 /** One way in from the Discover tab. */
@@ -90,19 +91,19 @@ fun DiscoverScreen(tiles: List<DiscoverTile>, onOpen: (AppDestination) -> Unit) 
  * Wikisource, searched together. A format button queues the book like any other download.
  */
 @Composable
-fun BooksScreen(loader: ThumbnailCache, onDownload: (BookResult, BookFile) -> Unit) {
+fun BooksScreen(loader: ThumbnailCache, catalog: FreeCatalog, onDownload: (BookResult, BookFile) -> Unit) {
     val scope = rememberCoroutineScope()
-    var query by rememberSaveable { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<BookResult>>(emptyList()) }
-    var busy by remember { mutableStateOf(false) }
-    var searched by remember { mutableStateOf(false) }
-    var source by remember { mutableStateOf<String?>(null) }
+    var query by rememberSaveable(catalog) { mutableStateOf("") }
+    var results by remember(catalog) { mutableStateOf<List<BookResult>>(emptyList()) }
+    var busy by remember(catalog) { mutableStateOf(false) }
+    var searched by remember(catalog) { mutableStateOf(false) }
+    var source by remember(catalog) { mutableStateOf<String?>(null) }
 
     fun run() {
         if (query.isBlank() || busy) return
         busy = true
         scope.launch {
-            results = BookSources.search(query)
+            results = BookSources.search(query, catalog)
             source = null
             searched = true
             busy = false
@@ -114,8 +115,8 @@ fun BooksScreen(loader: ThumbnailCache, onDownload: (BookResult, BookFile) -> Un
             value = query,
             onValueChange = { query = it },
             singleLine = true,
-            label = { Text("Search free books") },
-            placeholder = { Text("Title or author") },
+            label = { Text("Search ${catalog.label}") },
+            placeholder = { Text(catalog.hint) },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { run() }),
             trailingIcon = { if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) },
@@ -127,7 +128,7 @@ fun BooksScreen(loader: ThumbnailCache, onDownload: (BookResult, BookFile) -> Un
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 FilterChip(selected = source == null, onClick = { source = null }, label = { Text("All (${results.size})") })
-                listOf(BookSources.GUTENBERG, BookSources.OPEN_LIBRARY, BookSources.ARCHIVE, BookSources.WIKISOURCE).forEach { name ->
+                catalog.sources.forEach { name ->
                     val count = results.count { it.source == name }
                     if (count > 0) FilterChip(selected = source == name, onClick = { source = name }, label = { Text("$name ($count)") })
                 }
@@ -138,9 +139,9 @@ fun BooksScreen(loader: ThumbnailCache, onDownload: (BookResult, BookFile) -> Un
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
                     when {
-                        busy -> "Searching four free libraries..."
-                        searched -> "Nothing found. Try the author's surname, or fewer words."
-                        else -> "Classics and public-domain books, free to download from Project Gutenberg, Open Library, the Internet Archive and Wikisource."
+                        busy -> "Searching ${catalog.label}..."
+                        searched -> "Nothing found. Try fewer words, or a surname."
+                        else -> catalog.blurb
                     },
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

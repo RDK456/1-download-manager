@@ -48,8 +48,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.ui.PlayerView
 import com.downloadhub.core.Lyrics
 import com.downloadhub.core.LyricsSource
 import kotlinx.coroutines.delay
@@ -115,10 +113,7 @@ fun PlayerScreen(library: List<AppPlayer.Item>) {
             item(key = "now") {
                 Column(Modifier.padding(16.dp)) {
                     if (current.isVideo) {
-                        AndroidView(
-                            factory = { ctx -> PlayerView(ctx).apply { player = AppPlayer.player(ctx) } },
-                            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
-                        )
+                        VideoSurface(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(current.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2)

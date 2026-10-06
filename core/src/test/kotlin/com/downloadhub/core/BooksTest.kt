@@ -62,4 +62,38 @@ class BooksTest {
         val book = BookResult(BookSources.GUTENBERG, "Frankenstein", "Shelley, Mary")
         assertEquals("Frankenstein - Shelley, Mary.epub", BookSources.fileName(book, BookFile("EPUB", "u")))
     }
+
+    @Test
+    fun `standard ebooks entries carry their epub, kindle file and cover`() {
+        val xml = """<feed><entry>
+            <id>https://standardebooks.org/ebooks/charles-dickens/our-mutual-friend</id>
+            <title>Our Mutual Friend</title>
+            <author><name>Charles Dickens</name></author>
+            <media:thumbnail url="https://standardebooks.org/c.jpg" height="525" width="350"/>
+            <link href="https://standardebooks.org/d/omf.epub?source=feed" length="1" rel="enclosure" title="Recommended compatible epub" type="application/epub+zip" />
+            <link href="https://standardebooks.org/d/omf_advanced.epub?source=feed" length="1" rel="enclosure" title="Advanced epub" type="application/epub+zip" />
+            <link href="https://standardebooks.org/d/omf.azw3?source=feed" length="1" rel="enclosure" title="Amazon Kindle azw3" type="application/x-mobipocket-ebook" />
+            </entry></feed>"""
+        val book = BookSources.parseStandardEbooks(xml).single()
+        assertEquals("Charles Dickens", book.author)
+        assertEquals("https://standardebooks.org/c.jpg", book.coverUrl)
+        assertEquals(listOf("EPUB" to "https://standardebooks.org/d/omf.epub", "AZW3" to "https://standardebooks.org/d/omf.azw3"), book.files.map { it.format to it.url })
+        assertEquals("Our Mutual Friend - Charles Dickens.azw3", BookSources.fileName(book, book.files[1]))
+    }
+
+    @Test
+    fun `films offer the largest copy of each format, albums a zip of the whole item`() {
+        val films = """{"files":[{"name":"film_512kb.mp4","size":"100"},{"name":"film.mp4","size":"900"},{"name":"film.ogv","size":"50"},{"name":"film.jpg","size":"1"}]}"""
+        assertEquals(
+            listOf("MP4" to "https://archive.org/download/f1/film.mp4", "OGV" to "https://archive.org/download/f1/film.ogv"),
+            BookSources.parseArchiveFiles(films, "f1", FreeCatalog.MOVIES).map { it.format to it.url }
+        )
+        val album = """{"files":[{"name":"t1.mp3"},{"name":"t2.mp3"},{"name":"t1.flac"}]}"""
+        assertEquals(
+            listOf("MP3 album" to "https://archive.org/compress/a1/formats=VBR%20MP3&file=/a1.zip", "FLAC album" to "https://archive.org/compress/a1/formats=Flac&file=/a1.zip"),
+            BookSources.parseArchiveFiles(album, "a1", FreeCatalog.MUSIC).map { it.format to it.url }
+        )
+        val single = """{"files":[{"name":"song one.mp3"}]}"""
+        assertEquals("https://archive.org/download/s1/song%20one.mp3", BookSources.parseArchiveFiles(single, "s1", FreeCatalog.MUSIC).single().url)
+    }
 }

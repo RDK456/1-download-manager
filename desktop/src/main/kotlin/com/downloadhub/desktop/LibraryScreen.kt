@@ -87,6 +87,7 @@ import com.downloadhub.core.DownloadPriority
 import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.DownloadStatus
 import com.downloadhub.core.LibraryCategory
+import com.downloadhub.core.FreeCatalog
 import com.downloadhub.core.RailEntry
 import com.downloadhub.core.railCount
 import com.downloadhub.core.sidebarEntries
@@ -424,10 +425,17 @@ fun LibraryScreen(
                         PlayerPanel(items = all, modifier = Modifier.fillMaxSize())
                         return@Column
                      }
-                     if (extraPanel == RailEntry.Books) {
+                     val catalog = when (extraPanel) {
+                        RailEntry.Books -> FreeCatalog.BOOKS
+                        RailEntry.Movies -> FreeCatalog.MOVIES
+                        RailEntry.Music -> FreeCatalog.MUSIC
+                        else -> null
+                     }
+                     if (catalog != null) {
                         BooksPanel(
                             onDownload = { book, file -> actions.addPrepared(bookRequest(book, file, state.settings)) },
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            catalog = catalog
                         )
                         return@Column
                      }
@@ -1096,6 +1104,22 @@ private fun CategoryRail(
                     icon = DlmIcons.Documents,
                     compact = compact
                 ) { onExtra(RailEntry.Books) }
+
+                RailEntry.Movies -> RailRow(
+                    label = "Free movies",
+                    count = 0,
+                    selected = extraPanel == RailEntry.Movies,
+                    icon = Icons.Default.PlayArrow,
+                    compact = compact
+                ) { onExtra(RailEntry.Movies) }
+
+                RailEntry.Music -> RailRow(
+                    label = "Free music",
+                    count = 0,
+                    selected = extraPanel == RailEntry.Music,
+                    icon = DlmIcons.Music,
+                    compact = compact
+                ) { onExtra(RailEntry.Music) }
 
                 RailEntry.Player -> RailRow(
                     label = "Player",

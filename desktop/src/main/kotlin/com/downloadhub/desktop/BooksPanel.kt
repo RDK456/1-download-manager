@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.downloadhub.core.BookFile
 import com.downloadhub.core.BookResult
 import com.downloadhub.core.BookSources
+import com.downloadhub.core.FreeCatalog
 import kotlinx.coroutines.launch
 
 /**
@@ -53,20 +54,21 @@ import kotlinx.coroutines.launch
 @Composable
 fun BooksPanel(
     onDownload: (BookResult, BookFile) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    catalog: FreeCatalog = FreeCatalog.BOOKS
 ) {
     val scope = rememberCoroutineScope()
-    var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<BookResult>>(emptyList()) }
-    var busy by remember { mutableStateOf(false) }
-    var searched by remember { mutableStateOf(false) }
-    var source by remember { mutableStateOf<String?>(null) }
+    var query by remember(catalog) { mutableStateOf("") }
+    var results by remember(catalog) { mutableStateOf<List<BookResult>>(emptyList()) }
+    var busy by remember(catalog) { mutableStateOf(false) }
+    var searched by remember(catalog) { mutableStateOf(false) }
+    var source by remember(catalog) { mutableStateOf<String?>(null) }
 
     fun run() {
         if (query.isBlank() || busy) return
         busy = true
         scope.launch {
-            results = BookSources.search(query)
+            results = BookSources.search(query, catalog)
             source = null
             searched = true
             busy = false
@@ -79,8 +81,8 @@ fun BooksPanel(
                 value = query,
                 onValueChange = { query = it },
                 singleLine = true,
-                label = { Text("Search free books", fontSize = 12.sp) },
-                placeholder = { Text("Title or author", fontSize = 12.sp, color = AppTheme.Palette.faint) },
+                label = { Text("Search ${catalog.label}", fontSize = 12.sp) },
+                placeholder = { Text(catalog.hint, fontSize = 12.sp, color = AppTheme.Palette.faint) },
                 modifier = Modifier.weight(1f).onEnter(!busy) { run() }
             )
             Spacer(Modifier.width(8.dp))
@@ -89,7 +91,7 @@ fun BooksPanel(
                 else Text("Search")
             }
         }
-        val sources = listOf(BookSources.GUTENBERG, BookSources.OPEN_LIBRARY, BookSources.ARCHIVE, BookSources.WIKISOURCE)
+        val sources = catalog.sources
         if (results.isNotEmpty()) {
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterPill("All (${results.size})", source == null) { source = null }
@@ -104,10 +106,9 @@ fun BooksPanel(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     when {
-                        busy -> "Searching four free libraries..."
-                        searched -> "Nothing found. Try the author's surname, or fewer words."
-                        else -> "Classics and public-domain books, free to download: Project Gutenberg, " +
-                            "Open Library, the Internet Archive and Wikisource."
+                        busy -> "Searching ${catalog.label}..."
+                        searched -> "Nothing found. Try fewer words, or a surname."
+                        else -> catalog.blurb
                     },
                     color = AppTheme.Palette.muted,
                     fontSize = 13.sp,

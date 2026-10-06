@@ -85,6 +85,13 @@ object AppPlayer {
     fun previous() { exo?.seekToPrevious() }
     fun seek(millis: Long) { exo?.seekTo(millis) }
     fun position(): Long = exo?.currentPosition ?: 0L
+    fun setSpeed(speed: Float) { exo?.setPlaybackSpeed(speed) }
+
+    fun seekBy(millis: Long) {
+        val player = exo ?: return
+        val end = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+        player.seekTo((player.currentPosition + millis).coerceIn(0L, end))
+    }
 
     fun stop() {
         exo?.stop()

@@ -32,6 +32,8 @@ enum class AppDestination {
     /** Free books, free TV and the player, one tap from the bottom bar. */
     DISCOVER,
     BOOKS,
+    MOVIES,
+    MUSIC,
     PLAYER,
     TV,
     ABOUT;
@@ -40,7 +42,7 @@ enum class AppDestination {
     val isRoot: Boolean get() = this == DOWNLOADS || this == TORRENTS || this == SEARCH || this == YOUTUBE || this == DISCOVER
 
     /** Pages that have nothing to do with the download list: no filter, no add button. */
-    val isDiscover: Boolean get() = this == DISCOVER || this == BOOKS || this == PLAYER || this == TV
+    val isDiscover: Boolean get() = this == DISCOVER || this == BOOKS || this == MOVIES || this == MUSIC || this == PLAYER || this == TV
 }
 
 /** Guard against unbounded growth if a sub-page ever re-navigates to itself. */

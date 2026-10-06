@@ -9,7 +9,32 @@ import kotlinx.coroutines.coroutineScope
 data class BookFile(val format: String, val url: String)
 
 /**
- * A free book found by [BookSources].
+ * What a free search looks for: books, films or music. Films and music come only from the
+ * Internet Archive collections of public-domain or freely licensed work.
+ */
+enum class FreeCatalog(val label: String, val sources: List<String>, val blurb: String, val hint: String) {
+    BOOKS(
+        "free books",
+        listOf(BookSources.GUTENBERG, BookSources.STANDARD_EBOOKS, BookSources.OPEN_LIBRARY, BookSources.ARCHIVE, BookSources.WIKISOURCE),
+        "Classics and public-domain books, free to download: Project Gutenberg, Standard Ebooks, Open Library, the Internet Archive and Wikisource.",
+        "Title or author"
+    ),
+    MOVIES(
+        "free movies",
+        listOf(BookSources.FEATURE_FILMS, BookSources.SILENT_FILMS, BookSources.CARTOONS, BookSources.CLASSIC_TV, BookSources.PRELINGER),
+        "Public-domain feature films, silent films, cartoons and classic TV from the Internet Archive.",
+        "Title, actor or director"
+    ),
+    MUSIC(
+        "free music",
+        listOf(BookSources.LIVE_CONCERTS, BookSources.NETLABELS, BookSources.AUDIOBOOKS),
+        "Live concerts the bands allow to be shared, Creative Commons netlabel releases and LibriVox audiobooks.",
+        "Artist, album or book"
+    )
+}
+
+/**
+ * A free book, film or album found by [BookSources].
  *
  * [files] is empty for an Internet Archive item until [BookSources.filesFor] asks the
  * archive what it holds - the search does not say, and asking for every result up front
@@ -23,56 +48,79 @@ data class BookResult(
     val coverUrl: String? = null,
     val files: List<BookFile> = emptyList(),
     val archiveId: String? = null,
-    val pageUrl: String = ""
+    val pageUrl: String = "",
+    val catalog: FreeCatalog = FreeCatalog.BOOKS
 )
 
 /**
- * Free, legal books: Project Gutenberg, Open Library's public scans, the Internet
- * Archive's openly downloadable texts and Wikisource. Nothing that is only lent, and no
- * shadow libraries - every file here is one its source offers to anyone.
+ * Free, legal books, films and music: Project Gutenberg, Standard Ebooks, Open Library's
+ * public scans, Wikisource, and the Internet Archive's public-domain and freely licensed
+ * collections. Nothing that is only lent, and no shadow libraries - every file here is one
+ * its source offers to anyone.
  */
 object BookSources {
     const val GUTENBERG = "Project Gutenberg"
     const val OPEN_LIBRARY = "Open Library"
     const val ARCHIVE = "Internet Archive"
     const val WIKISOURCE = "Wikisource"
+    const val STANDARD_EBOOKS = "Standard Ebooks"
+    const val FEATURE_FILMS = "Feature films"
+    const val SILENT_FILMS = "Silent films"
+    const val CARTOONS = "Cartoons"
+    const val CLASSIC_TV = "Classic TV"
+    const val PRELINGER = "Prelinger Archives"
+    const val LIVE_CONCERTS = "Live concerts"
+    const val NETLABELS = "Netlabels"
+    const val AUDIOBOOKS = "LibriVox audiobooks"
 
     private fun enc(text: String) = URLEncoder.encode(text.trim(), "UTF-8")
 
-    /** Every source at once; a source that fails or is slow costs only its own results. */
-    suspend fun search(query: String): List<BookResult> = coroutineScope {
+    /** Every source of [catalog] at once; a source that fails or is slow costs only its own results. */
+    suspend fun search(query: String, catalog: FreeCatalog = FreeCatalog.BOOKS): List<BookResult> = coroutineScope {
         if (query.isBlank()) return@coroutineScope emptyList()
         val q = enc(query)
-        listOf(
-            // Gutenberg's own catalogue feed: Gutendex answers the same question in ~30 s.
-            async {
-                runCatching { parseGutenbergOpds(fetchText("https://www.gutenberg.org/ebooks/search.opds/?query=$q")) }
-                    .getOrDefault(emptyList())
-            },
-            async {
-                runCatching {
+        val sources: List<suspend () -> List<BookResult>> = when (catalog) {
+            FreeCatalog.BOOKS -> listOf(
+                // Gutenberg's own catalogue feed: Gutendex answers the same question in ~30 s.
+                { parseGutenbergOpds(fetchText("https://www.gutenberg.org/ebooks/search.opds/?query=$q")) },
+                { parseStandardEbooks(fetchText("https://standardebooks.org/feeds/atom/all?query=$q&per-page=24")) },
+                {
                     parseOpenLibrary(fetchText("https://openlibrary.org/search.json?q=$q&ebook_access=public&has_fulltext=true&limit=30&fields=title,author_name,first_publish_year,cover_i,ia,ebook_access,key"))
-                }.getOrDefault(emptyList())
-            },
-            async {
-                runCatching {
-                    val filter = enc("($query) AND mediatype:texts AND NOT collection:inlibrary AND NOT collection:printdisabled AND NOT access-restricted-item:true")
-                    parseArchiveSearch(fetchText("https://archive.org/advancedsearch.php?q=$filter&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=year&sort[]=downloads+desc&rows=30&output=json"))
-                }.getOrDefault(emptyList())
-            },
-            async {
-                runCatching {
-                    parseWikisource(fetchText("https://en.wikisource.org/w/api.php?action=query&list=search&srsearch=$q&srnamespace=0&srlimit=20&format=json"))
-                }.getOrDefault(emptyList())
-            }
-        ).awaitAll().flatten()
+                },
+                { archive(query, "mediatype:texts AND NOT collection:inlibrary AND NOT collection:printdisabled AND NOT access-restricted-item:true", ARCHIVE, catalog) },
+                { parseWikisource(fetchText("https://en.wikisource.org/w/api.php?action=query&list=search&srsearch=$q&srnamespace=0&srlimit=20&format=json")) }
+            )
+            FreeCatalog.MOVIES -> listOf(
+                { archive(query, "mediatype:movies AND (collection:feature_films OR collection:film_noir OR collection:sci-fi_horror OR collection:comedy_films)", FEATURE_FILMS, catalog) },
+                { archive(query, "mediatype:movies AND collection:silent_films", SILENT_FILMS, catalog) },
+                { archive(query, "mediatype:movies AND collection:animationandcartoons", CARTOONS, catalog) },
+                { archive(query, "mediatype:movies AND collection:classic_tv", CLASSIC_TV, catalog) },
+                { archive(query, "mediatype:movies AND collection:prelinger", PRELINGER, catalog) }
+            )
+            FreeCatalog.MUSIC -> listOf(
+                { archive(query, "mediatype:etree", LIVE_CONCERTS, catalog) },
+                { archive(query, "mediatype:audio AND collection:netlabels", NETLABELS, catalog) },
+                { archive(query, "mediatype:audio AND collection:librivoxaudio", AUDIOBOOKS, catalog) }
+            )
+        }
+        sources.map { source -> async { runCatching { source() }.getOrDefault(emptyList()) } }.awaitAll().flatten()
+    }
+
+    /** One Internet Archive collection search, most downloaded first. */
+    private suspend fun archive(query: String, filter: String, source: String, catalog: FreeCatalog): List<BookResult> {
+        val q = enc("($query) AND $filter")
+        return parseArchiveSearch(
+            fetchText("https://archive.org/advancedsearch.php?q=$q&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=year&sort[]=downloads+desc&rows=30&output=json"),
+            source,
+            catalog
+        )
     }
 
     /** The files of a result, asking the Internet Archive for them when the search did not say. */
     suspend fun filesFor(result: BookResult): List<BookFile> {
         if (result.files.isNotEmpty()) return result.files
         val id = result.archiveId ?: return emptyList()
-        return parseArchiveFiles(fetchText("https://archive.org/metadata/${enc(id)}"), id)
+        return parseArchiveFiles(fetchText("https://archive.org/metadata/${enc(id)}"), id, result.catalog)
     }
 
     /**
@@ -103,6 +151,31 @@ object BookSources {
             )
         }.filter { it.title.isNotBlank() }.toList()
 
+    /**
+     * Standard Ebooks' Atom search feed: each entry carries its cover and its files as
+     * enclosures, so no second request is needed.
+     */
+    fun parseStandardEbooks(xml: String): List<BookResult> =
+        Regex("<entry>(.*?)</entry>", RegexOption.DOT_MATCHES_ALL).findAll(xml).mapNotNull { match ->
+            val entry = match.groupValues[1]
+            fun first(pattern: String) = Regex(pattern, RegexOption.DOT_MATCHES_ALL).find(entry)?.groupValues?.get(1)
+                ?.let(::unescapeXmlEntities)?.trim()
+            val page = first("<id>(.*?)</id>") ?: return@mapNotNull null
+            val enclosures = Regex("""<link href="([^"]+)"[^>]*rel="enclosure"[^>]*title="([^"]+)"""").findAll(entry)
+                .map { unescapeXmlEntities(it.groupValues[1]).substringBefore("?source=") to it.groupValues[2] }.toList()
+            BookResult(
+                source = STANDARD_EBOOKS,
+                title = first("<title>(.*?)</title>").orEmpty(),
+                author = first("""<author>\s*<name>(.*?)</name>""").orEmpty(),
+                coverUrl = first("""<media:thumbnail url="([^"]+)""""),
+                files = listOfNotNull(
+                    enclosures.firstOrNull { it.second.startsWith("Recommended") }?.let { BookFile("EPUB", it.first) },
+                    enclosures.firstOrNull { it.first.endsWith(".azw3") }?.let { BookFile("AZW3", it.first) }
+                ),
+                pageUrl = page
+            )
+        }.filter { it.title.isNotBlank() && it.files.isNotEmpty() }.toList()
+
     fun parseOpenLibrary(json: String): List<BookResult> = parseJson(json).array("docs").mapNotNull { doc ->
         if (doc.string("ebook_access") != "public") return@mapNotNull null
         val ia = doc.array("ia").firstNotNullOfOrNull { (it as? JsonValue.Str)?.value } ?: return@mapNotNull null
@@ -118,36 +191,68 @@ object BookSources {
         )
     }.filter { it.title.isNotBlank() }
 
-    fun parseArchiveSearch(json: String): List<BookResult> = parseJson(json).array("response", "docs").mapNotNull { doc ->
-        val id = doc.string("identifier") ?: return@mapNotNull null
-        val creator = doc.string("creator") ?: doc.array("creator").firstNotNullOfOrNull { (it as? JsonValue.Str)?.value }
-        BookResult(
-            source = ARCHIVE,
-            title = doc.string("title").orEmpty(),
-            author = creator.orEmpty(),
-            year = doc.string("year") ?: doc.number("year").takeIf { it > 0 }?.toString().orEmpty(),
-            coverUrl = "https://archive.org/services/img/$id",
-            archiveId = id,
-            pageUrl = "https://archive.org/details/$id"
-        )
-    }.filter { it.title.isNotBlank() }
+    fun parseArchiveSearch(json: String, source: String = ARCHIVE, catalog: FreeCatalog = FreeCatalog.BOOKS): List<BookResult> =
+        parseJson(json).array("response", "docs").mapNotNull { doc ->
+            val id = doc.string("identifier") ?: return@mapNotNull null
+            val creator = doc.string("creator") ?: doc.array("creator").firstNotNullOfOrNull { (it as? JsonValue.Str)?.value }
+            BookResult(
+                source = source,
+                title = doc.string("title").orEmpty(),
+                author = creator.orEmpty(),
+                year = doc.string("year") ?: doc.number("year").takeIf { it > 0 }?.toString().orEmpty(),
+                coverUrl = "https://archive.org/services/img/$id",
+                archiveId = id,
+                pageUrl = "https://archive.org/details/$id",
+                catalog = catalog
+            )
+        }.filter { it.title.isNotBlank() }
 
-    /** The book files an archive item holds, best formats first; scans' raw images are left out. */
-    fun parseArchiveFiles(json: String, id: String): List<BookFile> {
-        val files = parseJson(json).array("files").mapNotNull { file ->
+    /**
+     * The files an archive item holds worth offering, best first. Books: one file per
+     * format, scans' raw images left out. Films: the largest copy of each video format.
+     * Music: the one track, or the whole item zipped by the archive as MP3 or FLAC.
+     */
+    fun parseArchiveFiles(json: String, id: String, catalog: FreeCatalog = FreeCatalog.BOOKS): List<BookFile> {
+        val entries = parseJson(json).array("files").mapNotNull { file ->
             val name = file.string("name") ?: return@mapNotNull null
-            val format = when {
-                name.endsWith(".epub", true) -> "EPUB"
-                name.endsWith(".pdf", true) && !name.endsWith("_bw.pdf", true) -> "PDF"
-                name.endsWith(".mobi", true) -> "Kindle"
-                name.endsWith("_djvu.txt", true) -> "Text"
-                else -> return@mapNotNull null
-            }
-            val path = name.split('/').joinToString("/") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
-            BookFile(format, "https://archive.org/download/$id/$path")
+            name to (file.string("size")?.toLongOrNull() ?: 0L)
         }
-        val order = listOf("EPUB", "PDF", "Kindle", "Text")
-        return files.distinctBy { it.format }.sortedBy { order.indexOf(it.format) }
+        fun url(name: String) = "https://archive.org/download/$id/" +
+            name.split('/').joinToString("/") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+        return when (catalog) {
+            FreeCatalog.BOOKS -> {
+                val order = listOf("EPUB", "PDF", "Kindle", "Text")
+                entries.mapNotNull { (name) ->
+                    val format = when {
+                        name.endsWith(".epub", true) -> "EPUB"
+                        name.endsWith(".pdf", true) && !name.endsWith("_bw.pdf", true) -> "PDF"
+                        name.endsWith(".mobi", true) -> "Kindle"
+                        name.endsWith("_djvu.txt", true) -> "Text"
+                        else -> return@mapNotNull null
+                    }
+                    BookFile(format, url(name))
+                }.distinctBy { it.format }.sortedBy { order.indexOf(it.format) }
+            }
+            FreeCatalog.MOVIES -> {
+                val order = listOf("MP4", "MKV", "OGV", "AVI")
+                entries.filter { (name) -> name.substringAfterLast('.', "").uppercase() in order }
+                    .sortedByDescending { it.second }
+                    .distinctBy { it.first.substringAfterLast('.').uppercase() }
+                    .map { (name) -> BookFile(name.substringAfterLast('.').uppercase(), url(name)) }
+                    .sortedBy { order.indexOf(it.format) }
+            }
+            FreeCatalog.MUSIC -> {
+                val mp3 = entries.filter { it.first.endsWith(".mp3", true) }
+                val flac = entries.any { it.first.endsWith(".flac", true) }
+                fun zip(format: String) = "https://archive.org/compress/$id/formats=${format.replace(" ", "%20")}&file=/$id.zip"
+                when {
+                    mp3.size == 1 -> listOf(BookFile("MP3", url(mp3.single().first)))
+                    mp3.isNotEmpty() -> listOfNotNull(BookFile("MP3 album", zip("VBR MP3")), BookFile("FLAC album", zip("Flac")).takeIf { flac })
+                    flac -> listOf(BookFile("FLAC album", zip("Flac")))
+                    else -> emptyList()
+                }
+            }
+        }
     }
 
     fun parseWikisource(json: String): List<BookResult> = parseJson(json).array("query", "search").mapNotNull { hit ->
@@ -165,13 +270,15 @@ object BookSources {
         )
     }
 
-    /** A file name for a book download: "Title - Author.epub". */
+    /** A file name for a download: "Title - Author.epub", or ".zip" for a whole album. */
     fun fileName(book: BookResult, file: BookFile): String {
         val extension = when (file.format) {
             "EPUB" -> "epub"
             "PDF" -> "pdf"
             "Kindle" -> "mobi"
-            else -> "txt"
+            "Text" -> "txt"
+            "MP3 album", "FLAC album" -> "zip"
+            else -> file.format.lowercase()
         }
         val base = listOf(book.title, book.author).filter { it.isNotBlank() }.joinToString(" - ").take(150)
         return LinkParser.sanitizeFileName("$base.$extension")

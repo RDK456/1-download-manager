@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Schedule
@@ -93,6 +94,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.documentfile.provider.DocumentFile
 import com.downloadhub.app.BuildConfig
+import com.downloadhub.core.FreeCatalog
 import com.downloadhub.core.LibraryKind
 import com.downloadhub.app.R
 import com.downloadhub.app.data.local.DownloadEntity
@@ -523,16 +525,28 @@ fun DownloadHubApp(
                         tiles = discoverTiles(),
                         onOpen = { navigate(it) }
                     )
-                    AppDestination.BOOKS -> BooksScreen(
-                        loader = viewModel.thumbnailCache,
-                        onDownload = { book, file ->
-                            viewModel.addLink(
-                                file.url,
-                                com.downloadhub.core.BookSources.fileName(book, file),
-                                DownloadCategory.DOCUMENT
-                            )
+                    AppDestination.BOOKS, AppDestination.MOVIES, AppDestination.MUSIC -> {
+                        val catalog = when (destination) {
+                            AppDestination.MOVIES -> FreeCatalog.MOVIES
+                            AppDestination.MUSIC -> FreeCatalog.MUSIC
+                            else -> FreeCatalog.BOOKS
                         }
-                    )
+                        BooksScreen(
+                            loader = viewModel.thumbnailCache,
+                            catalog = catalog,
+                            onDownload = { book, file ->
+                                viewModel.addLink(
+                                    file.url,
+                                    com.downloadhub.core.BookSources.fileName(book, file),
+                                    when (catalog) {
+                                        FreeCatalog.MOVIES -> DownloadCategory.VIDEO
+                                        FreeCatalog.MUSIC -> DownloadCategory.AUDIO
+                                        FreeCatalog.BOOKS -> DownloadCategory.DOCUMENT
+                                    }
+                                )
+                            }
+                        )
+                    }
                     AppDestination.TV -> TvScreen(
                         loader = viewModel.thumbnailCache,
                         onWatching = { navigate(AppDestination.PLAYER) }
@@ -1138,6 +1152,8 @@ private fun destinationTitle(destination: AppDestination): String = when (destin
     AppDestination.RSS -> "RSS feeds"
     AppDestination.DISCOVER -> "Discover"
     AppDestination.BOOKS -> "Free books"
+    AppDestination.MOVIES -> "Free movies"
+    AppDestination.MUSIC -> "Free music"
     AppDestination.PLAYER -> "Player"
     AppDestination.TV -> "Free TV"
     AppDestination.ABOUT -> "About us"
@@ -1156,7 +1172,7 @@ private val DownloadStatus.isActiveUi: Boolean
         this == DownloadStatus.RUNNING
 
 /** Unwraps the Activity behind a composable context, or null if there is none. */
-private fun Context.findActivity(): Activity? {
+internal fun Context.findActivity(): Activity? {
     var current: Context? = this
     while (current is ContextWrapper) {
         if (current is Activity) return current
@@ -1179,9 +1195,21 @@ private fun ActiveBadge(count: Int, icon: @Composable () -> Unit) {
 private fun discoverTiles(): List<DiscoverTile> = listOf(
     DiscoverTile(
         "Free books",
-        "Project Gutenberg, Open Library, the Internet Archive and Wikisource",
+        "Project Gutenberg, Standard Ebooks, Open Library, the Internet Archive and Wikisource",
         Icons.AutoMirrored.Filled.MenuBook,
         AppDestination.BOOKS
+    ),
+    DiscoverTile(
+        "Free movies",
+        "Public-domain films, silent films, cartoons and classic TV",
+        Icons.Default.Movie,
+        AppDestination.MOVIES
+    ),
+    DiscoverTile(
+        "Free music",
+        "Shareable live concerts, Creative Commons netlabels and LibriVox audiobooks",
+        Icons.Default.MusicNote,
+        AppDestination.MUSIC
     ),
     DiscoverTile(
         "Free TV",
