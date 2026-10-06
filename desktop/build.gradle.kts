@@ -699,3 +699,8 @@ compose.desktop {
 composeCompiler {
     stabilityConfigurationFile.set(rootProject.layout.projectDirectory.file("compose-stability.conf"))
 }
+
+// PackagedRuntimeStubsTest inspects the packaged app, so in a build that also packages
+// (a release) it must see the folder after prepareDistributable has stripped it, not the
+// fresh createDistributable output in between. Without this the order was luck.
+tasks.named("test") { mustRunAfter(prepareDistributable) }

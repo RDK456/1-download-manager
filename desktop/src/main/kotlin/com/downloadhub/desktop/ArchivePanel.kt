@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
@@ -168,11 +169,30 @@ private fun ArchiveItemView(item: ArchiveItem, onBack: () -> Unit, onDownload: (
                 Text(failed ?: "This item has no downloadable files.", color = AppTheme.Palette.muted, fontSize = 13.sp)
             }
             else -> {
+                var confirming by remember(item.id) { mutableStateOf(false) }
+                val summary = "${list.size} files · ${formatBytes(list.sumOf { it.sizeBytes })}"
+                fun downloadAll() {
+                    onDownload(list)
+                    notice = "Queued ${list.size} files."
+                }
+                if (confirming) {
+                    AlertDialog(
+                        onDismissRequest = { confirming = false },
+                        title = { Text("Download all?") },
+                        text = { Text("This queues $summary from \"${item.title}\".") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirming = false
+                                downloadAll()
+                            }) { Text("Download all") }
+                        },
+                        dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } }
+                    )
+                }
                 Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = {
-                        onDownload(list)
-                        notice = "Queued ${list.size} files."
-                    }) { Text("Download all (${list.size} files · ${formatBytes(list.sumOf { it.sizeBytes })})") }
+                    Button(onClick = { if (ArchiveOrg.needsConfirmation(list)) confirming = true else downloadAll() }) {
+                        Text("Download all ($summary)")
+                    }
                     notice?.let { Text(it, fontSize = 12.sp, color = AppTheme.Palette.accent, modifier = Modifier.padding(start = 12.dp)) }
                 }
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.fillMaxSize()) {

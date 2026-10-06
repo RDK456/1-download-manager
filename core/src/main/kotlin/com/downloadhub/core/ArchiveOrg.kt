@@ -80,7 +80,14 @@ object ArchiveOrg {
         ArchiveFile(name, archiveDownloadUrl(id, name), file.number("size"), file.string("format").orEmpty())
     }
 
-    private val BOOKKEEPING = listOf("_meta.xml", "_files.xml", "_meta.sqlite", "_reviews.xml", "__ia_thumb.jpg", "_archive.torrent")
+    /** "Download all" asks first above this many files or bytes, so a huge item is never queued by a stray click. */
+    const val CONFIRM_FILES = 20
+    const val CONFIRM_BYTES = 2L * 1024 * 1024 * 1024
+
+    fun needsConfirmation(files: List<ArchiveFile>): Boolean =
+        files.size > CONFIRM_FILES || files.sumOf { it.sizeBytes } > CONFIRM_BYTES
+
+    private val BOOKKEEPING =listOf("_meta.xml", "_files.xml", "_meta.sqlite", "_reviews.xml", "__ia_thumb.jpg", "_archive.torrent")
 }
 
 /** Where archive.org serves [name] from item [id], each path segment encoded. */

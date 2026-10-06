@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -175,8 +176,25 @@ private fun ArchiveItemView(item: ArchiveItem, onDownload: (List<ArchiveFile>) -
                 Text(failed ?: "This item has no downloadable files.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             }
             else -> {
-                Button(onClick = { onDownload(list) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Download all (${list.size} files · ${formatBytes(list.sumOf { it.sizeBytes })})")
+                var confirming by remember(item.id) { mutableStateOf(false) }
+                val summary = "${list.size} files · ${formatBytes(list.sumOf { it.sizeBytes })}"
+                Button(
+                    onClick = { if (ArchiveOrg.needsConfirmation(list)) confirming = true else onDownload(list) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Download all ($summary)") }
+                if (confirming) {
+                    AlertDialog(
+                        onDismissRequest = { confirming = false },
+                        title = { Text("Download all?") },
+                        text = { Text("This queues $summary from \"${item.title}\".") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirming = false
+                                onDownload(list)
+                            }) { Text("Download all") }
+                        },
+                        dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } }
+                    )
                 }
                 LazyColumn(Modifier.padding(top = 8.dp)) {
                     items(list, key = { it.name }) { file ->

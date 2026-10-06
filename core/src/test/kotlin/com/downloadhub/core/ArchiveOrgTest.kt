@@ -39,6 +39,14 @@ class ArchiveOrgTest {
     }
 
     @Test
+    fun `download all asks first for many files or many bytes, not for a small item`() {
+        fun files(count: Int, each: Long) = List(count) { ArchiveFile("f$it", "u$it", each, "") }
+        assertFalse(ArchiveOrg.needsConfirmation(files(20, 1_000)))
+        assertTrue(ArchiveOrg.needsConfirmation(files(21, 1_000)))
+        assertTrue(ArchiveOrg.needsConfirmation(files(1, ArchiveOrg.CONFIRM_BYTES + 1)))
+    }
+
+    @Test
     fun `a blank query browses the type, and restricted items are always left out`() {
         val browse = java.net.URLDecoder.decode(ArchiveOrg.searchUrl("  ", ArchiveType.SOFTWARE), "UTF-8")
         assertTrue("mediatype:(software) AND NOT access-restricted-item:true" in browse)
