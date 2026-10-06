@@ -257,7 +257,12 @@ val bundledToolsJar by tasks.registering(Jar::class) {
     dependsOn(fetchYtDlp, fetchFfmpeg)
     archiveFileName.set("bundled-tools.jar")
     destinationDirectory.set(layout.buildDirectory.dir("bundled-tools"))
-    from(ytBinDir) { into("lib") }
+    // The two tools by name, never the folder: 2.0.1 shipped a 114 MB half-finished
+    // download (ffmpeg-download.zip.part) that was sitting next to them.
+    from(ytBinDir) {
+        include("yt-dlp.exe", "ffmpeg.exe")
+        into("lib")
+    }
 }
 
 dependencies { runtimeOnly(files(bundledToolsJar)) }
