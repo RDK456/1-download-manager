@@ -27,8 +27,8 @@ android {
         applicationId = "com.downloadhub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 51
-        versionName = "1.5.6"
+        versionCode = 52
+        versionName = "1.5.7"
 
         // Single source of truth for the About page and the in-app updater.
         buildConfigField("String", "GITHUB_OWNER", "\"RDK456\"")
@@ -112,6 +112,10 @@ android {
         jniLibs {
             useLegacyPackaging = true
             pickFirsts += setOf("**/libc++_shared.so")
+            // The two 32-bit processors that ndk.abiFilters used to leave out. Splits do not
+            // allow abiFilters, and without this the universal APK carried all four sets of
+            // native code and grew from 132 to 225 MB.
+            excludes += setOf("lib/x86/**", "lib/armeabi-v7a/**")
         }
     }
 
