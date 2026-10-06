@@ -93,6 +93,10 @@ fun SettingsDialog(
     var connections by remember { mutableStateOf(settings.connectionsPerDownload.toString()) }
     var retries by remember { mutableStateOf(settings.maxRetries.toString()) }
     var closeToTray by remember { mutableStateOf(settings.closeToTray) }
+    // Read from the registry, which is the only record of it (see AutoStart).
+    val autoStartAvailable = remember { AutoStart.available() }
+    val autoStartWas = remember { AutoStart.isEnabled() }
+    var autoStart by remember { mutableStateOf(autoStartWas) }
     var autoQueueCaptured by remember { mutableStateOf(settings.browserCaptureAutoQueue) }
     var cache by remember { mutableStateOf(settings.cacheDir) }
     var deleteCache by remember { mutableStateOf(settings.deleteCacheWhenRemoved) }
@@ -197,6 +201,13 @@ fun SettingsDialog(
                             TickRow("Delete the cache when an unfinished download is removed", deleteCache) { deleteCache = it }
                             SectionHeading("Window")
                             TickRow("Close to the system tray", closeToTray) { closeToTray = it }
+                            TickRow(
+                                "Start with Windows",
+                                autoStart,
+                                enabled = autoStartAvailable,
+                                detail = if (autoStartAvailable) "Opens minimized to the taskbar when you sign in."
+                                else "Available in the installed app."
+                            ) { autoStart = it }
                         }
 
                         SettingsSection.SPEED -> {
@@ -419,6 +430,7 @@ fun SettingsDialog(
         },
         confirmButton = {
             Button(onClick = {
+                if (autoStart != autoStartWas) AutoStart.set(autoStart)
                 onSave(
                     settings.copy(
                         downloadDir = folder,

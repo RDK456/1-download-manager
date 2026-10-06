@@ -47,6 +47,40 @@ object IptvSource {
 
     fun categoryUrl(id: String) = "$BASE/categories/$id.m3u"
     fun countryUrl(code: String) = "$BASE/countries/$code.m3u"
+    fun languageUrl(code: String) = "$BASE/languages/$code.m3u"
+
+    /** Every channel iptv-org lists, in one playlist (about 2.5 MB). */
+    const val ALL_URL = "$BASE/index.m3u"
+
+    /** iptv-org's own catalogue: every country it has a list for, with its flag. */
+    private const val API = "https://iptv-org.github.io/api"
+
+    /** Major languages with a playlist on iptv-org, as (ISO 639-3 code, name). */
+    val languages: List<Pair<String, String>> = listOf(
+        "eng" to "English", "hin" to "Hindi", "tel" to "Telugu", "tam" to "Tamil", "mal" to "Malayalam",
+        "kan" to "Kannada", "ben" to "Bengali", "mar" to "Marathi", "guj" to "Gujarati", "pan" to "Punjabi",
+        "urd" to "Urdu", "ara" to "Arabic", "spa" to "Spanish", "por" to "Portuguese", "fra" to "French",
+        "deu" to "German", "ita" to "Italian", "rus" to "Russian", "tur" to "Turkish", "fas" to "Persian",
+        "zho" to "Chinese", "jpn" to "Japanese", "kor" to "Korean", "ind" to "Indonesian", "msa" to "Malay",
+        "fil" to "Filipino", "vie" to "Vietnamese", "tha" to "Thai", "nld" to "Dutch", "pol" to "Polish",
+        "ukr" to "Ukrainian", "swe" to "Swedish"
+    )
+
+    /**
+     * Every country iptv-org has a list for (about 250), as (code, "flag name"), by name.
+     * Falls back to the short built-in list when the catalogue cannot be reached.
+     */
+    suspend fun allCountries(): List<Pair<String, String>> =
+        runCatching { parseCountries(fetchText("$API/countries.json")) }.getOrNull()?.takeIf { it.isNotEmpty() } ?: countries
+
+    fun parseCountries(json: String): List<Pair<String, String>> = parseJson(json).array()
+        .mapNotNull { country ->
+            val code = country.string("code")?.lowercase() ?: return@mapNotNull null
+            val name = country.string("name") ?: return@mapNotNull null
+            Triple(code, name, country.string("flag"))
+        }
+        .sortedBy { it.second }
+        .map { (code, name, flag) -> code to listOfNotNull(flag, name).joinToString(" ") }
 
     suspend fun channels(listUrl: String): List<IptvChannel> = parseM3u(fetchText(listUrl))
 

@@ -108,6 +108,8 @@ fun main(args: Array<String>) {
         onExit = { requestExit() }
     )
     tray.install()
+    // Keeps a "Start with Windows" entry pointing at this copy after an update or a move.
+    Thread { runCatching { AutoStart.refresh() } }.apply { isDaemon = true }.start()
 
     try {
         application {
@@ -123,7 +125,8 @@ fun main(args: Array<String>) {
                 palette = ThemePalette.fromValue(state.settings.themePalette),
                 mode = themeMode
             ) {
-            val windowState = rememberWindowState(size = DpSize(1180.dp, 720.dp))
+            // Started by Windows at sign-in (AutoStart): open minimized, not over what the user is doing.
+            val windowState = rememberWindowState(size = DpSize(1180.dp, 720.dp), isMinimized = AutoStart.SWITCH in args)
             var visible by remember { mutableStateOf(true) }
             // The link-entry step, which only exists to collect a link before the
             // pre-download dialog. It used to be the only step, and when that dialog was

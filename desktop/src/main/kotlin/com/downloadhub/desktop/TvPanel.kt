@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -86,6 +87,10 @@ fun TvPanel(modifier: Modifier = Modifier) {
         return
     }
 
+    // Every country iptv-org lists, from its catalogue; the short built-in list until then.
+    var countries by remember { mutableStateOf(IptvSource.countries) }
+    LaunchedEffect(Unit) { countries = IptvSource.allCountries() }
+
     LaunchedEffect(listUrl) {
         loading = true
         failed = null
@@ -105,26 +110,24 @@ fun TvPanel(modifier: Modifier = Modifier) {
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(8.dp))
-            Box {
-                var open by remember { mutableStateOf(false) }
-                OutlinedButton(onClick = { open = true }) {
-                    Text("Country", fontSize = 12.sp)
-                    Icon(Lucide.ChevronDown, null, Modifier.size(16.dp))
-                }
-                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                    IptvSource.countries.forEach { (code, name) ->
-                        DropdownMenuItem(text = { Text(name) }, onClick = {
-                            open = false
-                            listUrl = IptvSource.countryUrl(code)
-                            listLabel = name
-                        })
-                    }
-                }
+            ListMenu("Country", countries) { code, name ->
+                listUrl = IptvSource.countryUrl(code)
+                listLabel = name
+            }
+            Spacer(Modifier.width(8.dp))
+            ListMenu("Language", IptvSource.languages) { code, name ->
+                listUrl = IptvSource.languageUrl(code)
+                listLabel = name
             }
             Spacer(Modifier.width(8.dp))
             FilterPill(if (hideBlocked) "Hiding geo-blocked" else "Showing geo-blocked", hideBlocked) { hideBlocked = !hideBlocked }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Every channel iptv-org has, then its categories.
+            FilterPill("All channels", listUrl == IptvSource.ALL_URL) {
+                listUrl = IptvSource.ALL_URL
+                listLabel = "All"
+            }
             IptvSource.categories.forEach { (id, label) ->
                 FilterPill(label, listLabel == label) {
                     listUrl = IptvSource.categoryUrl(id)
@@ -194,6 +197,26 @@ private fun ChannelCard(channel: IptvChannel, onPlay: () -> Unit, onExternal: ((
             // Plays here, in the app; VLC is offered too when it is installed.
             TextButton(onClick = onPlay) { Text("Play", fontSize = 12.sp) }
             if (onExternal != null) TextButton(onClick = onExternal) { Text("VLC", fontSize = 12.sp) }
+        }
+    }
+}
+
+/** A button that drops a scrolling list of (code, name) choices - countries or languages. */
+@Composable
+private fun ListMenu(title: String, options: List<Pair<String, String>>, onPick: (code: String, name: String) -> Unit) {
+    Box {
+        var open by remember { mutableStateOf(false) }
+        OutlinedButton(onClick = { open = true }) {
+            Text(title, fontSize = 12.sp)
+            Icon(Lucide.ChevronDown, null, Modifier.size(16.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.heightIn(max = 420.dp)) {
+            options.forEach { (code, name) ->
+                DropdownMenuItem(text = { Text(name) }, onClick = {
+                    open = false
+                    onPick(code, name)
+                })
+            }
         }
     }
 }

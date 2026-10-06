@@ -41,6 +41,13 @@ class IptvTest {
     }
 
     @Test
+    fun `the catalogue's countries come out by name, with flags, and lower-case codes for the list address`() {
+        val json = """[{"name":"Zambia","code":"ZM","flag":"🇿🇲"},{"name":"India","code":"IN","flag":"🇮🇳"},{"name":"Atlantis","code":"XA"}]"""
+        assertEquals(listOf("xa" to "Atlantis", "in" to "🇮🇳 India", "zm" to "🇿🇲 Zambia"), IptvSource.parseCountries(json))
+        assertEquals("https://iptv-org.github.io/iptv/languages/tel.m3u", IptvSource.languageUrl("tel"))
+    }
+
+    @Test
     fun `a channel keeps the user agent and referrer its broadcaster asks for`() {
         val text = """#EXTM3U
 #EXTINF:-1 tvg-id="a",Picky News

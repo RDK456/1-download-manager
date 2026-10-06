@@ -139,12 +139,16 @@ object FileAssociations {
      * at all, so Windows had nothing to launch. Clicking a magnet did nothing while the
      * app looked like it had registered itself, which is exactly what was reported.
      */
-    private fun regSet(key: String, name: String?, data: String, type: String = "REG_SZ"): Boolean {
+    internal fun regSet(key: String, name: String?, data: String, type: String = "REG_SZ"): Boolean {
         val args = mutableListOf("reg.exe", "add", key)
         if (name == null) args += "/ve" else args += listOf("/v", name)
         args += listOf("/t", type, "/d", data.replace("\"", "\\\""), "/f")
         return runCommand(args)
     }
+
+    /** Removes one value, leaving the rest of the key alone. */
+    internal fun regDeleteValue(key: String, name: String): Boolean =
+        runCommand(mutableListOf("reg.exe", "delete", key, "/v", name, "/f"))
 
     private fun regDelete(key: String): Boolean =
         runCommand(mutableListOf("reg.exe", "delete", key, "/f"))
@@ -161,7 +165,7 @@ object FileAssociations {
      * The value is then taken from after the type token and kept verbatim, quotes and
      * all, because a Windows open command legitimately begins and ends with one.
      */
-    private fun regQuery(key: String, name: String?): String? {
+    internal fun regQuery(key: String, name: String?): String? {
         val args = mutableListOf("reg.exe", "query", key)
         if (name != null) args += listOf("/v", name)
         val output = runCatching {
@@ -179,7 +183,7 @@ object FileAssociations {
             .trimEnd()
     }
 
-    private fun runCommand(args: List<String>): Boolean = runCatching {
+    internal fun runCommand(args: List<String>): Boolean = runCatching {
         val process = ProcessBuilder(args).redirectErrorStream(true).start()
         process.inputStream.readBytes()
         process.waitFor() == 0

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -65,6 +66,10 @@ fun TvScreen(loader: ThumbnailCache, onWatching: () -> Unit) {
     var filter by rememberSaveable { mutableStateOf("") }
     var hideBlocked by rememberSaveable { mutableStateOf(true) }
 
+    // Every country iptv-org lists, from its catalogue; the short built-in list until then.
+    var countries by remember { mutableStateOf(IptvSource.countries) }
+    LaunchedEffect(Unit) { countries = IptvSource.allCountries() }
+
     LaunchedEffect(listUrl) {
         loading = true
         failed = null
@@ -85,22 +90,26 @@ fun TvScreen(loader: ThumbnailCache, onWatching: () -> Unit) {
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { keyboard?.hide() }),
                 modifier = Modifier.weight(1f)
             )
-            Box {
-                var open by remember { mutableStateOf(false) }
-                TextButton(onClick = { open = true }) { Text("Country") }
-                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                    IptvSource.countries.forEach { (code, name) ->
-                        DropdownMenuItem(text = { Text(name) }, onClick = {
-                            open = false
-                            listUrl = IptvSource.countryUrl(code)
-                            listLabel = name
-                        })
-                    }
-                }
+            ListMenu("Country", countries) { code, name ->
+                listUrl = IptvSource.countryUrl(code)
+                listLabel = name
+            }
+            ListMenu("Language", IptvSource.languages) { code, name ->
+                listUrl = IptvSource.languageUrl(code)
+                listLabel = name
             }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(selected = hideBlocked, onClick = { hideBlocked = !hideBlocked }, label = { Text("Hide geo-blocked") })
+            // Every channel iptv-org has, then its categories.
+            FilterChip(
+                selected = listUrl == IptvSource.ALL_URL,
+                onClick = {
+                    listUrl = IptvSource.ALL_URL
+                    listLabel = "All"
+                },
+                label = { Text("All") }
+            )
             IptvSource.categories.forEach { (id, label) ->
                 FilterChip(
                     selected = listLabel == label,
@@ -162,6 +171,23 @@ private fun ChannelCard(channel: IptvChannel, loader: ThumbnailCache, onWatch: (
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+/** A button that drops a scrolling list of (code, name) choices - countries or languages. */
+@Composable
+private fun ListMenu(title: String, options: List<Pair<String, String>>, onPick: (code: String, name: String) -> Unit) {
+    Box {
+        var open by remember { mutableStateOf(false) }
+        TextButton(onClick = { open = true }) { Text(title) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.heightIn(max = 420.dp)) {
+            options.forEach { (code, name) ->
+                DropdownMenuItem(text = { Text(name) }, onClick = {
+                    open = false
+                    onPick(code, name)
+                })
+            }
         }
     }
 }

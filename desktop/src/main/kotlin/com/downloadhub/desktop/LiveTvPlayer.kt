@@ -1,6 +1,12 @@
 package com.downloadhub.desktop
 
 import androidx.compose.foundation.Image
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import com.composables.icons.lucide.Minimize
+import com.composables.icons.lucide.Maximize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -165,6 +171,35 @@ fun LiveTvPlayer(
     var problem by remember(channel.url) { mutableStateOf<String?>(null) }
     var muted by remember { mutableStateOf(false) }
     var stream by remember { mutableStateOf<LiveStream?>(null) }
+    var fullscreen by remember { mutableStateOf(false) }
+
+    // Full screen is its own borderless window over the whole display, showing the same
+    // frames; Esc, a double-click or the corner button comes back.
+    if (fullscreen) {
+        androidx.compose.ui.window.Window(
+            onCloseRequest = { fullscreen = false },
+            state = androidx.compose.ui.window.rememberWindowState(placement = androidx.compose.ui.window.WindowPlacement.Fullscreen),
+            undecorated = true,
+            title = channel.name,
+            onKeyEvent = { event ->
+                val exit = event.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
+                    (event.key == androidx.compose.ui.input.key.Key.Escape || event.key == androidx.compose.ui.input.key.Key.F)
+                if (exit) fullscreen = false
+                exit
+            }
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black)
+                    .pointerInput(Unit) { detectTapGestures(onDoubleTap = { fullscreen = false }) },
+                contentAlignment = Alignment.Center
+            ) {
+                frame?.let { Image(it, channel.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+                IconButton(onClick = { fullscreen = false }, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) {
+                    Icon(Lucide.Minimize, "Exit full screen (Esc)", Modifier.size(22.dp), tint = Color.White.copy(alpha = 0.7f))
+                }
+            }
+        }
+    }
 
     DisposableEffect(channel.url) {
         // One sound at a time: the music player pauses while a channel plays.
@@ -196,6 +231,9 @@ fun LiveTvPlayer(
             IconButton(onClick = { muted = !muted; stream?.muted = muted }) {
                 Icon(if (muted) Lucide.VolumeX else Lucide.Volume2, if (muted) "Unmute" else "Mute", Modifier.size(20.dp), tint = AppTheme.Palette.onSurface)
             }
+            IconButton(onClick = { fullscreen = true }) {
+                Icon(Lucide.Maximize, "Full screen", Modifier.size(20.dp), tint = AppTheme.Palette.onSurface)
+            }
             if (onOpenExternal != null) {
                 TextButton(onClick = onOpenExternal) {
                     Icon(Lucide.ExternalLink, null, Modifier.size(16.dp))
@@ -204,7 +242,12 @@ fun LiveTvPlayer(
                 }
             }
         }
-        Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.weight(1f).fillMaxWidth().background(Color.Black)
+                // Double-click for full screen, as in any video player.
+                .pointerInput(Unit) { detectTapGestures(onDoubleTap = { fullscreen = true }) },
+            contentAlignment = Alignment.Center
+        ) {
             frame?.let { Image(it, channel.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
             val message = problem
             when {
