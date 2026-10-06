@@ -1,6 +1,9 @@
 package com.downloadhub.app.ui
 
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.FastForward
+import com.composables.icons.lucide.Rewind
+import com.composables.icons.lucide.X
 import com.composables.icons.lucide.Maximize
 import com.composables.icons.lucide.Minimize
 import com.composables.icons.lucide.Pause
@@ -64,25 +67,48 @@ import androidx.media3.ui.PlayerView
 import com.downloadhub.app.R
 import kotlinx.coroutines.delay
 
+/** The two video views a video moves between: the one in the page and the full-screen one. */
+private class VideoViews {
+    var inline: PlayerView? = null
+    var full: PlayerView? = null
+}
+
 /**
- * The video with touch controls: tap shows the controls, double-tap a side skips 10 seconds,
- * holding plays at 2x, and dragging up or down sets brightness on the left and volume on the
- * right. The full-screen button opens the same thing over the whole screen.
+ * The video. In the page it has button controls - tap shows them - with a close button;
+ * full screen it adds the touch gestures: double-tap a side skips 10 seconds, holding plays
+ * at 2x, and dragging up or down sets brightness on the left and volume on the right.
+ *
+ * The page's view stays alive while full screen is open, and the player is handed between
+ * the two with [PlayerView.switchTargetView]. Destroying and recreating the view was what
+ * made the switch flash black and stutter both ways.
  */
 @Composable
 fun VideoSurface(modifier: Modifier = Modifier) {
     var fullscreen by remember { mutableStateOf(false) }
-    if (fullscreen) {
-        // A stand-in keeps the page layout while the video plays full screen.
-        Box(modifier.background(Color.Black))
-        FullscreenVideo(onExit = { fullscreen = false })
-    } else {
-        GestureVideo(fullscreen = false, onFullscreen = { fullscreen = true }, modifier = modifier)
-    }
+    var wantsLandscape by remember { mutableStateOf(false) }
+    val views = remember { VideoViews() }
+    val activity = LocalContext.current.findActivity()
+    val orientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
+    GestureVideo(
+        fullscreen = false,
+        onFullscreen = {
+            // Turn first, open after: a full-screen window opened mid-turn was laid out at
+            // the old size and the page showed round it until the turn finished.
+            val size = activity?.let { AppPlayer.player(it).videoSize }
+            wantsLandscape = !(size != null && size.height > size.width)
+            activity?.requestedOrientation = if (wantsLandscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            fullscreen = true
+        },
+        modifier = modifier,
+        views = views
+    )
+    val turned = !wantsLandscape || orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    if (fullscreen && turned) FullscreenVideo(onExit = { fullscreen = false }, views = views)
 }
 
 @Composable
-private fun FullscreenVideo(onExit: () -> Unit) {
+private fun FullscreenVideo(onExit: () -> Unit, views: VideoViews) {
     val activity = LocalContext.current.findActivity()
     Dialog(
         onDismissRequest = onExit,
@@ -90,10 +116,7 @@ private fun FullscreenVideo(onExit: () -> Unit) {
     ) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
         DisposableEffect(window) {
-            val size = activity?.let { AppPlayer.player(it).videoSize }
-            // Turn sideways for wide video; tall video stays upright.
-            activity?.requestedOrientation = if (size != null && size.height > size.width) ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            // The turn itself was requested before this opened; see VideoSurface.
             window?.let { w ->
                 // Edge to edge, over the camera cutout too: otherwise the dialog stops short of
                 // the cutout side in landscape and the page underneath shows through.
@@ -112,12 +135,24 @@ private fun FullscreenVideo(onExit: () -> Unit) {
             }
             onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
         }
-        GestureVideo(fullscreen = true, onFullscreen = onExit, modifier = Modifier.fillMaxSize(), window = window)
+        // The activity rotates in place (it handles orientation itself), so the dialog is not
+        // rebuilt when it turns sideways and kept its portrait size: a black box in the middle
+        // with the page showing round it. The size and the hidden bars are applied again
+        // whenever the screen's size changes.
+        val config = androidx.compose.ui.platform.LocalConfiguration.current
+        LaunchedEffect(window, config.screenWidthDp, config.screenHeightDp) {
+            window?.let { w ->
+                w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                WindowCompat.getInsetsController(w, w.decorView).hide(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        GestureVideo(fullscreen = true, onFullscreen = onExit, modifier = Modifier.fillMaxSize(), window = window, views = views)
     }
 }
 
 @Composable
-private fun GestureVideo(fullscreen: Boolean, onFullscreen: () -> Unit, modifier: Modifier, window: Window? = null) {
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+private fun GestureVideo(fullscreen: Boolean, onFullscreen: () -> Unit, modifier: Modifier, window: Window? = null, views: VideoViews) {
     val context = LocalContext.current
     val state by AppPlayer.state.collectAsState()
     val live = state.current?.isLive == true
@@ -155,9 +190,12 @@ private fun GestureVideo(fullscreen: Boolean, onFullscreen: () -> Unit, modifier
         }
     }
 
-    Box(
-        modifier
-            .background(Color.Black)
+    // Gestures only full screen. In the page a tap just shows the buttons: the gestures
+    // fought the page's own scrolling and taps, and the buttons are what a small video
+    // needs anyway.
+    val gestures = if (!fullscreen) {
+        Modifier.pointerInput(Unit) { detectTapGestures(onTap = { controls = !controls }) }
+    } else Modifier
             .pointerInput(live) {
                 detectTapGestures(
                     onTap = { controls = !controls },
@@ -203,15 +241,30 @@ private fun GestureVideo(fullscreen: Boolean, onFullscreen: () -> Unit, modifier
                     }
                 )
             }
-    ) {
+    Box(modifier.background(Color.Black).then(gestures)) {
         AndroidView(
             factory = { ctx ->
                 // From XML, the only way to pick a TextureView; see video_player.xml.
-                (LayoutInflater.from(ctx).inflate(R.layout.video_player, null) as PlayerView).apply {
-                    player = AppPlayer.player(ctx)
+                (LayoutInflater.from(ctx).inflate(R.layout.video_player, null) as PlayerView).also { view ->
+                    val player = AppPlayer.player(ctx)
+                    if (fullscreen) {
+                        views.full = view
+                        PlayerView.switchTargetView(player, views.inline, view)
+                    } else {
+                        views.inline = view
+                        if (views.full == null) view.player = player
+                    }
                 }
             },
-            onRelease = { it.player = null },
+            onRelease = { view ->
+                if (fullscreen) {
+                    views.full = null
+                    PlayerView.switchTargetView(AppPlayer.player(view.context), view, views.inline)
+                } else {
+                    views.inline = null
+                    view.player = null
+                }
+            },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -242,8 +295,14 @@ private fun GestureVideo(fullscreen: Boolean, onFullscreen: () -> Unit, modifier
 
         if (controls) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f))) {
+                // In the page, a close button: a live channel otherwise had no way to stop.
+                if (!fullscreen) {
+                    Box(Modifier.align(Alignment.TopEnd)) { VideoButton(Lucide.X, "Close player", AppPlayer::stop) }
+                }
                 Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
                     if (state.queue.size > 1) VideoButton(Lucide.SkipBack, "Previous", AppPlayer::previous)
+                    // The page has no double-tap, so skipping is a pair of buttons there.
+                    if (!fullscreen && !live) VideoButton(Lucide.Rewind, "Back 10 seconds") { AppPlayer.seekBy(-10_000) }
                     IconButton(onClick = AppPlayer::toggle, modifier = Modifier.size(64.dp)) {
                         Icon(
                             if (state.playing) Lucide.Pause else Lucide.Play,
@@ -252,6 +311,7 @@ private fun GestureVideo(fullscreen: Boolean, onFullscreen: () -> Unit, modifier
                             modifier = Modifier.size(44.dp)
                         )
                     }
+                    if (!fullscreen && !live) VideoButton(Lucide.FastForward, "Forward 10 seconds") { AppPlayer.seekBy(10_000) }
                     if (state.queue.size > 1) VideoButton(Lucide.SkipForward, "Next", AppPlayer::next)
                 }
                 Row(

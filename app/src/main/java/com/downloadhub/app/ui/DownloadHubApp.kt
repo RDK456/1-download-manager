@@ -781,6 +781,7 @@ private fun DownloadsScreen(
     val torrentPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(onPickTorrent) }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     Column(modifier = Modifier.fillMaxSize()) {
         SummaryBand(summary)
         androidx.compose.material3.OutlinedTextField(
@@ -793,7 +794,10 @@ private fun DownloadsScreen(
             label = {
                 Text(if (showTorrentAction) "Search torrents" else "Search downloads")
             },
-            leadingIcon = { Icon(Lucide.Search, contentDescription = null) }
+            leadingIcon = { Icon(Lucide.Search, contentDescription = null) },
+            // The list filters as you type, so the keyboard's Search just puts it away.
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { keyboard?.hide() })
         )
         // The kinds, on the Downloads tab only. The Torrents tab is already one kind,
         // and offering three ways to ask for torrents on a screen that is torrents is

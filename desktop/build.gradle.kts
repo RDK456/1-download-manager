@@ -89,17 +89,33 @@ fun downloadTo(url: String, destination: File) {
  * distinction is the whole difficulty. Android still fetches it on first use, because
  * an APK is a different thing to be large.
  */
+/**
+ * True when [exe] starts and answers [versionArg] - the only test that a bundled tool is
+ * usable. A size check alone shipped a damaged ffmpeg in 2.0.0: same length, different
+ * bytes, "illegal instruction" on start. Something on the build drive rewrote the cached
+ * file, and every build after it bundled the broken copy.
+ */
+fun toolRuns(exe: File, versionArg: String): Boolean = exe.isFile && exe.length() > 1_000_000L && runCatching {
+    val process = ProcessBuilder(exe.absolutePath, versionArg).redirectErrorStream(true).start()
+    process.inputStream.readBytes()
+    process.waitFor(60, TimeUnit.SECONDS) && process.exitValue() == 0
+}.getOrDefault(false)
+
 val fetchYtDlp by tasks.registering {
     description = "Downloads the standalone yt-dlp executable for Windows."
     group = "build setup"
     val outputDir = ytBinDir
     val target = "yt-dlp.exe"
     outputs.file(outputDir.map { it.file(target) })
+    // Always looked at: a damaged cached copy has to be noticed even when Gradle thinks
+    // the output is up to date.
+    outputs.upToDateWhen { toolRuns(File(outputDir.get().asFile, target), "--version") }
     doLast {
         val dir = outputDir.get().asFile
         dir.mkdirs()
         val out = File(dir, target)
-        if (out.isFile && out.length() > 1_000_000L) return@doLast
+        if (toolRuns(out, "--version")) return@doLast
+        if (out.exists()) logger.warn("The cached $target does not run; fetching a fresh copy.")
 
         // The "latest/download" alias redirects unreliably, so the tag is resolved
         // through the API and the asset is fetched from a pinned URL.
@@ -120,6 +136,7 @@ val fetchYtDlp by tasks.registering {
         logger.lifecycle("Fetching yt-dlp $tag")
         downloadTo("https://github.com/yt-dlp/yt-dlp/releases/download/$tag/$target", out)
         require(out.length() > 1_000_000L) { "$target looks truncated (${out.length()} bytes)" }
+        require(toolRuns(out, "--version")) { "the downloaded $target does not run; refusing to bundle it" }
         logger.lifecycle("yt-dlp $tag staged: ${out.length()} bytes")
     }
 }
@@ -149,11 +166,13 @@ val fetchFfmpeg by tasks.registering {
     val outputDir = ytBinDir
     val target = "ffmpeg.exe"
     outputs.file(outputDir.map { it.file(target) })
+    outputs.upToDateWhen { toolRuns(File(outputDir.get().asFile, target), "-version") }
     doLast {
         val dir = outputDir.get().asFile
         dir.mkdirs()
         val out = File(dir, target)
-        if (out.isFile && out.length() > 1_000_000L) return@doLast
+        if (toolRuns(out, "-version")) return@doLast
+        if (out.exists()) logger.warn("The cached $target does not run; fetching a fresh copy.")
 
         val archive = File(dir, "ffmpeg-download.zip")
         try {
@@ -179,6 +198,15 @@ val fetchFfmpeg by tasks.registering {
                 if (partial.length() < 1_000_000L) {
                     partial.delete()
                     error("the extracted $target looks truncated (${partial.length()} bytes)")
+                }
+                // Tried under an .exe name before it replaces the cached copy.
+                val probe = File(dir, "probe-$target")
+                partial.copyTo(probe, overwrite = true)
+                val ok = toolRuns(probe, "-version")
+                probe.delete()
+                if (!ok) {
+                    partial.delete()
+                    error("the downloaded $target does not run; refusing to bundle it")
                 }
                 out.delete()
                 if (!partial.renameTo(out)) {

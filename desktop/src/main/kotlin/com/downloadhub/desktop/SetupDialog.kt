@@ -120,7 +120,8 @@ fun SetupDialog(
                         value = folder,
                         onValueChange = { folder = it },
                         singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        // Enter is Start, as the button below.
+                        modifier = Modifier.weight(1f).onEnter { onFinish(folder) }
                     )
                     OutlinedButton(onClick = {
                         onChooseFolder()?.let { folder = it.absolutePath }

@@ -122,6 +122,31 @@ fun AddDownloadSheet(
     val batch = remember(link) { com.downloadhub.core.BatchLinks.expand(link) }.takeIf { it.size > 1 }
     val isYoutube = batch == null && effectiveSource == DownloadSource.YOUTUBE
 
+    // What Add does, shared with the keyboard's Go key in either field.
+    fun submit() {
+        if (link.isBlank()) return
+        when {
+            batch != null -> onAddBatch(batch)
+            isYoutube -> onOpenYouTubeTab(link.trim())
+            else -> {
+                if (!request.isEmpty) onRequestOptions(request)
+                onAdd(
+                    link,
+                    fileName.takeIf { it.isNotBlank() },
+                    category,
+                    effectiveSource,
+                    seed.userAgent,
+                    seed.contentDisposition,
+                    quality,
+                    audioFormat,
+                    null,
+                    null
+                )
+            }
+        }
+    }
+    val goAction = androidx.compose.foundation.text.KeyboardActions(onGo = { submit() })
+
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(onPickTorrent)
     }
@@ -153,7 +178,8 @@ fun AddDownloadSheet(
                 },
                 maxLines = 5,
                 supportingText = { Text("One link, several (one per line), or a range like file[01-20].jpg") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = androidx.compose.ui.text.input.ImeAction.Go),
+                keyboardActions = goAction,
                 trailingIcon = {
                     IconButton(onClick = {
                         clipboard.getText()?.text?.let { link = it }
@@ -215,7 +241,9 @@ fun AddDownloadSheet(
                     onValueChange = { fileName = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("File name (optional)") },
-                    singleLine = true
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go),
+                    keyboardActions = goAction
                 )
                 // Offer to look inside a pasted web page for video, audio or files.
                 if (link.trim().startsWith("http")) {
@@ -255,25 +283,7 @@ fun AddDownloadSheet(
             }
 
             Button(
-                onClick = {
-                    if (batch != null) {
-                        onAddBatch(batch)
-                        return@Button
-                    }
-                    if (!request.isEmpty) onRequestOptions(request)
-                    onAdd(
-                        link,
-                        fileName.takeIf { it.isNotBlank() },
-                        category,
-                        effectiveSource,
-                        seed.userAgent,
-                        seed.contentDisposition,
-                        quality,
-                        audioFormat,
-                        null,
-                        null
-                    )
-                },
+                onClick = { submit() },
                 enabled = !isYoutube && link.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
             ) {

@@ -56,6 +56,20 @@ internal fun QueueEditorDialog(
     val startMinute = QueueRules.parseTime(start)
     val stopMinute = if (stop.isBlank()) QueueSchedule.NO_STOP else QueueRules.parseTime(stop)
     val valid = name.isNotBlank() && (!scheduled || (startMinute != null && stopMinute != null && days.isNotEmpty()))
+    // Shared by the Save button and Enter in any field.
+    fun save() {
+        if (!valid) return
+        onSave(
+            queue.copy(
+                name = name.trim(),
+                maxConcurrent = limit.toIntOrNull() ?: 0,
+                scheduleEnabled = scheduled,
+                days = days.sorted(),
+                startMinute = startMinute ?: queue.startMinute,
+                stopMinute = stopMinute ?: QueueSchedule.NO_STOP
+            )
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -68,14 +82,14 @@ internal fun QueueEditorDialog(
                     onValueChange = { name = it },
                     label = { Text("Name") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().onEnter { save() }
                 )
                 OutlinedTextField(
                     value = limit,
                     onValueChange = { limit = it.filter(Char::isDigit).take(2) },
                     label = { Text("Downloads at once (blank = app setting)") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().onEnter { save() }
                 )
                 TickRow(
                     "Start and stop on a schedule",
@@ -90,7 +104,7 @@ internal fun QueueEditorDialog(
                             label = { Text("Start (HH:mm)") },
                             isError = startMinute == null,
                             singleLine = true,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f).onEnter { save() }
                         )
                         OutlinedTextField(
                             value = stop,
@@ -98,7 +112,7 @@ internal fun QueueEditorDialog(
                             label = { Text("Stop (optional)") },
                             isError = stopMinute == null,
                             singleLine = true,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f).onEnter { save() }
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -111,21 +125,7 @@ internal fun QueueEditorDialog(
             }
         },
         confirmButton = {
-            Button(
-                enabled = valid,
-                onClick = {
-                    onSave(
-                        queue.copy(
-                            name = name.trim(),
-                            maxConcurrent = limit.toIntOrNull() ?: 0,
-                            scheduleEnabled = scheduled,
-                            days = days.sorted(),
-                            startMinute = startMinute ?: queue.startMinute,
-                            stopMinute = stopMinute ?: QueueSchedule.NO_STOP
-                        )
-                    )
-                }
-            ) { Text("Save") }
+            Button(enabled = valid, onClick = { save() }) { Text("Save") }
         },
         dismissButton = {
             Row {

@@ -92,7 +92,7 @@ fun ArchivePanel(onDownload: (List<ArchiveFile>) -> Unit, modifier: Modifier = M
                 singleLine = true,
                 label = { Text("Search archive.org - leave empty to browse the most downloaded", fontSize = 12.sp) },
                 leadingIcon = { androidx.compose.material3.Icon(Lucide.Search, contentDescription = null) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).onEnter { submitted = query.trim() }
             )
             Spacer(Modifier.width(8.dp))
             Button(onClick = { submitted = query.trim() }) { Text("Search") }

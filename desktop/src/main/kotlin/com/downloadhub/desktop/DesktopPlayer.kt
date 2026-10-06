@@ -100,7 +100,7 @@ object DesktopPlayer {
     @Volatile
     private var session: Session? = null
 
-    private val ffmpeg: File get() = File(AppPaths.toolsDir, "ffmpeg.exe")
+    internal val ffmpeg: File get() = File(AppPaths.toolsDir, "ffmpeg.exe")
 
     fun play(queue: List<File>, index: Int) {
         _state.update { it.copy(queue = queue, index = index, error = null, durationMillis = 0L) }

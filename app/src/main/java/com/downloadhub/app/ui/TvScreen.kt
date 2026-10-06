@@ -56,6 +56,7 @@ import com.downloadhub.core.IptvSource
 @Composable
 fun TvScreen(loader: ThumbnailCache, onWatching: () -> Unit) {
     val context = LocalContext.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     var listUrl by rememberSaveable { mutableStateOf(IptvSource.categoryUrl("news")) }
     var listLabel by rememberSaveable { mutableStateOf("News") }
     var channels by remember { mutableStateOf<List<IptvChannel>>(emptyList()) }
@@ -80,6 +81,8 @@ fun TvScreen(loader: ThumbnailCache, onWatching: () -> Unit) {
                 onValueChange = { filter = it },
                 singleLine = true,
                 label = { Text("Filter $listLabel") },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { keyboard?.hide() }),
                 modifier = Modifier.weight(1f)
             )
             Box {

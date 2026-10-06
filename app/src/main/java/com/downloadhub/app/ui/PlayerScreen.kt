@@ -1,6 +1,7 @@
 package com.downloadhub.app.ui
 
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.X
 import com.composables.icons.lucide.Film
 import com.composables.icons.lucide.Music
 import com.composables.icons.lucide.Pause
@@ -94,6 +95,9 @@ fun MiniPlayer(onOpen: () -> Unit) {
                     Icon(if (state.playing) Lucide.Pause else Lucide.Play, if (state.playing) "Pause" else "Play")
                 }
                 if (state.queue.size > 1) IconButton(onClick = AppPlayer::next) { Icon(Lucide.SkipForward, "Next") }
+                // Closes the player outright. Pause kept a live channel parked here with
+                // no way to dismiss it.
+                IconButton(onClick = AppPlayer::stop) { Icon(Lucide.X, "Close player") }
             }
         }
     }

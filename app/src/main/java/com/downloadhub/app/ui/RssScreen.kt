@@ -50,7 +50,12 @@ fun RssScreen(
     var editingRules by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
-            OutlinedTextField(address, { address = it }, label = { Text("Feed address") }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(
+                address, { address = it }, label = { Text("Feed address") }, singleLine = true, modifier = Modifier.weight(1f),
+                // The keyboard's Go adds the feed, as the Add button does.
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { if (address.isNotBlank()) { onSubscribe(address); address = "" } })
+            )
             TextButton(enabled = address.isNotBlank(), onClick = { onSubscribe(address); address = "" }) { Text("Add") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {

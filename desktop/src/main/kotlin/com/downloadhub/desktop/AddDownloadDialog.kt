@@ -427,7 +427,7 @@ fun AddDownloadDialog(
                         onValueChange = { directory = it },
                         label = { Text("Folder", fontSize = 12.sp) },
                         singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f).onEnter(canConfirm) { confirm() }
                     )
                     Spacer(Modifier.width(6.dp))
                     OutlinedButton(
@@ -443,7 +443,7 @@ fun AddDownloadDialog(
                         label = { Text("Content layout - folder name", fontSize = 12.sp) },
                         singleLine = true,
                         enabled = !metainfo.isSingleFile,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().onEnter(canConfirm) { confirm() }
                     )
                 }
 

@@ -55,8 +55,8 @@ import java.awt.datatransfer.StringSelection
 
 /**
  * Free TV: iptv-org's public lists of freely broadcast channels, by category or by country,
- * as a grid of channel cards. A live stream needs a real video player, so Watch opens VLC
- * or mpv; without either, the link can be copied into any player.
+ * as a grid of channel cards. Play watches a channel right here, in the app; VLC
+ * or mpv is offered as well when one is installed.
  */
 @Composable
 fun TvPanel(modifier: Modifier = Modifier) {
@@ -69,6 +69,22 @@ fun TvPanel(modifier: Modifier = Modifier) {
     var hideBlocked by remember { mutableStateOf(true) }
     var notice by remember { mutableStateOf<String?>(null) }
     val hasPlayer = remember { DesktopPlayer.externalPlayer() != null }
+    // The channel playing in the app, filling the panel; null shows the grid.
+    var watching by remember { mutableStateOf<IptvChannel?>(null) }
+    watching?.let { channel ->
+        LiveTvPlayer(
+            channel = channel,
+            onClose = { watching = null },
+            onOpenExternal = if (hasPlayer) {
+                {
+                    watching = null
+                    if (!DesktopPlayer.openStream(channel.url, channel.userAgent, channel.referrer)) notice = "Could not start the video player."
+                }
+            } else null,
+            modifier = modifier
+        )
+        return
+    }
 
     LaunchedEffect(listUrl) {
         loading = true
@@ -116,19 +132,6 @@ fun TvPanel(modifier: Modifier = Modifier) {
                 }
             }
         }
-        if (!hasPlayer) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Live TV plays in VLC or mpv, and neither is installed. Install VLC to watch here, or copy a link into any player.",
-                    fontSize = 12.sp,
-                    color = AppTheme.Palette.muted,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(onClick = { runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI("https://www.videolan.org/vlc/")) } }) {
-                    Text("Get VLC")
-                }
-            }
-        }
         notice?.let { Text(it, fontSize = 11.sp, color = AppTheme.Palette.accent, modifier = Modifier.padding(horizontal = 16.dp)) }
         val shown = channels.filter {
             (!hideBlocked || !it.geoBlocked) && (filter.isBlank() || it.name.contains(filter.trim(), ignoreCase = true))
@@ -148,12 +151,10 @@ fun TvPanel(modifier: Modifier = Modifier) {
                 items(shown, key = { it.url }) { channel ->
                     ChannelCard(
                         channel = channel,
-                        canWatch = hasPlayer,
-                        onWatch = { if (!DesktopPlayer.openStream(channel.url, channel.userAgent, channel.referrer)) notice = "Could not start the video player." },
-                        onCopy = {
-                            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(channel.url), null)
-                            notice = "Copied the link to ${channel.name}."
-                        }
+                        onPlay = { watching = channel },
+                        onExternal = if (hasPlayer) {
+                            { if (!DesktopPlayer.openStream(channel.url, channel.userAgent, channel.referrer)) notice = "Could not start the video player." }
+                        } else null
                     )
                 }
             }
@@ -162,14 +163,14 @@ fun TvPanel(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ChannelCard(channel: IptvChannel, canWatch: Boolean, onWatch: () -> Unit, onCopy: () -> Unit) {
+private fun ChannelCard(channel: IptvChannel, onPlay: () -> Unit, onExternal: (() -> Unit)?) {
     val shape = RoundedCornerShape(10.dp)
     Column(
         Modifier
             .clip(shape)
             .background(AppTheme.Palette.surface)
             .border(1.dp, AppTheme.Palette.outline.copy(alpha = 0.3f), shape)
-            .clickable(enabled = canWatch, onClick = onWatch)
+            .clickable(onClick = onPlay)
             .padding(10.dp)
     ) {
         val logo = rememberRemoteImage(channel.logo)
@@ -190,8 +191,9 @@ private fun ChannelCard(channel: IptvChannel, canWatch: Boolean, onWatch: () -> 
             overflow = TextOverflow.Ellipsis
         )
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 6.dp)) {
-            if (canWatch) TextButton(onClick = onWatch) { Text("Watch", fontSize = 12.sp) }
-            TextButton(onClick = onCopy) { Text("Copy link", fontSize = 12.sp) }
+            // Plays here, in the app; VLC is offered too when it is installed.
+            TextButton(onClick = onPlay) { Text("Play", fontSize = 12.sp) }
+            if (onExternal != null) TextButton(onClick = onExternal) { Text("VLC", fontSize = 12.sp) }
         }
     }
 }

@@ -299,7 +299,7 @@ fun RenameDownloadDialog(currentName: String, onConfirm: (String) -> Unit, onDis
                 onValueChange = { name = it },
                 label = { Text("File name") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().onEnter(name.trim().isNotEmpty()) { onConfirm(name.trim()) }
             )
         },
         confirmButton = {
@@ -338,7 +338,7 @@ fun SetLocationDialog(
                     onValueChange = { path = it },
                     label = { Text("Folder") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().onEnter(path.trim().isNotEmpty()) { onConfirm(path.trim()) }
                 )
             }
         },
