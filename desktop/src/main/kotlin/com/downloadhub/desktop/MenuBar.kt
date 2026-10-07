@@ -93,12 +93,8 @@ fun MenuBar(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (roomForWordmark) {
-                        Text(
-                            "1 download manager",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = AppTheme.Palette.accent
-                        )
+                        // The wordmark on a small LCD plate, as on the Android app.
+                        LcdPlate("1DM")
                         Spacer(Modifier.width(20.dp))
                     }
                     MenuLabel("File", open == "File", { offsets["File"] = it }) {

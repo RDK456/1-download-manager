@@ -1,5 +1,6 @@
 package com.downloadhub.desktop
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -438,5 +439,42 @@ internal fun Lcd(value: String, ghost: String, modifier: Modifier = Modifier, fo
     ) {
         Text("8".repeat(ghost.length), fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = fontSize, color = glow.copy(alpha = 0.10f), maxLines = 1, softWrap = false)
         Text(value.padStart(ghost.length), fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = fontSize, color = glow, maxLines = 1, softWrap = false)
+    }
+}
+
+/** Doto, a dot-matrix face (OFL), for the wordmark and display titles only - never small text. */
+@Suppress("DEPRECATION")
+val Dot = FontFamily(Font("fonts/doto_black.ttf", FontWeight.Black))
+
+/**
+ * A light LCD plate, the kind on a calculator or a sampler: grey-green glass with dark
+ * dot-matrix text. The window's wordmark sits on one.
+ */
+@Composable
+internal fun LcdPlate(text: String, modifier: Modifier = Modifier, fontSize: TextUnit = 16.sp) {
+    val shape = RoundedCornerShape(5.dp)
+    Box(
+        modifier
+            .clip(shape)
+            .background(Color(0xFFC9CEC0))
+            .border(1.dp, Color(0xFF8E9486), shape)
+            .padding(horizontal = 8.dp, vertical = 1.dp)
+    ) {
+        Text(text, fontFamily = Dot, fontWeight = FontWeight.Black, fontSize = fontSize, color = Color(0xFF1F2419), maxLines = 1, softWrap = false)
+    }
+}
+
+/** One status LED: lit green when [on], an unlit dot otherwise, with a printed label. */
+@Composable
+internal fun StatusLed(label: String, on: Boolean) {
+    androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(8.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(if (on) Color(0xFF22A447) else AppTheme.Palette.onSurface.copy(alpha = 0.22f))
+        )
+        androidx.compose.foundation.layout.Spacer(Modifier.size(6.dp))
+        Text(label, fontFamily = Mono, fontWeight = FontWeight.Medium, fontSize = 11.sp, color = AppTheme.Palette.onSurface, maxLines = 1)
     }
 }

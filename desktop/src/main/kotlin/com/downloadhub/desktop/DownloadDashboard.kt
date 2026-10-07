@@ -62,7 +62,7 @@ fun DownloadCardRow(
     val shape = RoundedCornerShape(8.dp)
     val stateColor = when (item.status) {
         DownloadStatus.RUNNING -> AppTheme.Palette.accent
-        DownloadStatus.COMPLETED -> AppTheme.success
+        DownloadStatus.COMPLETED -> AppTheme.Palette.muted
         DownloadStatus.FAILED -> AppTheme.Palette.error
         else -> AppTheme.Palette.muted
     }

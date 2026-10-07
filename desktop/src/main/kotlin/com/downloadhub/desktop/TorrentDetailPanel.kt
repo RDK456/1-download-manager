@@ -659,18 +659,9 @@ fun TorrentStatusBar(items: List<DownloadItem>, modifier: Modifier = Modifier) {
             )
             Text(" ${items.size}", fontSize = 10.sp, color = muted, maxLines = 1, softWrap = false)
         }
-        // The strip is the window's meter: the download speed big in the mono face with
-        // its last half-minute as LED columns, the rest as small readouts beside it.
-        val rate by androidx.compose.runtime.rememberUpdatedState(strip.downloadRate)
-        var history by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(List(30) { 0L }) }
-        androidx.compose.runtime.LaunchedEffect(Unit) {
-            while (true) {
-                history = history.drop(1) + rate
-                kotlinx.coroutines.delay(1000)
-            }
-        }
-        Lcd("↓ " + DisplayFormat.bytes(strip.downloadRate) + "/s", ghost = "↓ 888.8 MB/s", fontSize = 11.sp)
-        SpeedTrace(history, Modifier.width(96.dp).height(14.dp))
+        // Plain readouts: the speed's LCD and graph live on the instrument panel above the
+        // list, and showing them twice was clutter.
+        Text("↓ " + DisplayFormat.bytes(strip.downloadRate) + "/s", fontSize = 11.sp, fontFamily = Mono, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false)
         Text("↑ " + DisplayFormat.bytes(strip.uploadRate) + "/s", fontSize = 11.sp, fontFamily = Mono, color = muted, maxLines = 1, softWrap = false)
         Text("SEEDS " + strip.seeds, fontSize = 11.sp, fontFamily = Mono, color = muted, maxLines = 1, softWrap = false)
         Text("PEERS " + strip.peers, fontSize = 11.sp, fontFamily = Mono, color = muted, maxLines = 1, softWrap = false)

@@ -1,5 +1,6 @@
 package com.downloadhub.desktop
 
+import androidx.compose.runtime.rememberUpdatedState
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.LayoutGrid
 import com.composables.icons.lucide.Library
@@ -573,6 +574,7 @@ fun LibraryScreen(
                             cardView = state.settings.libraryCards,
                             onCardView = { actions.updateSettings(state.settings.copy(libraryCards = it)) }
                         )
+                        InstrumentPanel(all, state.settings.downloadDir)
                         val cardView = state.settings.libraryCards
                         if (!cardView) ColumnHeader(
                             sort = sort,
@@ -1371,12 +1373,24 @@ private fun RailRow(
     compact: Boolean = false,
     onClick: () -> Unit
 ) {
-    // The chosen row is a solid accent pill with light text; the rest are a quiet icon and
-    // label. Counts show only when there is something to count, so the rail is not a
-    // column of zeros.
-    val shape = RoundedCornerShape(10.dp)
-    val fill = if (selected) Modifier.background(AppTheme.Palette.accent, shape) else Modifier.hoverFill(shape = shape)
-    val iconTint = if (selected) AppTheme.Palette.onAccent else AppTheme.Palette.muted
+    // The chosen row is a raised panel with a lit LED bar on its edge, as on the Android
+    // rail: the accent marks it without flooding the sidebar. Counts show only when there
+    // is something to count, so the rail is not a column of zeros.
+    val shape = RoundedCornerShape(6.dp)
+    val fill = if (selected) {
+        Modifier
+            .background(AppTheme.Palette.raised, shape)
+            .border(1.dp, AppTheme.Palette.outline, shape)
+            .drawBehind {
+                drawRoundRect(
+                    AppTheme.Palette.accent,
+                    topLeft = androidx.compose.ui.geometry.Offset(4.dp.toPx(), size.height * 0.25f),
+                    size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height * 0.5f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx())
+                )
+            }
+    } else Modifier.hoverFill(shape = shape)
+    val iconTint = if (selected) AppTheme.Palette.onSurface else AppTheme.Palette.muted
     if (compact) {
         // Icons only: the rail is too narrow for words, so the tooltip names the row.
         @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -1427,8 +1441,8 @@ private fun RailRow(
         Text(
             label,
             fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            color = if (selected) AppTheme.Palette.onAccent else AppTheme.Palette.onSurface,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = AppTheme.Palette.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
@@ -1437,7 +1451,8 @@ private fun RailRow(
             Text(
                 "$count",
                 fontSize = 11.sp,
-                color = if (selected) AppTheme.Palette.onAccent.copy(alpha = 0.85f) else AppTheme.Palette.faint
+                fontFamily = Mono,
+                color = if (selected) AppTheme.Palette.accent else AppTheme.Palette.faint
             )
         }
     }
@@ -2276,9 +2291,9 @@ private fun IconButton(
 
 private fun statusColour(status: DownloadStatus, palette: androidx.compose.material3.ColorScheme): Color =
     when (status) {
-        // Done reads as done in every palette: the accent is orange in Sunset and red in
-        // Rose, and a finished download in either looked like a warning.
-        DownloadStatus.COMPLETED -> AppTheme.success
+        // Neutral, as on Android: a finished download is the normal state, and only what
+        // is moving gets the accent. Failed is the one red.
+        DownloadStatus.COMPLETED -> palette.onSurfaceVariant
         DownloadStatus.RUNNING -> AppTheme.Palette.accent
         DownloadStatus.FAILED -> palette.error
         else -> palette.onSurfaceVariant
@@ -2447,3 +2462,74 @@ internal fun QueuedDownload.toCoreItem() = DownloadItem(
 
 /** How long a status message stays before clearing itself. */
 private const val MESSAGE_SHOWN_MILLIS = 6_000L
+
+/**
+ * The instrument panel above the list, as on the Android app: status LEDs, the total speed
+ * on an LCD with its last half-minute as LED columns, the counts as readouts, and the free
+ * space where downloads land.
+ */
+@Composable
+private fun InstrumentPanel(all: List<DownloadItem>, downloadDir: String) {
+    val speed = all.filter { it.status == DownloadStatus.RUNNING }.sumOf { it.speedBytesPerSecond }
+    val active = all.count { it.isActive }
+    val queued = all.count { it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.PAUSED }
+    val done = all.count { it.status == DownloadStatus.COMPLETED }
+    val rate by rememberUpdatedState(speed)
+    var history by remember { mutableStateOf(List(40) { 0L }) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            history = history.drop(1) + rate
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+    var free by remember(downloadDir) { mutableStateOf(-1L) }
+    LaunchedEffect(downloadDir, done) {
+        free = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { java.io.File(downloadDir).usableSpace }.getOrDefault(-1L)
+        }
+    }
+    val p = AppTheme.Palette
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(p.band)
+            .border(1.dp, p.outline, RoundedCornerShape(8.dp))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            StatusLed("RUN", active > 0)
+            StatusLed("QUEUE", queued > 0)
+            StatusLed("IDLE", active == 0)
+        }
+        Column {
+            Text("↓ SPEED", fontFamily = Mono, fontSize = 10.sp, color = p.muted)
+            Spacer(Modifier.height(3.dp))
+            Lcd(DisplayFormat.speed(speed).ifEmpty { "0 B/s" }, ghost = "8888.8 MB/s", fontSize = 18.sp)
+        }
+        SpeedTrace(history, Modifier.weight(1f).height(30.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Readout("ACT", active, p.accent)
+            Readout("QUE", queued, p.onSurface)
+            Readout("DONE", done, p.muted)
+        }
+        if (free >= 0) {
+            Column(horizontalAlignment = Alignment.End) {
+                Text("FREE", fontFamily = Mono, fontSize = 10.sp, color = p.muted)
+                Text(DisplayFormat.bytes(free), fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = p.onSurface)
+            }
+        }
+    }
+}
+
+/** One counter: a small mono tag and a zero-padded number. */
+@Composable
+private fun Readout(tag: String, value: Int, tint: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(tag, fontFamily = Mono, fontSize = 10.sp, color = AppTheme.Palette.muted, modifier = Modifier.width(34.dp))
+        Text(value.toString().padStart(2, '0'), fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = tint)
+    }
+}
