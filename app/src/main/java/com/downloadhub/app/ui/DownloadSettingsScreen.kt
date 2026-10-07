@@ -1,5 +1,7 @@
 package com.downloadhub.app.ui
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.BatteryWarning
 import com.composables.icons.lucide.FolderOpen
@@ -147,6 +149,17 @@ fun DownloadSettingsScreen(
                     }
                 }
             }
+            // Run at startup: carry on downloading after the phone restarts. On by default;
+            // read by ResumeReceiver at boot.
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val prefs = androidx.compose.runtime.remember { context.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE) }
+            var bootResume by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(prefs.getBoolean("boot_resume", true)) }
+            SettingSwitch(
+                title = "Resume after restart",
+                subtitle = "Start unfinished downloads again when the phone turns on",
+                checked = bootResume,
+                onChange = { bootResume = it; prefs.edit().putBoolean("boot_resume", it).apply() }
+            )
             SettingSwitch(
                 title = "Download on Wi-Fi only",
                 subtitle = "Pause transfers on mobile data",

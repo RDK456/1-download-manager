@@ -708,7 +708,8 @@ class DesktopController(
         request.cookies?.takeIf { it.isNotBlank() }?.let { capturedCookies[request.url] = it }
         val review = onDownloadNeedsReview
         // The right-click menu always asks; a caught download asks only if the setting says so.
-        if (review != null && (request.review || !settingsState.value.browserCaptureAutoQueue)) {
+        // A quality picked on the page's video button is already the answer.
+        if (review != null && !request.chosen && (request.review || !settingsState.value.browserCaptureAutoQueue)) {
             review(request.url)
             return
         }
@@ -718,9 +719,9 @@ class DesktopController(
             ?: com.downloadhub.core.LinkParser.fileNameFrom(request.url)
         addDownload(
             link = request.url,
-            audioOnly = false,
+            audioOnly = request.audioOnly,
             format = "m4a",
-            height = null,
+            height = request.height,
             playlist = false,
             preferredName = name
         )

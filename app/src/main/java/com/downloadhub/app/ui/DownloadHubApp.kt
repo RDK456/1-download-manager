@@ -309,8 +309,11 @@ fun DownloadHubApp(
             topBar = {
                 TopAppBar(
                     title = {
-                        if (com.downloadhub.app.ui.theme.UiStyle.keys) {
-                            com.downloadhub.app.ui.theme.LcdPlate(if (destination == AppDestination.DOWNLOADS) "1DM" else destinationTitle(destination).uppercase())
+                        // Downloads wears the "1DM" plate in either layout, as the desktop does.
+                        if (destination == AppDestination.DOWNLOADS) {
+                            com.downloadhub.app.ui.theme.LcdPlate("1DM")
+                        } else if (com.downloadhub.app.ui.theme.UiStyle.keys) {
+                            com.downloadhub.app.ui.theme.LcdPlate(destinationTitle(destination).uppercase())
                         } else Text(
                             destinationTitle(destination).uppercase(),
                             fontFamily = Dot,
@@ -831,7 +834,6 @@ private fun DownloadsScreen(
     ) { uri -> uri?.let(onPickTorrent) }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     Column(modifier = Modifier.fillMaxSize()) {
-        if (com.downloadhub.app.ui.theme.UiStyle.keys) StatusStrip(summary)
         SummaryBand(summary, onPauseAll = onPauseAll, onResumeAll = onResumeAll)
         // List or grid, remembered, as a key beside the search box.
         val context = androidx.compose.ui.platform.LocalContext.current
@@ -981,6 +983,9 @@ private fun DownloadsScreen(
  */
 @Composable
 private fun SummaryBand(summary: TabSummary, onPauseAll: () -> Unit = {}, onResumeAll: () -> Unit = {}) {
+    val free = remember(summary.completed) {
+        runCatching { android.os.StatFs(android.os.Environment.getExternalStorageDirectory().path).availableBytes }.getOrDefault(-1L)
+    }
     // The last 32 seconds of total speed, sampled once a second, for the trace.
     val speed by rememberUpdatedState(summary.speed)
     var history by remember { mutableStateOf(List(32) { 0L }) }
@@ -1003,6 +1008,13 @@ private fun SummaryBand(summary: TabSummary, onPauseAll: () -> Unit = {}, onResu
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
+            // The status lights along the top, as on the desktop panel.
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                com.downloadhub.app.ui.theme.StatusLed("RUN", summary.active > 0)
+                com.downloadhub.app.ui.theme.StatusLed("QUE", summary.queued > 0)
+                com.downloadhub.app.ui.theme.StatusLed("IDLE", summary.active == 0)
+            }
+            Spacer(Modifier.height(10.dp))
             Text(
                 "↓ SPEED",
                 style = MaterialTheme.typography.labelSmall,
@@ -1033,6 +1045,12 @@ private fun SummaryBand(summary: TabSummary, onPauseAll: () -> Unit = {}, onResu
             Readout("ACT", summary.active, MaterialTheme.colorScheme.primary)
             Readout("QUE", summary.queued, MaterialTheme.colorScheme.onSurface)
             Readout("DONE", summary.completed, MaterialTheme.colorScheme.onSurfaceVariant)
+            // Free space where downloads land, as the desktop panel shows it.
+            if (free >= 0) {
+                Spacer(Modifier.height(6.dp))
+                Text("FREE", fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(formatBytes(free), fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+            }
         }
     }
 }
@@ -1567,39 +1585,6 @@ private fun KeyNavBar(tabs: List<NavTab>) {
                     )
                 }
             }
-        }
-    }
-}
-
-/**
- * The KEYS style's status row: LEDs for running, queued and idle, and the free space on
- * the phone, like the indicator strip under a device's display.
- */
-@Composable
-private fun StatusStrip(summary: TabSummary) {
-    val free = remember {
-        runCatching { android.os.StatFs(android.os.Environment.getExternalStorageDirectory().path).availableBytes }.getOrDefault(-1L)
-    }
-    val scheme = MaterialTheme.colorScheme
-    val shape = MaterialTheme.shapes.small
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clip(shape)
-            .background(scheme.surfaceVariant)
-            .border(1.dp, scheme.onSurface.copy(alpha = 0.15f), shape)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        com.downloadhub.app.ui.theme.StatusLed("RUN", summary.active > 0)
-        com.downloadhub.app.ui.theme.StatusLed("QUEUE", summary.queued > 0)
-        com.downloadhub.app.ui.theme.StatusLed("IDLE", summary.active == 0)
-        Spacer(Modifier.weight(1f))
-        if (free >= 0) Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("FREE ", fontFamily = Mono, fontSize = 12.sp, color = scheme.onSurfaceVariant)
-            Text(formatBytes(free), fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = scheme.onSurface)
         }
     }
 }

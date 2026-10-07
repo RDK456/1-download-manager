@@ -1,5 +1,10 @@
 package com.downloadhub.desktop
 
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
@@ -197,12 +202,84 @@ fun main(args: Array<String>) {
                 }
             }
 
-            LaunchedEffect(state.busyCount) {
-                val items = state.items.map { it.toCoreItem() }
-                tray.update(
-                    com.downloadhub.core.DownloadLibrary.activeCount(items),
-                    com.downloadhub.core.DownloadLibrary.totalSpeed(items)
-                )
+            // One reading of the queue for the tray tooltip, the window title (what hovering
+            // the taskbar thumbnail shows) and the taskbar button's own progress fill.
+            val coreItems = remember(state.items) { state.items.map { it.toCoreItem() } }
+            val activeNow = com.downloadhub.core.DownloadLibrary.activeCount(coreItems)
+            val speedNow = com.downloadhub.core.DownloadLibrary.totalSpeed(coreItems)
+            val progressNow = com.downloadhub.core.DownloadLibrary.overallProgress(coreItems)
+            val failedNow = coreItems.any { it.status == com.downloadhub.core.DownloadStatus.FAILED }
+            LaunchedEffect(activeNow, speedNow, progressNow) {
+                tray.update(activeNow, speedNow, progressNow?.percent)
+            }
+            val windowTitle = progressNow?.let { p ->
+                val speed = com.downloadhub.core.DisplayFormat.speed(speedNow)
+                listOfNotNull("${p.percent}%", if (p.paused) "paused" else speed.ifBlank { null }).joinToString(" · ") + " - 1 download manager"
+            } ?: "1 download manager"
+
+            // Hold off sleep while anything downloads (StayAwake), and stop asking once idle.
+            LaunchedEffect(activeNow > 0) {
+                while (activeNow > 0) {
+                    StayAwake.poke()
+                    kotlinx.coroutines.delay(30_000)
+                }
+            }
+
+            // "When done": once the queue empties, a 60-second countdown, then the action.
+            var finishCountdown by remember { mutableStateOf<Int?>(null) }
+            var wasBusy by remember { mutableStateOf(false) }
+            LaunchedEffect(activeNow) {
+                if (activeNow > 0) {
+                    wasBusy = true
+                } else if (wasBusy) {
+                    wasBusy = false
+                    if (FinishAction.choice != FinishAction.Choice.NOTHING) finishCountdown = 60
+                }
+            }
+            LaunchedEffect(finishCountdown) {
+                val left = finishCountdown ?: return@LaunchedEffect
+                if (left > 0) {
+                    kotlinx.coroutines.delay(1000)
+                    finishCountdown = left - 1
+                    return@LaunchedEffect
+                }
+                val chosen = FinishAction.choice
+                FinishAction.choice = FinishAction.Choice.NOTHING
+                finishCountdown = null
+                if (chosen == FinishAction.Choice.EXIT) {
+                    controller.close()
+                    exitApplication()
+                } else {
+                    FinishAction.perform(chosen)
+                }
+            }
+            finishCountdown?.let { left ->
+                androidx.compose.ui.window.DialogWindow(
+                    onCloseRequest = { finishCountdown = null; FinishAction.choice = FinishAction.Choice.NOTHING },
+                    title = "All downloads finished",
+                    alwaysOnTop = true,
+                    resizable = false,
+                    state = androidx.compose.ui.window.rememberDialogState(size = DpSize(380.dp, 190.dp))
+                ) {
+                    androidx.compose.foundation.layout.Column(
+                        Modifier.fillMaxSize().background(AppTheme.Palette.background).padding(18.dp),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
+                    ) {
+                        androidx.compose.material3.Text("All downloads have finished.", color = AppTheme.Palette.onSurface)
+                        androidx.compose.material3.Text(
+                            "${FinishAction.choice.label} in $left s",
+                            fontFamily = Mono,
+                            fontSize = 18.sp,
+                            color = AppTheme.Palette.accent
+                        )
+                        androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+                            androidx.compose.material3.Button(onClick = { finishCountdown = 0 }) { androidx.compose.material3.Text("Do it now") }
+                            androidx.compose.material3.OutlinedButton(onClick = { finishCountdown = null; FinishAction.choice = FinishAction.Choice.NOTHING }) {
+                                androidx.compose.material3.Text("Cancel")
+                            }
+                        }
+                    }
+                }
             }
 
             // The window is only composed while visible, which is what removes it
@@ -211,8 +288,11 @@ fun main(args: Array<String>) {
                 Window(
                     onCloseRequest = { closing = true },
                     state = windowState,
-                    title = "1 download manager"
+                    title = windowTitle
                 ) {
+                    LaunchedEffect(window, progressNow, failedNow) {
+                        showTaskbarProgress(window, progressNow, failedNow)
+                    }
                     // Set the title-bar icon here rather than letting it come from the
                     // exe's resources. The exe does carry the right icon, but only
                     // because the build passes iconFile to jpackage: run from Gradle, or
@@ -525,3 +605,29 @@ fun main(args: Array<String>) {
 
 /** How often the running copy collects links handed over by later launches. */
 private const val INTAKE_POLL_MILLIS = 700L
+
+/**
+ * The taskbar button's own progress fill, as Windows draws it for a copy in Explorer:
+ * green while downloading, yellow when what is left is paused, red when one has failed,
+ * nothing when the queue is idle. Through Java's Taskbar API; a no-op where unsupported.
+ */
+private fun showTaskbarProgress(window: java.awt.Window, progress: com.downloadhub.core.TransferProgress?, failed: Boolean) {
+    runCatching {
+        if (!java.awt.Taskbar.isTaskbarSupported()) return
+        val taskbar = java.awt.Taskbar.getTaskbar()
+        if (!taskbar.isSupported(java.awt.Taskbar.Feature.PROGRESS_STATE_WINDOW)) return
+        if (progress == null) {
+            taskbar.setWindowProgressState(window, java.awt.Taskbar.State.OFF)
+            return
+        }
+        taskbar.setWindowProgressValue(window, progress.percent)
+        taskbar.setWindowProgressState(
+            window,
+            when {
+                failed -> java.awt.Taskbar.State.ERROR
+                progress.paused -> java.awt.Taskbar.State.PAUSED
+                else -> java.awt.Taskbar.State.NORMAL
+            }
+        )
+    }
+}

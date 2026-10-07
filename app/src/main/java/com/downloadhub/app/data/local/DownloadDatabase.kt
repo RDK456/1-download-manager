@@ -10,7 +10,7 @@ import com.downloadhub.app.data.model.DownloadStatus
 
 @Database(
     entities = [DownloadEntity::class],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 @TypeConverters(DownloadConverters::class)
@@ -112,6 +112,13 @@ abstract class DownloadDatabase : RoomDatabase() {
             }
         }
 
+        /** Sequential download for torrents, off for everything already in the queue. */
+        val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN torrentSequential INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         val ALL: Array<androidx.room.migration.Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -119,7 +126,8 @@ abstract class DownloadDatabase : RoomDatabase() {
             MIGRATION_4_5,
             MIGRATION_5_6,
             MIGRATION_6_7,
-            MIGRATION_7_8
+            MIGRATION_7_8,
+            MIGRATION_8_9
         )
     }
 }

@@ -5,58 +5,74 @@
     <style>
       body {
         font: 13px system-ui, sans-serif;
-        width: 280px;
+        width: 320px;
         margin: 0;
         padding: 14px;
-        color: #e6edee;
-        background: #12171a;
+        color: #eeebe1;
+        background: #0f0f0d;
       }
-      h1 { font-size: 14px; margin: 0 0 10px; }
-      label { display: block; margin: 10px 0 4px; color: #b4c0c2; }
+      h1 { font-size: 14px; margin: 0 0 10px; letter-spacing: .5px; }
+      h2 { font: 600 11px ui-monospace, Consolas, monospace; letter-spacing: 1px; color: #b5b1a4; margin: 16px 0 8px; }
+      label { display: block; margin: 10px 0 4px; color: #b5b1a4; }
       input {
         width: 100%;
         box-sizing: border-box;
         padding: 6px 8px;
-        border-radius: 6px;
-        border: 1px solid #46545a;
-        background: #1a2124;
-        color: #e6edee;
+        border-radius: 5px;
+        border: 1px solid #4a4840;
+        background: #181815;
+        color: #eeebe1;
       }
       button {
-        margin-top: 12px;
-        width: 100%;
         padding: 8px;
-        border-radius: 6px;
-        border: 1px solid #34d399;
-        background: #34d399;
-        color: #06210f;
-        font-weight: 600;
+        border-radius: 5px;
+        border: 1px solid #000;
+        background: #c6f135;
+        color: #0f0f0d;
+        font-weight: 700;
         cursor: pointer;
+        box-shadow: 0 2px 0 #5e7314;
       }
-      #state { margin-top: 10px; color: #b4c0c2; }
-      .ok { color: #34d399; }
-      .bad { color: #ffb4ab; }
-      p { color: #b4c0c2; margin: 10px 0 0; }
-      label.row { display: flex; gap: 8px; align-items: center; color: #e6edee; }
+      button:active { transform: translateY(2px); box-shadow: none; }
+      #save { margin-top: 12px; width: 100%; }
+      #state { color: #b5b1a4; }
+      .ok { color: #c6f135; }
+      .bad { color: #ff8a80; }
+      p { color: #b5b1a4; margin: 10px 0 0; }
+      label.row { display: flex; gap: 8px; align-items: center; color: #eeebe1; }
       label.row input { width: auto; }
+      .media { display: flex; align-items: center; gap: 8px; padding: 8px; margin-bottom: 6px;
+        border: 1px solid #2b2a25; border-radius: 6px; background: #181815; }
+      .media .info { flex: 1; min-width: 0; }
+      .media .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .media .meta { font: 11px ui-monospace, Consolas, monospace; color: #b5b1a4; margin-top: 2px; }
+      .media button { padding: 5px 9px; font-size: 12px; }
+      .empty { color: #817d71; font-size: 12px; }
+      details summary { cursor: pointer; color: #b5b1a4; margin-top: 16px; }
     </style>
   </head>
   <body>
     <h1>1 download manager</h1>
     <div id="state">checking the app…</div>
 
-    <label for="port">App port</label>
-    <input id="port" type="number" />
+    <h2>MEDIA ON THIS PAGE</h2>
+    <div id="media"><div class="empty">Play the video and its streams show up here.</div></div>
 
-    <label for="token">Pairing code (only if it does not connect by itself)</label>
-    <input id="token" type="text" autocomplete="off" />
+    <details>
+      <summary>Connection and capture</summary>
+      <label for="port">App port</label>
+      <input id="port" type="number" />
 
-    <label class="row"><input id="auto" type="checkbox" /> Catch every download the browser starts</label>
-    <button id="save">Save and test</button>
+      <label for="token">Pairing code (only if it does not connect by itself)</label>
+      <input id="token" type="text" autocomplete="off" />
+
+      <label class="row"><input id="auto" type="checkbox" /> Catch every download the browser starts</label>
+      <button id="save">Save and test</button>
+    </details>
 
     <p>
-      Downloads now go to the app instead of the browser's downloader.
-      When the app is closed the browser downloads them as usual.
+      Video players get a Download key in their corner. When the app is closed the
+      browser downloads as usual.
     </p>
 
     <script src="popup.js"></script>

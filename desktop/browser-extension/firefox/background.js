@@ -70,6 +70,9 @@ async function sendToApp(url, options = {}) {
     fileName: options.fileName || "",
     cookies: options.cookies || "",
     review: Boolean(options.review),
+    // A quality picked on the page's video button: the app queues it without asking.
+    audioOnly: Boolean(options.audioOnly),
+    height: options.height || undefined,
   });
   const post = (code) =>
     fetch(`http://127.0.0.1:${port}/queue`, {
@@ -98,7 +101,13 @@ async function sendToApp(url, options = {}) {
 
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "queue-link") {
-    sendToApp(message.url, { referer: message.referer, fileName: message.fileName }).then(
+    sendToApp(message.url, {
+      referer: message.referer,
+      fileName: message.fileName,
+      review: message.review,
+      audioOnly: message.audioOnly,
+      height: message.height,
+    }).then(
       sendResponse
     );
     return true;
@@ -212,3 +221,73 @@ async function pairIfNeeded() {
 }
 (typeof browser !== "undefined" ? browser : chrome).runtime.onInstalled.addListener(pairIfNeeded);
 (typeof browser !== "undefined" ? browser : chrome).runtime.onStartup.addListener(pairIfNeeded);
+
+// ---- media on the page, AB Download Manager-style ----------------------------------
+//
+// Watches the page's own responses for video, audio and streaming playlists (HLS .m3u8,
+// DASH .mpd) and lists them per tab, with a count on the toolbar icon. The popup offers
+// each one to the app. It reads only response headers the browser already received - no
+// extra requests, nothing sent anywhere until the user picks an item. YouTube's internal
+// segments are skipped: the button on the player handles YouTube properly.
+const mediaApi = typeof browser !== "undefined" ? browser : chrome;
+const tabMedia = new Map(); // tabId -> [{ url, kind, size }]
+const MEDIA_TYPE = /^(video|audio)\/|mpegurl|dash\+xml/i;
+const MEDIA_PATH = /\.(m3u8|mpd|mp4|m4v|webm|mkv|mov|mp3|m4a|aac|flac|ogg|oga|opus|wav)$/i;
+const STREAM = /mpegurl|dash\+xml|\.m3u8$|\.mpd$/i;
+
+function responseHeader(details, name) {
+  const found = (details.responseHeaders || []).find((h) => h.name.toLowerCase() === name);
+  return found ? found.value || "" : "";
+}
+
+function updateBadge(tabId) {
+  const count = (tabMedia.get(tabId) || []).length;
+  mediaApi.action.setBadgeText({ tabId, text: count ? String(count) : "" }).catch?.(() => {});
+  mediaApi.action.setBadgeBackgroundColor({ tabId, color: "#C6F135" }).catch?.(() => {});
+}
+
+mediaApi.webRequest.onResponseStarted.addListener(
+  (details) => {
+    if (details.tabId < 0 || !/^https?:/i.test(details.url)) return;
+    let url;
+    try {
+      url = new URL(details.url);
+    } catch (error) {
+      return;
+    }
+    if (url.hostname.endsWith("googlevideo.com")) return;
+    const type = responseHeader(details, "content-type");
+    if (!MEDIA_TYPE.test(type) && !MEDIA_PATH.test(url.pathname)) return;
+    const stream = STREAM.test(type) || STREAM.test(url.pathname);
+    // A byte range names the whole file's size after the slash; prefer that.
+    const range = responseHeader(details, "content-range").split("/")[1];
+    const size = Number(range) || Number(responseHeader(details, "content-length")) || 0;
+    // Tiny files are previews, beeps and ad blips rather than the thing being watched.
+    if (!stream && size > 0 && size < 512 * 1024) return;
+    const list = tabMedia.get(details.tabId) || [];
+    if (list.some((m) => m.url === details.url)) return;
+    const kind = stream ? "Stream" : /^audio\//i.test(type) || /\.(mp3|m4a|aac|flac|ogg|oga|opus|wav)$/i.test(url.pathname) ? "Audio" : "Video";
+    list.push({ url: details.url, kind, size });
+    tabMedia.set(details.tabId, list.slice(-25));
+    updateBadge(details.tabId);
+  },
+  { urls: ["<all_urls>"], types: ["media", "xmlhttprequest", "other"] },
+  ["responseHeaders"]
+);
+
+mediaApi.tabs.onUpdated.addListener((tabId, change) => {
+  // A new page in the tab: what the last one played no longer applies.
+  if (change.status === "loading" && change.url) {
+    tabMedia.delete(tabId);
+    updateBadge(tabId);
+  }
+});
+mediaApi.tabs.onRemoved.addListener((tabId) => tabMedia.delete(tabId));
+
+mediaApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message && message.type === "page-media") {
+    sendResponse(tabMedia.get(message.tabId) || []);
+    return false;
+  }
+  return false;
+});

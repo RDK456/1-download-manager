@@ -264,4 +264,18 @@ class DownloadLibraryTest {
             assertTrue("${column.name} has no label", column.label.isNotBlank())
         }
     }
+
+    @Test
+    fun `the taskbar figure is bytes done over bytes wanted across what is moving`() {
+        val running = listOf(
+            item("a", "a.zip", DownloadStatus.RUNNING, size = 100),
+            item("b", "b.zip", DownloadStatus.RUNNING, size = 300),
+            item("c", "c.zip", DownloadStatus.PAUSED, size = 1000)
+        )
+        assertEquals(TransferProgress(50, paused = false), DownloadLibrary.overallProgress(running))
+        val pausedOnly = listOf(item("c", "c.zip", DownloadStatus.PAUSED, size = 1000))
+        assertEquals(TransferProgress(50, paused = true), DownloadLibrary.overallProgress(pausedOnly))
+        assertEquals(null, DownloadLibrary.overallProgress(listOf(item("d", "d.zip", DownloadStatus.COMPLETED, size = 10))))
+        assertEquals("unknown sizes give no figure", null, DownloadLibrary.overallProgress(listOf(item("e", "e.zip", DownloadStatus.RUNNING))))
+    }
 }

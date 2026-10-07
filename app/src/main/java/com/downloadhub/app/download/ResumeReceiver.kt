@@ -21,6 +21,10 @@ import kotlinx.coroutines.launch
 class ResumeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED && intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        // "Resume after restart" in Download settings; an update always carries on.
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED &&
+            !context.getSharedPreferences("ui", Context.MODE_PRIVATE).getBoolean("boot_resume", true)
+        ) return
         val app = context.applicationContext as? DownloadHubApplication ?: return
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {

@@ -196,7 +196,9 @@ class CaptureServer(
             referer = json.referer?.take(1024),
             fileName = json.fileName?.take(256),
             cookies = json.cookies?.take(8 * 1024),
-            review = json.review == true
+            review = json.review == true,
+            audioOnly = json.audioOnly == true,
+            height = json.height?.takeIf { it in 144..4320 }
         )
     }
 
@@ -250,7 +252,11 @@ data class CapturePayload(
     /** The site's cookies for the link, as a Cookie header value, so a signed-in download works. */
     val cookies: String? = null,
     /** Sent from the right-click menu: always show the Add Download window. */
-    val review: Boolean? = null
+    val review: Boolean? = null,
+    /** Chosen from the on-page video button: just the sound. */
+    val audioOnly: Boolean? = null,
+    /** Chosen from the on-page video button: the tallest video wanted, e.g. 1080. */
+    val height: Int? = null
 )
 
 /** A validated link ready to be queued. */
@@ -260,5 +266,10 @@ data class CaptureRequest(
     val fileName: String? = null,
     /** The site's cookies for the link, as a Cookie header value, so a signed-in download works. */
     val cookies: String? = null,
-    val review: Boolean = false
-)
+    val review: Boolean = false,
+    val audioOnly: Boolean = false,
+    val height: Int? = null
+) {
+    /** A quality was picked on the page, so there is nothing left to ask. */
+    val chosen: Boolean get() = audioOnly || height != null
+}

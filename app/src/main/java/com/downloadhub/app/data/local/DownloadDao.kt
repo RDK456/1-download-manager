@@ -140,6 +140,10 @@ interface DownloadDao {
     )
     suspend fun updateTorrentInfo(id: String, infoHash: String?, filePath: String?, updatedAt: Long)
 
+    /** In-order downloading for one torrent: on, so a video can be watched while it downloads. */
+    @Query("UPDATE downloads SET torrentSequential = :on, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun setTorrentSequential(id: String, on: Boolean, updatedAt: Long)
+
     /**
      * Records a torrent's file selection and per-file priorities together.
      *

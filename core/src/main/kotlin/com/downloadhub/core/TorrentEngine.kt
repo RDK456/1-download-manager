@@ -230,6 +230,19 @@ class TorrentEngine(
         return true
     }
 
+    /**
+     * Switches in-order downloading on or off for a running torrent, to match
+     * [DownloadItem.torrentSequential]. Applied at once, so a video can be made playable
+     * part way through rather than only when the torrent is added.
+     */
+    fun setSequential(item: DownloadItem): Boolean {
+        val handle = handles[item.id] ?: return false
+        return runCatching {
+            if (item.torrentSequential) handle.setFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD)
+            else handle.unsetFlags(TorrentFlags.SEQUENTIAL_DOWNLOAD)
+        }.isSuccess
+    }
+
     fun poll(item: DownloadItem): TorrentSnapshot? {
         val hash = item.torrentInfoHash ?: runCatching {
             AddTorrentParams.parseMagnetUri(item.url).infoHashes.getBest().toHex()

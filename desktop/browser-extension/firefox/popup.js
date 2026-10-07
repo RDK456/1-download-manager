@@ -41,3 +41,60 @@ document.getElementById("save").addEventListener("click", async () => {
 });
 
 refresh();
+
+// ---- media the page played -----------------------------------------------------------
+function formatSize(bytes) {
+  if (!bytes) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return value.toFixed(value < 10 && unit > 0 ? 1 : 0) + " " + units[unit];
+}
+
+async function renderMedia() {
+  const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return;
+  const items = (await ext.runtime.sendMessage({ type: "page-media", tabId: tab.id })) || [];
+  const box = document.getElementById("media");
+  if (!items.length) return;
+  box.replaceChildren();
+  items.slice().reverse().forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "media";
+    const info = document.createElement("div");
+    info.className = "info";
+    const name = document.createElement("div");
+    name.className = "name";
+    let file = item.url;
+    try {
+      file = decodeURIComponent(new URL(item.url).pathname.split("/").pop()) || item.url;
+    } catch (error) {}
+    name.textContent = file;
+    name.title = item.url;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = [item.kind.toUpperCase(), formatSize(item.size)].filter(Boolean).join(" · ");
+    info.append(name, meta);
+    const button = document.createElement("button");
+    button.textContent = "Download";
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      // A stream playlist goes to the app's window to pick a quality; a file just queues.
+      const result = await ext.runtime.sendMessage({
+        type: "queue-link",
+        url: item.url,
+        referer: tab.url || "",
+        review: item.kind === "Stream",
+      });
+      button.textContent = result && result.ok ? "Sent" : "Failed";
+    });
+    row.append(info, button);
+    box.appendChild(row);
+  });
+}
+
+renderMedia();

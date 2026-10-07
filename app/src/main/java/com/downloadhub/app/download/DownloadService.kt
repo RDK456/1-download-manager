@@ -116,6 +116,14 @@ class DownloadService : Service() {
         // One file of one torrent, by index. An index below zero arrives from a control
         // that was not wired up, and is refused rather than clamped: clamping would set a
         // priority on a file that does not exist.
+        // In-order downloading for one torrent, saved and applied to the running handle.
+        ACTION_SET_SEQUENTIAL -> intent.getStringExtra(EXTRA_ID)?.let { id ->
+            val on = intent.getBooleanExtra(EXTRA_ON, false)
+            scope.launch {
+                dao.setTorrentSequential(id, on, System.currentTimeMillis())
+                dao.getById(id)?.let { torrentEngine.setSequential(it.toCoreItem()) }
+            }
+        }
         ACTION_SET_FILE_PRIORITY -> intent.getStringExtra(EXTRA_ID)?.let { id ->
             val fileIndex = intent.getIntExtra(EXTRA_FILE_INDEX, -1)
             val priority = com.downloadhub.core.FilePriority
@@ -767,6 +775,16 @@ class DownloadService : Service() {
             ContextCompat.startForegroundService(context, intent)
         }
 
+        /** Turns in-order downloading on or off for one torrent, by the same intent channel. */
+        fun requestSequential(context: Context, id: String, on: Boolean) {
+            val intent = Intent(context, DownloadService::class.java).apply {
+                action = ACTION_SET_SEQUENTIAL
+                putExtra(EXTRA_ID, id)
+                putExtra(EXTRA_ON, on)
+            }
+            ContextCompat.startForegroundService(context, intent)
+        }
+
         /** Drops a removed download's readings, so nothing is left behind for its id. */
         fun forgetFileProgress(id: String) {
             fileProgress.value = fileProgress.value - id
@@ -777,6 +795,8 @@ class DownloadService : Service() {
         const val ACTION_RETRY = "com.downloadhub.app.action.RETRY"
         const val ACTION_CANCEL = "com.downloadhub.app.action.CANCEL"
         const val ACTION_SET_FILE_PRIORITY = "com.downloadhub.app.action.SET_FILE_PRIORITY"
+        const val ACTION_SET_SEQUENTIAL = "com.downloadhub.app.action.SET_SEQUENTIAL"
+        const val EXTRA_ON = "on"
         const val EXTRA_FILE_INDEX = "fileIndex"
         const val EXTRA_PRIORITY = "filePriority"
         const val ACTION_PAUSE_ALL = "com.downloadhub.app.action.PAUSE_ALL"

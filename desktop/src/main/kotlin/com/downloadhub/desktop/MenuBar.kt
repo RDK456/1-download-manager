@@ -161,10 +161,19 @@ fun MenuBar(
                             "Tasks" -> {
                                 MenuItem("Resume all") { open = null; onResumeAll() }
                                 MenuItem("Pause all") { open = null; onPauseAll() }
+                                // IDM's "turn off when done": one-shot, with a 60-second countdown first.
+                                FinishAction.Choice.entries.forEach { c ->
+                                    val mark = if (FinishAction.choice == c) "● " else "    "
+                                    MenuItem("${mark}When done: ${c.label}") { open = null; FinishAction.choice = c }
+                                }
                             }
 
                             "Tools" -> {
                                 MenuItem("Create torrent...") { open = null; onCreateTorrent() }
+                                if (AutoStart.available()) {
+                                    val on = AutoStart.isEnabled()
+                                    MenuItem(if (on) "Start with Windows: On" else "Start with Windows: Off") { open = null; AutoStart.set(!on) }
+                                }
                                 MenuItem("Download Browser Integration") {
                                     open = null; showIntegration = true
                                 }

@@ -66,6 +66,7 @@ internal fun DownloadEntity.toCoreItem(): DownloadItem = DownloadItem(
     torrentSelectedFiles = FileChoiceCodec.decodeSelected(torrentSelectedFiles).toList(),
     torrentFilePriorities = FileChoiceCodec.decodePriorities(torrentFilePriorities)
         .mapValues { (_, priority) -> priority.ordinal },
+    torrentSequential = torrentSequential,
     outputPath = outputPath,
     // Per-download settings, so the phone honours the same rules as the desktop rather
     // than silently ignoring the fields :core now carries.

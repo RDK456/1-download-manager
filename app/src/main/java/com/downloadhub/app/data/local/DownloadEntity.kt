@@ -42,6 +42,8 @@ data class DownloadEntity(
     val torrentSelectedFiles: String? = null,
     /** Per-file priority as `index:ordinal`, read with [FileChoiceCodec]. */
     val torrentFilePriorities: String? = null,
+    /** Fetch the pieces in order rather than rarest first, so a video plays while it downloads. */
+    val torrentSequential: Boolean = false,
     val userAgent: String?,
     val contentDisposition: String?,
     val etag: String?,

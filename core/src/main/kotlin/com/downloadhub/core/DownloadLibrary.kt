@@ -432,4 +432,23 @@ fun visible(items: List<DownloadItem>, query: LibraryQuery): List<DownloadItem> 
         items.filter { it.status == DownloadStatus.RUNNING }.sumOf { it.speedBytesPerSecond }
 
     fun activeCount(items: List<DownloadItem>): Int = items.count { it.isActive }
+
+    /**
+     * One figure for the whole queue, for the taskbar button and the tray: bytes done over
+     * bytes wanted across what is moving. With nothing moving but something paused part
+     * way, the paused ones, flagged so the taskbar can show them paused. Null when there is
+     * nothing in flight, or nothing whose size is known.
+     */
+    fun overallProgress(items: List<DownloadItem>): TransferProgress? {
+        val moving = items.filter { it.isActive && it.totalBytes > 0 }
+        val paused = items.filter { it.status == DownloadStatus.PAUSED && it.totalBytes > 0 && it.bytesDownloaded < it.totalBytes }
+        val set = moving.ifEmpty { paused }
+        if (set.isEmpty()) return null
+        val total = set.sumOf { it.totalBytes }
+        val done = set.sumOf { it.bytesDownloaded.coerceAtMost(it.totalBytes) }
+        return TransferProgress(((done * 100L) / total).toInt().coerceIn(0, 100), paused = moving.isEmpty())
+    }
 }
+
+/** The queue's progress as one percentage, and whether what it counts is paused. */
+data class TransferProgress(val percent: Int, val paused: Boolean)

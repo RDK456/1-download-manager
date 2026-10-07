@@ -50,6 +50,15 @@ class SystemTrayIcon(
             menu.add(resume)
             menu.add(pause)
             menu.add(separator())
+            // The same switch as Settings > Window, a right-click away: only an installed copy
+            // has a launcher Windows can start at sign-in.
+            if (AutoStart.available()) {
+                menu.add(java.awt.CheckboxMenuItem("Start with Windows", AutoStart.isEnabled()).apply {
+                    // Apply, then show what the registry actually holds.
+                    addItemListener { AutoStart.set(state); state = AutoStart.isEnabled() }
+                })
+                menu.add(separator())
+            }
             menu.add(exit)
 
             val icon = TrayIcon(AppArtwork.icon(32), "1 download manager")
@@ -62,12 +71,13 @@ class SystemTrayIcon(
         }
     }
 
-    fun update(activeCount: Int, totalSpeed: Long) {
+    fun update(activeCount: Int, totalSpeed: Long, percent: Int? = null) {
         val icon = trayIcon ?: return
         val text = when {
             activeCount > 0 -> {
                 val speed = com.downloadhub.core.DisplayFormat.speed(totalSpeed)
-                if (speed.isBlank()) "$activeCount downloading" else "$activeCount • $speed"
+                val done = percent?.let { "$it% · " }.orEmpty()
+                if (speed.isBlank()) "$done$activeCount downloading" else "$done$activeCount • $speed"
             }
 
             else -> "1 download manager"

@@ -100,6 +100,26 @@ fun DownloadDetailsSheet(
                 color = MaterialTheme.colorScheme.primary
             )
             if (item.source == com.downloadhub.app.data.model.DownloadSource.TORRENT) {
+                // qBittorrent's "sequential download": pieces in order, so a video can be
+                // played while it is still downloading. Applied to the running torrent at once.
+                val context = androidx.compose.ui.platform.LocalContext.current
+                androidx.compose.foundation.layout.Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                        Text("Download in order", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Fetch from the start so videos play while downloading. Can be slower overall.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = item.torrentSequential,
+                        onCheckedChange = { on -> com.downloadhub.app.download.DownloadService.requestSequential(context, item.id, on) }
+                    )
+                }
                 TorrentExtras(item.id, contentOf, trackersOf, peersOf, onFilesWanted, onForceRecheck, onForceReannounce)
             }
             if (item.status != DownloadStatus.COMPLETED) {

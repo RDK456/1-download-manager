@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "1 download manager",
-  "version": "1.1.0",
-  "description": "Send links and downloads to 1 download manager instead of the browser's own downloader.",
+  "version": "1.2.0",
+  "description": "Download videos straight from the page, catch downloads and detect media streams - all sent to 1 download manager.",
   "icons": {
     "16": "icon16.png",
     "32": "icon32.png",
@@ -15,7 +15,8 @@
     "scripting",
     "downloads",
     "cookies",
-    "contextMenus"
+    "contextMenus",
+    "webRequest"
   ],
   "host_permissions": [
     "http://127.0.0.1/*",

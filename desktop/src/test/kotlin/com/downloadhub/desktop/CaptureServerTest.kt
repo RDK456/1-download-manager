@@ -93,6 +93,26 @@ class CaptureServerTest {
     }
 
     @Test
+    fun aQualityPickedOnThePageTravelsWithTheLinkAndNeedsNoReview() {
+        val queued = mutableListOf<CaptureRequest>()
+        val server = CaptureServer(token, onQueue = { queued += it })
+        try {
+            server.start()
+            post(server, """{"url":"https://youtu.be/dQw4w9WgXcQ","height":720}""")
+            post(server, """{"url":"https://youtu.be/dQw4w9WgXcQ","audioOnly":true}""")
+            post(server, """{"url":"https://youtu.be/dQw4w9WgXcQ","height":99999}""")
+            assertEquals(3, queued.size)
+            assertEquals(720, queued[0].height)
+            assertTrue("a picked height is an answer, not a question", queued[0].chosen)
+            assertTrue(queued[1].audioOnly && queued[1].chosen)
+            assertEquals("an absurd height is ignored, not trusted", null, queued[2].height)
+            assertTrue("and with nothing picked the usual review rules apply", !queued[2].chosen)
+        } finally {
+            server.stop()
+        }
+    }
+
+    @Test
     fun aValidHandOffIsQueued() {
         val queued = mutableListOf<CaptureRequest>()
         val server = CaptureServer(token, onQueue = { queued += it })
