@@ -23,7 +23,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -144,17 +143,19 @@ fun DownloadDetailsSheet(
                     }
                 }
             } else {
-                LinearProgressIndicator(
+                SignalBar(
                     progress = progressFor(item),
+                    color = MaterialTheme.colorScheme.primary,
+                    live = item.status.canPauseUi,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(7.dp)
+                        .height(10.dp)
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(progressLabel(item), style = MaterialTheme.typography.labelLarge)
+                    Text(progressLabel(item), style = MaterialTheme.typography.labelLarge, fontFamily = com.downloadhub.app.ui.theme.Mono)
                     Text(
                         if (item.totalBytes > 0) "${formatBytes(item.bytesDownloaded)} / ${formatBytes(item.totalBytes)}" else progressLabel(item),
                         style = MaterialTheme.typography.bodySmall,

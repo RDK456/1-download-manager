@@ -1,6 +1,44 @@
 package com.downloadhub.desktop
 
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.platform.Font
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
+import com.downloadhub.core.blend
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -60,7 +98,7 @@ data class DesktopPalette(val colors: ThemeColors) {
  * worse than not offering the choice.
  */
 val LocalDesktopPalette = compositionLocalOf {
-    DesktopPalette(resolveThemeColors(ThemePalette.MINT, ThemeMode.DARK))
+    DesktopPalette(resolveThemeColors(ThemePalette.SIGNAL, ThemeMode.DARK))
 }
 
 /**
@@ -97,7 +135,7 @@ object AppTheme {
      * a theme and not otherwise.
      */
     @Volatile
-    private var current = DesktopPalette(resolveThemeColors(ThemePalette.MINT, ThemeMode.DARK))
+    private var current = DesktopPalette(resolveThemeColors(ThemePalette.SIGNAL, ThemeMode.DARK))
 
     /** Shorthand for the flat fills: `AppTheme.Palette.surface`. */
     val Palette: DesktopPalette get() = current
@@ -203,16 +241,202 @@ fun ProvideDesktopTheme(
     CompositionLocalProvider(LocalDesktopPalette provides desktopPalette) {
         androidx.compose.material3.MaterialTheme(
             colorScheme = AppTheme.schemeFor(colors),
-            // Tighter corners than Material's 28 dp dialogs and full pills, closer to AB
-            // Download Manager's: rounded, not bubbly.
+            // Square-ish, like cut paper: small radii instead of Material's bubbles.
             shapes = androidx.compose.material3.Shapes(
-                extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
-                small = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                medium = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-                large = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-                extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(3.dp),
+                small = androidx.compose.foundation.shape.RoundedCornerShape(5.dp),
+                medium = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                large = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
             ),
+            typography = AppTypography,
             content = content
         )
+    }
+}
+
+/**
+ * The app's voice: Space Grotesk for words, a grotesk with quirks (the open "a", the
+ * ink-trap "t") so it does not read as one more Segoe app. Material hands
+ * `bodyLarge` to every `Text` that does not ask for a style, so setting the family on
+ * the typography reaches the whole window, sizes and all left as each call set them.
+ */
+@Suppress("DEPRECATION")
+val Grotesk = FontFamily(
+    Font("fonts/space_grotesk_regular.ttf", FontWeight.Normal),
+    Font("fonts/space_grotesk_medium.ttf", FontWeight.Medium),
+    Font("fonts/space_grotesk_semibold.ttf", FontWeight.SemiBold),
+    Font("fonts/space_grotesk_bold.ttf", FontWeight.Bold)
+)
+
+/**
+ * And JetBrains Mono for numbers: sizes, speeds, percentages, times. Every digit the
+ * same width, so a ticking speed does not jitter, and it reads like a meter.
+ */
+@Suppress("DEPRECATION")
+val Mono = FontFamily(
+    Font("fonts/jetbrains_mono_regular.ttf", FontWeight.Normal),
+    Font("fonts/jetbrains_mono_medium.ttf", FontWeight.Medium),
+    Font("fonts/jetbrains_mono_bold.ttf", FontWeight.Bold)
+)
+
+private val AppTypography = androidx.compose.material3.Typography().run {
+    fun TextStyle.grotesk(weight: FontWeight? = null) = copy(fontFamily = Grotesk, fontWeight = weight ?: fontWeight)
+    copy(
+        displayLarge = displayLarge.grotesk(FontWeight.Bold),
+        displayMedium = displayMedium.grotesk(FontWeight.Bold),
+        displaySmall = displaySmall.grotesk(FontWeight.Bold),
+        headlineLarge = headlineLarge.grotesk(FontWeight.Bold),
+        headlineMedium = headlineMedium.grotesk(FontWeight.Bold),
+        headlineSmall = headlineSmall.grotesk(FontWeight.Bold),
+        titleLarge = titleLarge.grotesk(FontWeight.Bold),
+        titleMedium = titleMedium.grotesk(FontWeight.SemiBold),
+        titleSmall = titleSmall.grotesk(FontWeight.SemiBold),
+        bodyLarge = bodyLarge.grotesk(),
+        bodyMedium = bodyMedium.grotesk(),
+        bodySmall = bodySmall.grotesk(),
+        labelLarge = labelLarge.grotesk(FontWeight.SemiBold),
+        labelMedium = labelMedium.grotesk(FontWeight.Medium),
+        labelSmall = labelSmall.grotesk(FontWeight.Medium)
+    )
+}
+
+/**
+ * The app's signature progress bar: a row of blocks, like an LED level meter, rather than
+ * a smooth line. It is also what the downloader does - a file fetched in segments - so
+ * the bar shows the work as pieces. While a download is moving, the block at its leading
+ * edge pulses.
+ */
+@Composable
+internal fun SignalBar(progress: Float, color: Color, live: Boolean, modifier: Modifier = Modifier, segments: Int = 24) {
+    val track = AppTheme.Palette.onSurface.copy(alpha = 0.09f)
+    val pulse = if (live) {
+        rememberInfiniteTransition(label = "signal").animateFloat(
+            initialValue = 0.25f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
+            label = "head"
+        ).value
+    } else 1f
+    Canvas(modifier) {
+        val gap = 2.dp.toPx()
+        val block = (size.width - gap * (segments - 1)) / segments
+        val lit = progress.coerceIn(0f, 1f) * segments
+        val head = lit.toInt().coerceAtMost(segments - 1)
+        for (i in 0 until segments) {
+            val x = i * (block + gap)
+            drawRect(track, Offset(x, 0f), Size(block, size.height))
+            val fill = (lit - i).coerceIn(0f, 1f)
+            when {
+                live && i == head -> drawRect(color.copy(alpha = pulse), Offset(x, 0f), Size(block, size.height))
+                fill > 0f -> drawRect(color, Offset(x, 0f), Size(block * fill, size.height))
+            }
+        }
+    }
+}
+
+/**
+ * Recent speed as LED columns, newest on the right, each scaled to the fastest second in
+ * view. An unlit column still shows as dim cells, so the meter has a shape at rest.
+ */
+@Composable
+internal fun SpeedTrace(samples: List<Long>, modifier: Modifier = Modifier) {
+    val lit = AppTheme.Palette.accent
+    val dim = AppTheme.Palette.onSurface.copy(alpha = 0.08f)
+    Canvas(modifier) {
+        val peak = (samples.maxOrNull() ?: 0L).coerceAtLeast(1L)
+        val gap = 1.5.dp.toPx()
+        val column = (size.width - gap * (samples.size - 1)) / samples.size
+        val cells = 4
+        val cellGap = 1.dp.toPx()
+        val cell = (size.height - cellGap * (cells - 1)) / cells
+        samples.forEachIndexed { i, sample ->
+            val on = if (sample <= 0L) 0 else (sample.toFloat() / peak * cells).toInt().coerceIn(1, cells)
+            for (c in 0 until cells) {
+                val y = size.height - (c + 1) * cell - c * cellGap
+                drawRect(
+                    if (c < on) lit else dim,
+                    Offset(i * (column + gap), y),
+                    Size(column, cell)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A physical key: a raised face on a darker edge, which travels down onto the edge while
+ * it is held. The app's buttons are keys on a panel, not flat labels that tint on hover -
+ * the single biggest thing that makes the window read as a piece of equipment.
+ */
+internal fun Modifier.keycap(
+    enabled: Boolean = true,
+    accent: Boolean = false,
+    shape: Shape = RoundedCornerShape(6.dp),
+    onClick: () -> Unit
+): Modifier = composed {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val depth = 3.dp
+    val travel by animateDpAsState(if (pressed && enabled) depth else 0.dp, tween(50), label = "key")
+    val p = AppTheme.Palette
+    val face = when {
+        accent -> p.accent
+        else -> p.raised
+    }
+    val edge = if (accent) Color(blend(p.colors.accent, 0xFF000000, 0.35f)) else Color(blend(p.colors.raised, 0xFF000000, if (p.colors.isDark) 0.55f else 0.22f))
+    this
+        .padding(bottom = depth)
+        .drawBehind {
+            val outline = shape.createOutline(size, layoutDirection, this)
+            translate(0f, depth.toPx()) { drawOutline(outline, edge) }
+        }
+        .graphicsLayer { translationY = travel.toPx() }
+        .clip(shape)
+        .background(face)
+        .border(1.dp, p.onSurface.copy(alpha = if (p.colors.isDark) 0.10f else 0.14f), shape)
+        .alpha(if (enabled) 1f else 0.6f)
+        .clickable(interactionSource = source, indication = null, enabled = enabled, onClick = onClick)
+}
+
+/**
+ * Four screw heads in the corners, as on a panel fixed to a chassis. Drawn over the
+ * content at a small inset; purely decoration, so it never takes layout space.
+ */
+internal fun Modifier.screws(inset: Dp = 7.dp, radius: Dp = 3.dp): Modifier = drawWithContent {
+    drawContent()
+    val ink = AppTheme.Palette.onSurface
+    val r = radius.toPx()
+    val i = inset.toPx()
+    listOf(Offset(i, i), Offset(size.width - i, i), Offset(i, size.height - i), Offset(size.width - i, size.height - i)).forEach { c ->
+        drawCircle(ink.copy(alpha = 0.16f), r, c)
+        drawCircle(ink.copy(alpha = 0.30f), r, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
+        drawLine(ink.copy(alpha = 0.45f), Offset(c.x - r * 0.6f, c.y + r * 0.6f), Offset(c.x + r * 0.6f, c.y - r * 0.6f), 1.2f)
+    }
+}
+
+/**
+ * A small LCD: recessed dark glass that stays dark in every theme, as a real display
+ * does, with the unlit segments ([ghost], usually "8"s) faintly visible behind the lit
+ * [value] and a few scanlines across it. The one place the brightest accent glows.
+ */
+@Composable
+internal fun Lcd(value: String, ghost: String, modifier: Modifier = Modifier, fontSize: TextUnit = 12.sp) {
+    val glow = Color(AppTheme.Palette.colors.palette.accentDark)
+    val shape = RoundedCornerShape(4.dp)
+    Box(
+        modifier
+            .clip(shape)
+            .background(Color(0xFF0B0C09))
+            .border(1.dp, Color(0xFF000000), shape)
+            .drawWithContent {
+                drawContent()
+                // Flat glass: no gradient or scanlines by default, as on Android.
+            }
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        contentAlignment = Alignment.CenterEnd
+    ) {
+        Text("8".repeat(ghost.length), fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = fontSize, color = glow.copy(alpha = 0.10f), maxLines = 1, softWrap = false)
+        Text(value.padStart(ghost.length), fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = fontSize, color = glow, maxLines = 1, softWrap = false)
     }
 }

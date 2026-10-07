@@ -1,5 +1,6 @@
 package com.downloadhub.app.ui
 
+import androidx.compose.foundation.border
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Archive
 import com.composables.icons.lucide.CircleCheck
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,7 +37,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,6 +50,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import com.downloadhub.app.ui.theme.Mono
+import com.downloadhub.app.ui.theme.inkPanel
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -80,10 +91,11 @@ fun DownloadCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .inkPanel()
             .clickable(onClick = onClick),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -165,13 +177,13 @@ fun DownloadCard(
                 // A finished download shows a state, not a full progress bar.
                 CompletedFooter(item)
             } else {
-                LinearProgressIndicator(
+                SignalBar(
                     progress = progress,
+                    color = statusColor(item.status),
+                    live = item.status.canPauseUi,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(6.dp),
-                    color = statusColor(item.status),
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        .height(8.dp)
                 )
                 Spacer(Modifier.size(8.dp))
                 Row(
@@ -181,11 +193,14 @@ fun DownloadCard(
                     Text(
                         progressLabel(item),
                         style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium
+                        fontFamily = Mono,
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
                         progressDetail(item),
                         style = MaterialTheme.typography.bodySmall,
+                        fontFamily = if (item.status == DownloadStatus.FAILED) null else Mono,
+                        modifier = Modifier.padding(start = 12.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -212,10 +227,11 @@ fun cardSubtitle(item: DownloadEntity): String =
  * download is an image, or a category icon when there is nothing to show.
  */
 @Composable
-private fun DownloadThumbnail(
+internal fun DownloadThumbnail(
     loader: ThumbnailCache,
     item: DownloadEntity,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    iconSize: androidx.compose.ui.unit.Dp = 24.dp
 ) {
     // Keyed on what the lookup reads, not the whole row: the row changes on every progress
     // write, and the lookup touches the disk (for a finished torrent it walks the folder),
@@ -232,7 +248,9 @@ private fun DownloadThumbnail(
     Box(
         modifier = modifier
             .clip(shape)
-            .background(categoryColor(item.category).copy(alpha = 0.16f))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
+            // A neutral hairline so a photo's edge does not blur into the surface.
+            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f), shape)
     ) {
         val image = bitmap
         if (image != null) {
@@ -246,10 +264,10 @@ private fun DownloadThumbnail(
             Icon(
                 imageVector = iconFor(item),
                 contentDescription = null,
-                tint = categoryColor(item.category),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .size(24.dp)
+                    .size(iconSize)
             )
         }
         val duration = item.durationSeconds
@@ -273,20 +291,13 @@ private fun DownloadThumbnail(
 }
 
 /**
- * Where to look for artwork: the cached thumbnail, or the finished file itself
- * for images, audio and video (a frame or cover is pulled out of it).
+ * Where to look for artwork: the cached thumbnail, or the finished file itself - any
+ * finished file, since the loader can draw a frame or cover from media, an icon from an
+ * APK and the first page from a PDF, and returns nothing for the rest.
  */
 private fun localThumbnailFor(item: DownloadEntity): String? {
     if (item.thumbnailPath?.let { File(it).isFile } == true) return item.thumbnailPath
-    val kind = item.category
-    val mimeIsMedia = item.mimeType?.let { mime ->
-        mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/")
-    } == true
-    val playable = kind == DownloadCategory.IMAGE ||
-        kind == DownloadCategory.VIDEO ||
-        kind == DownloadCategory.AUDIO ||
-        mimeIsMedia
-    if (playable && item.status == DownloadStatus.COMPLETED) {
+    if (item.status == DownloadStatus.COMPLETED) {
         val output = item.outputPath
         if (!output.isNullOrBlank() && !output.startsWith("content:")) {
             val file = File(output)
@@ -309,7 +320,8 @@ private fun localThumbnailFor(item: DownloadEntity): String? {
 private val MEDIA_PREVIEW_EXTENSIONS = setOf(
     "mp4", "m4v", "mkv", "webm", "mov", "avi", "3gp", "ts", "flv", "mpg", "mpeg", "wmv", "ogv",
     "mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma",
-    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic"
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic",
+    "apk", "pdf"
 )
 
 @Composable
@@ -323,20 +335,24 @@ private fun CompletedFooter(item: DownloadEntity) {
         Icon(
             imageVector = Lucide.CircleCheck,
             contentDescription = null,
-            tint = Color(0xFF22A06B),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(16.dp)
         )
         Spacer(Modifier.width(6.dp))
+        // Neutral, not green: a finished download is the normal state, and on a panel
+        // only what is moving gets the accent.
         Text(
-            "Completed",
+            "DONE",
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = Color(0xFF22A06B)
+            fontFamily = Mono,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.weight(1f))
         Text(
             formatBytes(item.bytesDownloaded),
             style = MaterialTheme.typography.labelMedium,
+            fontFamily = Mono,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1
         )
@@ -378,26 +394,132 @@ private fun iconFor(item: DownloadEntity): ImageVector = when {
     }
 }
 
-private fun categoryColor(category: DownloadCategory): Color = when (category) {
-    DownloadCategory.VIDEO -> Color(0xFF7C3AED)
-    DownloadCategory.AUDIO -> Color(0xFF00796B)
-    DownloadCategory.DOCUMENT -> Color(0xFF1769E0)
-    DownloadCategory.COMPRESSED, DownloadCategory.ARCHIVE -> Color(0xFFB45309)
-    DownloadCategory.IMAGE -> Color(0xFFBE185D)
-    DownloadCategory.PROGRAM -> Color(0xFF0F766E)
-    DownloadCategory.FILE -> Color(0xFF334155)
-    DownloadCategory.OTHER -> Color(0xFF64748B)
-}
-
 @Composable
 private fun statusColor(status: DownloadStatus): Color = when (status) {
     DownloadStatus.RUNNING -> MaterialTheme.colorScheme.primary
-    DownloadStatus.RESOLVING -> MaterialTheme.colorScheme.tertiary
+    // One accent, for what is moving; neutral for what is waiting or done; red only for
+    // what needs a hand - the way a panel lights one LED rather than all of them.
+    DownloadStatus.RESOLVING -> MaterialTheme.colorScheme.primary
     DownloadStatus.QUEUED -> MaterialTheme.colorScheme.onSurfaceVariant
-    DownloadStatus.PAUSED -> MaterialTheme.colorScheme.tertiary
-    DownloadStatus.COMPLETED -> Color(0xFF168A57)
+    DownloadStatus.PAUSED -> MaterialTheme.colorScheme.onSurfaceVariant
+    DownloadStatus.COMPLETED -> MaterialTheme.colorScheme.onSurfaceVariant
     DownloadStatus.FAILED -> MaterialTheme.colorScheme.error
 }
 
-private val DownloadStatus.canPauseUi: Boolean
+internal val DownloadStatus.canPauseUi: Boolean
     get() = this == DownloadStatus.QUEUED || this == DownloadStatus.RESOLVING || this == DownloadStatus.RUNNING
+
+/**
+ * The app's signature progress bar: a row of blocks, like an LED level meter, rather than
+ * a smooth Material line. It is also what the downloader does - a file fetched in
+ * segments - so the bar shows the work as pieces. While a download is moving, the block
+ * at its leading edge pulses.
+ */
+@Composable
+internal fun SignalBar(
+    progress: Float,
+    color: Color,
+    live: Boolean,
+    modifier: Modifier = Modifier,
+    segments: Int = 28
+) {
+    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    val pulse = if (live) {
+        rememberInfiniteTransition(label = "signal").animateFloat(
+            initialValue = 0.25f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
+            label = "head"
+        ).value
+    } else 1f
+    Canvas(modifier) {
+        val gap = 2.dp.toPx()
+        val block = (size.width - gap * (segments - 1)) / segments
+        val lit = progress.coerceIn(0f, 1f) * segments
+        val head = lit.toInt().coerceAtMost(segments - 1)
+        for (i in 0 until segments) {
+            val x = i * (block + gap)
+            drawRect(track, Offset(x, 0f), Size(block, size.height))
+            val fill = (lit - i).coerceIn(0f, 1f)
+            when {
+                live && i == head -> drawRect(color.copy(alpha = pulse), Offset(x, 0f), Size(block, size.height))
+                fill > 0f -> drawRect(color, Offset(x, 0f), Size(block * fill, size.height))
+            }
+        }
+    }
+}
+
+/**
+ * A download as a grid tile: the artwork big, the name under it, then the segmented bar
+ * while it runs or the size once it is done. Tapping opens the same details sheet as a
+ * card; the corner key pauses, resumes or retries without opening anything.
+ */
+@Composable
+fun DownloadTile(
+    item: DownloadEntity,
+    loader: ThumbnailCache,
+    onClick: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onRetry: () -> Unit
+) {
+    val progress by androidx.compose.animation.core.animateFloatAsState(progressFor(item), label = "tile-progress")
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .inkPanel()
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+    ) {
+        Box {
+            DownloadThumbnail(loader, item, Modifier.fillMaxWidth().aspectRatio(16f / 10f), iconSize = 36.dp)
+            val action: Pair<androidx.compose.ui.graphics.vector.ImageVector, () -> Unit>? = when {
+                item.status.canPauseUi -> Lucide.Pause to onPause
+                item.status == DownloadStatus.PAUSED -> Lucide.Play to onResume
+                item.status == DownloadStatus.FAILED -> Lucide.RotateCw to onRetry
+                else -> null
+            }
+            action?.let { (icon, run) ->
+                Surface(
+                    onClick = run,
+                    shape = MaterialTheme.shapes.small,
+                    color = Color.Black.copy(alpha = 0.62f),
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(30.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.size(8.dp))
+        Text(
+            item.fileName,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            minLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.size(6.dp))
+        if (item.status == DownloadStatus.COMPLETED) {
+            Text(
+                formatBytes(item.totalBytes.takeIf { it > 0 } ?: item.bytesDownloaded),
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = Mono,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            SignalBar(progress, statusColor(item.status), live = item.status.canPauseUi, modifier = Modifier.fillMaxWidth().height(6.dp), segments = 16)
+            Spacer(Modifier.size(4.dp))
+            Text(
+                progressLabel(item),
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = Mono,
+                fontWeight = FontWeight.Bold,
+                color = statusColor(item.status),
+                maxLines = 1
+            )
+        }
+    }
+}

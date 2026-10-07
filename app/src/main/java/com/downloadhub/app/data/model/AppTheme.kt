@@ -29,6 +29,8 @@ enum class AppTheme(
     /** The core palette behind this theme. The source of every value below. */
     val palette: CoreThemePalette
 ) {
+    SIGNAL(CoreThemePalette.SIGNAL),
+    CHASSIS(CoreThemePalette.CHASSIS),
     AURORA(CoreThemePalette.AURORA),
     MINT(CoreThemePalette.MINT),
     FOREST(CoreThemePalette.FOREST),
@@ -71,7 +73,7 @@ enum class AppTheme(
 
     companion object {
         fun fromValue(value: String?): AppTheme =
-            entries.firstOrNull { it.value.equals(value, ignoreCase = true) } ?: AURORA
+            entries.firstOrNull { it.value.equals(value, ignoreCase = true) } ?: SIGNAL
     }
 }
 

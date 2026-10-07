@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -75,26 +78,17 @@ internal fun StatusCell(item: DownloadItem, width: Dp, colour: Color) {
         }
         val fraction = (item.progressPercent / 100f).coerceIn(0f, 1f)
         val running = item.status == DownloadStatus.RUNNING
-        val shape = RoundedCornerShape(4.dp)
-        // Eased between updates and drawn rather than laid out, so a tick repaints the bar
-        // without re-measuring the row.
-        val shown by androidx.compose.animation.core.animateFloatAsState(fraction, label = "progress")
         val fill = if (running) AppTheme.Palette.accent else AppTheme.Palette.faint
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(16.dp)
-                .clip(shape)
-                .background(AppTheme.Palette.raised, shape)
-                .drawBehind { drawRect(fill, size = size.copy(width = size.width * shown)) }
-        ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            SignalBar(fraction, fill, live = running, modifier = Modifier.weight(1f).height(10.dp), segments = 16)
+            Spacer(Modifier.width(6.dp))
             Text(
-                if (running) "${item.progressPercent}%" else "${DisplayFormat.status(item)} · ${item.progressPercent}%",
+                if (running) "${item.progressPercent}%" else "${DisplayFormat.status(item)} ${item.progressPercent}%",
                 fontSize = 10.sp,
-                lineHeight = 12.sp,
-                color = if (running && fraction > 0.45f) AppTheme.Palette.onAccent else AppTheme.Palette.onSurface,
-                maxLines = 1,
-                modifier = Modifier.align(Alignment.Center)
+                fontFamily = Mono,
+                fontWeight = FontWeight.Medium,
+                color = AppTheme.Palette.onSurface,
+                maxLines = 1
             )
         }
     }

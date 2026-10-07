@@ -25,7 +25,18 @@ enum class ThemePalette(
     /** A very pale wash of the accent, for containers on a light surface. */
     val lightSurfaceHint: Long
 ) {
-    /** The indigo AB Download Manager is known for; the default for a new install. */
+    /**
+     * The app's own look, and the default for a new install: an acid-lime signal on warm
+     * ink, like a meter's LED, deepened to olive on paper so text on it stays readable.
+     */
+    SIGNAL("SIGNAL", "Signal", 0xFF4D7C0F, 0xFFC6F135, 0xFFEEF3DC),
+    /**
+     * Light-grey chassis with an orange signal, like a piece of studio hardware. Its light
+     * mode has neutrals of its own - cool grey panels rather than the bone paper the others
+     * share - see [resolveThemeColors].
+     */
+    CHASSIS("CHASSIS", "Chassis", 0xFFC2410C, 0xFFFF7A3D, 0xFFF6E5DC),
+    /** The indigo AB Download Manager is known for. */
     AURORA("AURORA", "Aurora", 0xFF4F5BD5, 0xFF8A94FF, 0xFFECEEFD),
     MINT("MINT", "Mint", 0xFF10B981, 0xFF34D399, 0xFFE7F8F1),
     FOREST("FOREST", "Forest", 0xFF15803D, 0xFF4ADE80, 0xFFE8F5EC),
@@ -67,7 +78,7 @@ enum class ThemePalette(
 
     companion object {
         fun fromValue(value: String?): ThemePalette =
-            entries.firstOrNull { it.value.equals(value, ignoreCase = true) } ?: MINT
+            entries.firstOrNull { it.value.equals(value, ignoreCase = true) } ?: SIGNAL
     }
 }
 
@@ -152,54 +163,73 @@ data class ThemeColors(
  * nine accents and three modes: the accent tints were chosen against one green.
  */
 fun resolveThemeColors(palette: ThemePalette, mode: ThemeMode): ThemeColors {
+    val resolved = resolveShared(palette, mode)
+    // Chassis in light mode is grey hardware, not paper: its own panels and ground.
+    return if (palette == ThemePalette.CHASSIS && mode == ThemeMode.LIGHT) {
+        resolved.copy(
+            background = 0xFFE2E2DC,
+            surface = 0xFFEFEFEA,
+            raised = 0xFFE6E6E0,
+            band = 0xFFE9E9E3,
+            onSurface = 0xFF1A1A18,
+            muted = 0xFF4A4A46,
+            faint = 0xFF83837D,
+            outline = 0xFFBFBFB8,
+            outlineVariant = 0xFFD6D6CF,
+            menuPanel = 0xFFEFEFEA
+        )
+    } else resolved
+}
+
+private fun resolveShared(palette: ThemePalette, mode: ThemeMode): ThemeColors {
     val accent = if (mode == ThemeMode.LIGHT) palette.accent else palette.accentDark
     val onAccent = readableOnAccent(accent)
     return when (mode) {
         ThemeMode.LIGHT -> ThemeColors(
             palette = palette,
             mode = mode,
-            background = 0xFFFBFCFC,
-            surface = 0xFFFFFFFF,
-            raised = 0xFFEDF2F3,
-            band = 0xFFF2F6F6,
-            onSurface = 0xFF11181A,
-            muted = 0xFF445457,
-            faint = 0xFF7C8A8C,
+            background = 0xFFF3F0E8,
+            surface = 0xFFFBF9F4,
+            raised = 0xFFE8E4D8,
+            band = 0xFFEEEADF,
+            onSurface = 0xFF17160F,
+            muted = 0xFF4D4A40,
+            faint = 0xFF858174,
             accent = accent,
             onAccent = onAccent,
             accentContainer = palette.lightSurfaceHint,
             onAccentContainer = shade(palette.accent, 0.75f),
-            outline = 0xFFB7C3C5,
-            outlineVariant = 0xFFDCE3E4,
+            outline = 0xFFC4BEAE,
+            outlineVariant = 0xFFDCD7C9,
             selection = 0x14000000,
             error = 0xFFBA1A1A,
             onError = 0xFFFFFFFF,
-            menuPanel = 0xFFFFFFFF,
+            menuPanel = 0xFFFBF9F4,
             menuEdge = 0x22000000
         )
 
         ThemeMode.DARK -> ThemeColors(
             palette = palette,
             mode = mode,
-            // Neutral greys rather than a blue-green tint, so every accent sits on the
-            // same quiet ground - the look AB Download Manager's dark theme is known for.
-            background = 0xFF141418,
-            surface = 0xFF1C1C22,
-            raised = 0xFF2A2A32,
-            band = 0xFF18181D,
-            onSurface = 0xFFECECF1,
-            muted = 0xFFB4B4BF,
-            faint = 0xFF80808C,
+            // Warm ink rather than a cool grey: the app's own ground, like a dark print, and
+            // every accent still sits on it quietly.
+            background = 0xFF0F0F0D,
+            surface = 0xFF181815,
+            raised = 0xFF26251F,
+            band = 0xFF141411,
+            onSurface = 0xFFEEEBE1,
+            muted = 0xFFB5B1A4,
+            faint = 0xFF817D71,
             accent = accent,
             onAccent = onAccent,
-            accentContainer = blend(0xFF1C1C22, accent, 0.28f),
-            onAccentContainer = 0xFFF2F3FF,
-            outline = 0xFF4A4A55,
-            outlineVariant = 0xFF2C2C34,
+            accentContainer = blend(0xFF181815, accent, 0.24f),
+            onAccentContainer = 0xFFF6F4EC,
+            outline = 0xFF4A4840,
+            outlineVariant = 0xFF2B2A25,
             selection = 0x1AFFFFFF,
             error = 0xFFFFB4AB,
             onError = 0xFF690005,
-            menuPanel = 0xFF24242B,
+            menuPanel = 0xFF201F1B,
             menuEdge = 0x33FFFFFF
         )
 

@@ -70,6 +70,40 @@ fun ThemePickerScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            // Off by default: the skin is flat unless asked otherwise.
+            val context = androidx.compose.ui.platform.LocalContext.current
+            Text("Layout", style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(
+                    selected = !com.downloadhub.app.ui.theme.UiStyle.keys,
+                    onClick = { com.downloadhub.app.ui.theme.UiStyle.set(context, false) },
+                    label = { Text("Rail") }
+                )
+                FilterChip(
+                    selected = com.downloadhub.app.ui.theme.UiStyle.keys,
+                    onClick = { com.downloadhub.app.ui.theme.UiStyle.set(context, true) },
+                    label = { Text("Keys") }
+                )
+            }
+            Text(
+                "Rail is flat and quiet. Keys turns the tabs into hardware keys with LEDs and puts the title on an LCD plate.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Depth effects", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Glow, gradients and scanlines on the displays. Off keeps everything flat.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = com.downloadhub.app.ui.theme.UiEffects.enabled,
+                    onCheckedChange = { com.downloadhub.app.ui.theme.UiEffects.set(context, it) }
+                )
+            }
         }
 
         Text(
@@ -96,15 +130,21 @@ fun ThemePickerScreen(
             columns = GridCells.Fixed(2),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(560.dp),
+                .height(660.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(AppTheme.entries.toList(), key = { it.name }) { theme ->
+                val context = androidx.compose.ui.platform.LocalContext.current
                 ThemeCard(
                     theme = theme,
                     selected = appTheme == theme,
-                    onClick = { onThemeChange(theme) }
+                    onClick = {
+                        onThemeChange(theme)
+                        // Chassis is the hardware look, so it brings the Keys layout with it;
+                        // the Layout chips above switch it back at any time.
+                        if (theme == AppTheme.CHASSIS) com.downloadhub.app.ui.theme.UiStyle.set(context, true)
+                    }
                 )
             }
         }

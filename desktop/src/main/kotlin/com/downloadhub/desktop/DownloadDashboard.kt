@@ -72,7 +72,7 @@ fun DownloadCardRow(
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .clip(shape)
             .background(if (checked) AppTheme.Palette.selection else AppTheme.Palette.surface, shape)
-            .border(1.dp, AppTheme.Palette.outline.copy(alpha = 0.3f), shape)
+            .border(1.dp, AppTheme.Palette.outline.copy(alpha = 0.6f), shape)
             .clickable(onClick = onToggle)
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
@@ -101,23 +101,16 @@ fun DownloadCardRow(
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             val fraction = (item.progressPercent / 100f).coerceIn(0f, 1f)
-            val shown by androidx.compose.animation.core.animateFloatAsState(fraction, label = "card-progress")
-            Box(
-                Modifier
-                    .weight(1f)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(AppTheme.Palette.raised)
-                    .drawBehind { drawRect(stateColor, size = size.copy(width = size.width * shown)) }
-            )
+            SignalBar(fraction, stateColor, live = item.status == DownloadStatus.RUNNING, modifier = Modifier.weight(1f).height(8.dp), segments = 32)
             Spacer(Modifier.width(10.dp))
-            Text("${item.progressPercent}%", fontSize = 11.sp, color = AppTheme.Palette.onSurface)
+            Text("${item.progressPercent}%", fontSize = 12.sp, fontFamily = Mono, fontWeight = FontWeight.Bold, color = AppTheme.Palette.onSurface)
         }
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 statsLine(item),
                 fontSize = 11.sp,
+                fontFamily = Mono,
                 color = AppTheme.Palette.muted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

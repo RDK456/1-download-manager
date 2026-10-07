@@ -38,7 +38,7 @@ class ThemePaletteTest {
 
     @Test
     fun `every palette resolves in every mode`() {
-        assertEquals(30, allCombinations().size)
+        assertEquals(36, allCombinations().size)
         for ((palette, mode) in allCombinations()) {
             val c = resolveThemeColors(palette, mode)
             assertEquals("wrong palette echoed back for $palette", palette, c.palette)
@@ -178,10 +178,10 @@ class ThemePaletteTest {
 
     /** The accent is what makes a theme a theme; it must actually change. */
     @Test
-    fun `the ten palettes have ten different accents`() {
+    fun `the twelve palettes have twelve different accents`() {
         val dark = ThemePalette.entries.map { resolveThemeColors(it, ThemeMode.DARK).accent }
-        assertEquals(10, dark.size)
-        assertEquals("two themes resolve to the same dark accent", 10, dark.toSet().size)
+        assertEquals(12, dark.size)
+        assertEquals("two themes resolve to the same dark accent", 12, dark.toSet().size)
     }
 
     /**
@@ -216,9 +216,9 @@ class ThemePaletteTest {
      */
     @Test
     fun `an unknown stored theme falls back instead of throwing`() {
-        assertEquals(ThemePalette.MINT, ThemePalette.fromValue(null))
-        assertEquals(ThemePalette.MINT, ThemePalette.fromValue(""))
-        assertEquals(ThemePalette.MINT, ThemePalette.fromValue("CHARTREUSE"))
+        assertEquals(ThemePalette.SIGNAL, ThemePalette.fromValue(null))
+        assertEquals(ThemePalette.SIGNAL, ThemePalette.fromValue(""))
+        assertEquals(ThemePalette.SIGNAL, ThemePalette.fromValue("CHARTREUSE"))
         assertEquals(ThemeMode.DARK, ThemeMode.fromValue(null))
         assertEquals(ThemeMode.DARK, ThemeMode.fromValue("SEPIA"))
     }

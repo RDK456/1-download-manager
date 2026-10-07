@@ -192,8 +192,8 @@ class DownloadSettingsTest {
 
     @Test
     fun themeLookupFallsBackToAurora() {
-        assertEquals(AppTheme.AURORA, AppTheme.fromValue(null))
-        assertEquals(AppTheme.AURORA, AppTheme.fromValue("nonsense"))
+        assertEquals(AppTheme.SIGNAL, AppTheme.fromValue(null))
+        assertEquals(AppTheme.SIGNAL, AppTheme.fromValue("nonsense"))
         assertEquals(AppTheme.OCEAN, AppTheme.fromValue("OCEAN"))
     }
 

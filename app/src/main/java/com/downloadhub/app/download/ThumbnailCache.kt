@@ -75,7 +75,51 @@ class ThumbnailCache(private val context: Context) {
                 memory.put(memoryKey, it)
             }
         }.getOrNull()
-        return decoded ?: mediaFrame(file, memoryKey)
+        return decoded
+            ?: mediaFrame(file, memoryKey)
+            ?: apkIcon(file)?.also { memory.put(memoryKey, it) }
+            ?: pdfPage(file)?.also { memory.put(memoryKey, it) }
+    }
+
+    /** An APK's own launcher icon, read from the archive without installing it. */
+    private fun apkIcon(file: File): Bitmap? {
+        if (file.extension.lowercase() != "apk") return null
+        return runCatching {
+            val pm = context.packageManager
+            val info = pm.getPackageArchiveInfo(file.absolutePath, 0)?.applicationInfo ?: return null
+            info.sourceDir = file.absolutePath
+            info.publicSourceDir = file.absolutePath
+            val icon = info.loadIcon(pm)
+            val size = TARGET_MAX_PX / 2
+            Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also { bitmap ->
+                val canvas = android.graphics.Canvas(bitmap)
+                icon.setBounds(0, 0, size, size)
+                icon.draw(canvas)
+            }
+        }.getOrNull()
+    }
+
+    /** The first page of a PDF, rendered on white like paper. */
+    private fun pdfPage(file: File): Bitmap? {
+        if (file.extension.lowercase() != "pdf") return null
+        return runCatching {
+            android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+                android.graphics.pdf.PdfRenderer(fd).use { renderer ->
+                    if (renderer.pageCount == 0) return null
+                    renderer.openPage(0).use { page ->
+                        val scale = TARGET_MAX_PX.toFloat() / maxOf(page.width, page.height)
+                        val bitmap = Bitmap.createBitmap(
+                            (page.width * scale).toInt().coerceAtLeast(1),
+                            (page.height * scale).toInt().coerceAtLeast(1),
+                            Bitmap.Config.ARGB_8888
+                        )
+                        bitmap.eraseColor(android.graphics.Color.WHITE)
+                        page.render(bitmap, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        bitmap
+                    }
+                }
+            }
+        }.getOrNull()
     }
 
     /**

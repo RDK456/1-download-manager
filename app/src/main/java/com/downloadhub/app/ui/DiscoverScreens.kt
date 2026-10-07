@@ -1,5 +1,6 @@
 package com.downloadhub.app.ui
 
+import com.downloadhub.app.ui.theme.inkPanel
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.BookOpen
 import com.composables.icons.lucide.ChevronRight
@@ -76,10 +77,10 @@ data class DiscoverTile(val title: String, val subtitle: String, val icon: Image
 fun DiscoverScreen(tiles: List<DiscoverTile>, onOpen: (AppDestination) -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         tiles.forEach { tile ->
-            Card(Modifier.fillMaxWidth().clickable { onOpen(tile.destination) }) {
+            Box(Modifier.fillMaxWidth().inkPanel().clickable { onOpen(tile.destination) }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)) {
-                        Icon(tile.icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(12.dp).size(26.dp))
+                    Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)) {
+                        Icon(tile.icon, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(12.dp).size(26.dp))
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {

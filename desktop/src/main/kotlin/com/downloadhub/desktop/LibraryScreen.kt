@@ -30,6 +30,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import kotlinx.coroutines.flow.drop
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.focusable
@@ -61,6 +62,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -431,12 +433,19 @@ fun LibraryScreen(
                             .weight(1f)
                             .fillMaxHeight()
                             .padding(top = 6.dp, end = 8.dp, bottom = 8.dp)
-                            // A soft shadow under the card lifts it off the window, the way
-                            // AB Download Manager's content panel sits above its background.
-                            .shadow(10.dp, RoundedCornerShape(12.dp), clip = false)
+                            // A hard, unblurred shadow offset down and right, as if the panel were a
+                            // plate fixed onto the chassis - not a soft elevation shadow.
+                            .drawBehind {
+                                drawRoundRect(
+                                    AppTheme.Palette.outline,
+                                    topLeft = androidx.compose.ui.geometry.Offset(4.dp.toPx(), 4.dp.toPx()),
+                                    size = size,
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx())
+                                )
+                            }
                             .clip(RoundedCornerShape(12.dp))
                             .background(AppTheme.Palette.surface)
-                            .border(1.dp, AppTheme.Palette.outlineVariant, RoundedCornerShape(12.dp))
+                            .border(1.dp, AppTheme.Palette.outline, RoundedCornerShape(12.dp))
                     ) {
                      if (extraPanel == RailEntry.Tv) {
                         TvPanel(modifier = Modifier.fillMaxSize())
@@ -1580,7 +1589,9 @@ private fun ToolbarButton(
     badge: Int = 0,
 ) {
     val tint = when {
-        !enabled -> AppTheme.Palette.faint
+        // Muted, not faint: the key itself is already dimmed when disabled, and dimming
+        // both left the caption unreadable.
+        !enabled -> AppTheme.Palette.muted
         highlighted -> AppTheme.Palette.accent
         else -> AppTheme.Palette.muted
     }
@@ -1609,10 +1620,8 @@ private fun ToolbarButton(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .padding(end = 6.dp)
-                .height(36.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(AppTheme.Palette.accent)
-                .clickable(enabled = enabled, onClick = onClick)
+                .keycap(enabled = enabled, accent = true, onClick = onClick)
+                .height(34.dp)
                 .padding(horizontal = 14.dp)
         ) {
             Icon(icon, null, Modifier.size(18.dp), tint = AppTheme.Palette.onAccent)
@@ -1640,17 +1649,13 @@ private fun ToolbarButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .width(if (compact) buttonWidth.dp else TOOLBAR_CAPTIONED_DP.dp)
-            .then(if (enabled) Modifier.hoverFill(shape = RoundedCornerShape(8.dp)) else Modifier)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 4.dp)
+            .padding(vertical = 2.dp)
     ) {
+                // Each action is a key on the panel, with its name printed underneath.
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
-                        .background(
-                            if (highlighted && enabled) AppTheme.Palette.accent else Color.Transparent,
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-                        ),
+                        .keycap(enabled = enabled, accent = highlighted, onClick = onClick)
+                        .size(30.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(icon, label, Modifier.size(19.dp), tint = iconTint)
@@ -1681,9 +1686,10 @@ private fun ToolbarButton(
         // narrow window drops it and the tooltip names the button instead.
         if (!compact) {
             Text(
-                text = label,
+                text = label.uppercase(),
                 style = androidx.compose.ui.text.TextStyle(
-                    fontSize = 10.5.sp,
+                    fontFamily = Mono,
+                    fontSize = 10.sp,
                     lineHeight = TOOLBAR_CAPTION_LINE_HEIGHT_SP.sp
                 ),
                 color = tint,
@@ -1697,8 +1703,8 @@ private fun ToolbarButton(
     }
 }
 
-/** Width of a captioned toolbar button: room for "Resume All" at 10.5 sp, no more. */
-private const val TOOLBAR_CAPTIONED_DP = 62f
+/** Width of a captioned toolbar button: room for "RESUME ALL" in the mono face at 10 sp (6 dp a letter), no more. */
+private const val TOOLBAR_CAPTIONED_DP = 66f
 
 /** A thin rule between groups of toolbar actions. */
 @Composable
@@ -2230,9 +2236,12 @@ private fun Cell(
     palette: androidx.compose.material3.ColorScheme,
     colour: Color? = null
 ) {
+    // Every cell here is a number - size, speed, time left, age - set in the mono face so
+    // a column of them lines up digit for digit and a ticking speed holds still.
     Text(
         text,
         fontSize = 11.sp,
+        fontFamily = Mono,
         color = colour ?: palette.onSurfaceVariant,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -2286,10 +2295,26 @@ private fun EmptyList(filtered: Boolean, onNew: () -> Unit, onFind: () -> Unit, 
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(DlmIcons.ArrowDownward, null, Modifier.size(36.dp), tint = AppTheme.Palette.faint)
-        Spacer(Modifier.height(10.dp))
+        // A meter with nothing on it, sweeping like a tuner looking for a station.
+        val sweep by androidx.compose.animation.core.rememberInfiniteTransition(label = "no-signal").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(2400)),
+            label = "sweep"
+        )
         Text(
-            if (filtered) "Nothing matches this filter" else "No downloads yet",
+            if (filtered) "NO MATCH" else "NO SIGNAL",
+            fontFamily = Mono,
+            fontWeight = FontWeight.Bold,
+            fontSize = 28.sp,
+            letterSpacing = 4.sp,
+            color = AppTheme.Palette.onSurface
+        )
+        Spacer(Modifier.height(10.dp))
+        SignalBar(sweep, AppTheme.Palette.faint, live = false, modifier = Modifier.width(220.dp).height(8.dp), segments = 20)
+        Spacer(Modifier.height(14.dp))
+        Text(
+            if (filtered) "Nothing matches this filter" else "Nothing downloading yet",
             style = MaterialTheme.typography.titleSmall,
             color = AppTheme.Palette.onSurface
         )
@@ -2303,8 +2328,8 @@ private fun EmptyList(filtered: Boolean, onNew: () -> Unit, onFind: () -> Unit, 
         if (!filtered) {
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                androidx.compose.material3.Button(onClick = onNew) { Text("New download") }
-                androidx.compose.material3.OutlinedButton(onClick = onFind) { Text("Find torrents") }
+                Text("New download", fontWeight = FontWeight.SemiBold, color = AppTheme.Palette.onAccent, modifier = Modifier.keycap(accent = true, onClick = onNew).padding(horizontal = 18.dp, vertical = 9.dp))
+                Text("Find torrents", fontWeight = FontWeight.SemiBold, color = AppTheme.Palette.onSurface, modifier = Modifier.keycap(onClick = onFind).padding(horizontal = 18.dp, vertical = 9.dp))
             }
         }
     }

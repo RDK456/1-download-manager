@@ -111,7 +111,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     val themeMode: StateFlow<ThemeMode> = settings.themeMode
         .stateIn(viewModelScope, SharingStarted.Lazily, ThemeMode.SYSTEM)
     val appTheme: StateFlow<AppTheme> = settings.appTheme
-        .stateIn(viewModelScope, SharingStarted.Lazily, AppTheme.AURORA)
+        .stateIn(viewModelScope, SharingStarted.Lazily, AppTheme.SIGNAL)
     val downloadSettings: StateFlow<DownloadSettings> = settings.downloadSettings
         .stateIn(viewModelScope, SharingStarted.Lazily, DownloadSettings())
     val destinationTreeUri: StateFlow<String?> = settings.destinationTreeUri

@@ -220,7 +220,7 @@ data class DesktopSettings(
      * upgrading sees no change, and the choice is the same one the Android app offers so
      * that picking Ocean on a phone gives Ocean on the desktop.
      */
-    val themePalette: String = "AURORA",
+    val themePalette: String = "SIGNAL",
     /**
      * Light, dark, or AMOLED.
      *
