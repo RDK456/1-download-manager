@@ -707,9 +707,9 @@ class DesktopController(
         request.referer?.takeIf { it.isNotBlank() }?.let { capturedReferers[request.url] = it }
         request.cookies?.takeIf { it.isNotBlank() }?.let { capturedCookies[request.url] = it }
         val review = onDownloadNeedsReview
-        // The right-click menu always asks; a caught download asks only if the setting says so.
-        // A quality picked on the page's video button is already the answer.
-        if (review != null && !request.chosen && (request.review || !settingsState.value.browserCaptureAutoQueue)) {
+        // Everything the extension sends is shown in the pre-download window first. Only a
+        // quality already picked by an older extension build counts as the answer.
+        if (review != null && !request.chosen) {
             review(request.url)
             return
         }

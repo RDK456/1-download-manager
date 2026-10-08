@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "1 download manager",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Download videos straight from the page, catch downloads and detect media streams - all sent to 1 download manager.",
   "icons": {
     "16": "icon16.png",

@@ -76,10 +76,10 @@ class EveryAddGoesThroughTheDialogTest {
         )
         assertTrue(
             "and the fallback is not unconditional - it applies only before the window " +
-                "exists, when the user turned on adding browser downloads straight away, " +
-                "or when a quality was already picked on the page's video button (that " +
+                "exists, " +
+                "or when an older extension build already carried a quality (that " +
                 "pick is the user's answer, so there is nothing left to ask):\n$body",
-            body.contains("if (review != null && !request.chosen && (request.review || !settingsState.value.browserCaptureAutoQueue))")
+            body.contains("if (review != null && !request.chosen) {")
         )
     }
 

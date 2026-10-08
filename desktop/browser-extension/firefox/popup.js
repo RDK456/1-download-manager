@@ -83,12 +83,12 @@ async function renderMedia() {
     button.textContent = "Download";
     button.addEventListener("click", async () => {
       button.disabled = true;
-      // A stream playlist goes to the app's window to pick a quality; a file just queues.
+      // Opens the app's Add Download window; nothing is queued until it is confirmed there.
       const result = await ext.runtime.sendMessage({
         type: "queue-link",
         url: item.url,
         referer: tab.url || "",
-        review: item.kind === "Stream",
+        review: true,
       });
       button.textContent = result && result.ok ? "Sent" : "Failed";
     });

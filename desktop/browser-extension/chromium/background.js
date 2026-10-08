@@ -163,6 +163,7 @@ downloadsApi.downloads.onCreated.addListener(async (item) => {
     referer: item.referrer || "",
     fileName: name,
     cookies: await cookieHeaderFor(url),
+    review: true, // shown in the Add Download window; the browser's copy is cancelled once it is up
   });
   if (!result.ok) return;
   try {

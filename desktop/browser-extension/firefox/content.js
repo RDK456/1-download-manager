@@ -9,7 +9,7 @@
 const MEDIA_EXTENSIONS = [
   ".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".flv", ".mp3", ".m4a",
   ".flac", ".wav", ".opus", ".aac", ".zip", ".rar", ".7z", ".tar", ".gz",
-  ".pdf", ".iso", ".apk", ".exe", ".msi", ".torrent",
+  ".iso", ".apk", ".exe", ".msi", ".torrent",
 ];
 
 let appAvailable = false;
@@ -37,15 +37,9 @@ function isDownloadLink(anchor) {
   // The author already said so.
   if (anchor.hasAttribute("download")) return true;
   if (anchor.dataset.dlm === "skip") return false;
-  if (looksLikeFile(anchor.href)) return true;
-  const host = (() => {
-    try {
-      return new URL(anchor.href, location.href).hostname;
-    } catch (error) {
-      return "";
-    }
-  })();
-  return host === "youtu.be" || host.endsWith("youtube.com");
+  // A magnet is a download by definition; a page address (YouTube included) is not.
+  if ((anchor.getAttribute("href") || "").toLowerCase().startsWith("magnet:")) return true;
+  return looksLikeFile(anchor.href);
 }
 
 function notify(text) {
@@ -76,6 +70,7 @@ async function handOff(url, fileName) {
     url: url,
     referer: location.href,
     fileName: fileName || "",
+    review: true, // the app shows its Add Download window before anything is queued
   });
   if (result && result.ok) {
     notify("Queued in 1 download manager");
@@ -116,21 +111,11 @@ document.addEventListener(
 //
 // A small "Download" key pinned to the top-right corner of every video player on the
 // page - YouTube's player, or any <video> big enough to be the point of the page. It
-// opens a short quality menu; picking one queues the video in the app straight away.
-// "Choose in app..." opens the app's own Add Download window with every format.
+// opens the app's Add Download window for that video, where the format is picked and the download confirmed.
 //
 // Drawn in a shadow root on an overlay at the top of the page, so no site's CSS can
 // restyle it and it never changes the page's own layout. It follows the player as the
 // page scrolls and resizes, and only exists while the app is running and paired.
-
-const QUALITIES = [
-  { label: "Best quality", height: 4320 },
-  { label: "1080p", height: 1080 },
-  { label: "720p", height: 720 },
-  { label: "480p", height: 480 },
-  { label: "Audio only", audioOnly: true },
-  { label: "Choose in app...", review: true },
-];
 
 let overlayHost = null;
 const buttons = new Map(); // player element -> button wrapper
@@ -148,11 +133,6 @@ function overlayRoot() {
       box-shadow: 0 3px 0 #5E7314; opacity: .88; transition: opacity .15s, transform .05s; }
     .key:hover { opacity: 1; }
     .key:active { transform: translateY(3px); box-shadow: none; }
-    .menu { margin-top: 6px; min-width: 170px; border-radius: 8px; overflow: hidden;
-      background: #181815; border: 1px solid #4A4840; box-shadow: 4px 4px 0 rgba(0,0,0,.45); }
-    .item { padding: 9px 12px; color: #EEEBE1; cursor: pointer; font-weight: 500; }
-    .item:hover { background: #26251F; color: #C6F135; }
-    .item.sep { border-top: 1px solid #2B2A25; }
   `;
   root.appendChild(style);
   document.documentElement.appendChild(overlayHost);
@@ -177,10 +157,6 @@ function players() {
   });
 }
 
-function closeMenus() {
-  buttons.forEach((wrap) => wrap.querySelector(".menu")?.remove());
-}
-
 function buttonFor(player) {
   const root = overlayRoot();
   const wrap = document.createElement("div");
@@ -191,35 +167,18 @@ function buttonFor(player) {
   // Built with DOM calls, never innerHTML: YouTube enforces Trusted Types, and a string
   // assigned to innerHTML there throws and the button never appears.
   key.append(downloadIcon(), Object.assign(document.createElement("span"), { textContent: "Download" }));
-  key.addEventListener("click", (event) => {
+  key.addEventListener("click", async (event) => {
     event.stopPropagation();
-    const open = wrap.querySelector(".menu");
-    closeMenus();
-    if (open) return;
-    const menu = document.createElement("div");
-    menu.className = "menu";
-    QUALITIES.forEach((q, i) => {
-      const item = document.createElement("div");
-      item.className = "item" + (q.review || q.audioOnly ? " sep" : "");
-      item.textContent = q.label;
-      item.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        closeMenus();
-        const result = await chrome.runtime.sendMessage({
-          type: "queue-link",
-          url: linkFor(player),
-          referer: location.href,
-          audioOnly: Boolean(q.audioOnly),
-          height: q.height,
-          review: Boolean(q.review),
-        });
-        notify(result && result.ok
-          ? (q.review ? "Opened in 1 download manager" : `Queued: ${q.label}`)
-          : "1 download manager: " + ((result && result.reason) || "not connected"));
-      });
-      menu.appendChild(item);
+    // Opens the app's Add Download window for this video; nothing is queued until it is confirmed there.
+    const result = await chrome.runtime.sendMessage({
+      type: "queue-link",
+      url: linkFor(player),
+      referer: location.href,
+      review: true,
     });
-    wrap.appendChild(menu);
+    notify(result && result.ok
+      ? "Opened in 1 download manager"
+      : "1 download manager: " + ((result && result.reason) || "not connected"));
   });
   wrap.appendChild(key);
   root.appendChild(wrap);
@@ -256,7 +215,6 @@ function placeButtons() {
   });
 }
 
-document.addEventListener("click", closeMenus);
 addEventListener("scroll", placeButtons, { passive: true });
 addEventListener("resize", placeButtons);
 // YouTube swaps videos without reloading the page; the button stays and links to the
