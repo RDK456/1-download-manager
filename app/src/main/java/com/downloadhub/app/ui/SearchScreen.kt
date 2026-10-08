@@ -169,85 +169,94 @@ fun SearchScreen(
         }
     }
 
-    Column(modifier.fillMaxSize()) {
-        Column(Modifier.padding(16.dp)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { state.query = it },
-                label = { Text("Search") },
-                placeholder = { Text("What are you looking for?") },
-                leadingIcon = { androidx.compose.material3.Icon(Lucide.Search, contentDescription = null) },
-                singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                    imeAction = androidx.compose.ui.text.input.ImeAction.Search
-                ),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { if (!busy) run() }),
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            CategoryAndSearchRow(
-                group = group,
-                onGroup = { entry ->
-                    state.group = entry
-                    if (isSearchable(state.query)) run()
-                },
-                busy = busy,
-                onSearch = { run() },
-                // Present only once there is something to throw away. This is what the
-                // search used to do by itself, quietly, on navigating away.
-                canClear = state.hasAnything,
-                onClear = { state.clear() }
-            )
-        }
-
-        // Said out loud, above the results. A search that quietly drops a source looks like
-        // one that found nothing, and those are very different things to be told.
-        outcome?.offlineNote()?.let {
-            Text(
-                it,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-        }
-        message?.let {
-            Text(
-                it,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-        }
-
-        // Which sources are being shown. Only once there are results - a filter listing sites
-        // that have not been asked yet is a row of tabs on an empty page - and each chip
-        // carries its own count, so switching one off is a decision about how many rows
-        // are being hidden, made before it is made.
-        val visible = state.visible
-        val facets = remember(results) { SearchFilter.sources(results, SOURCE_LABELS) }
-        if (facets.size > 1) {
-            SourceFilterRow(
-                facets = facets,
-                selected = state.sources,
-                hidden = results.size - visible.size,
-                onToggle = { state.toggleSource(it) }
-            )
-        }
-
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            when {
-                results.isEmpty() && busy -> Centre("Asking every source...")
-                results.isEmpty() && message == null && outcome == null -> TorrentPicks(onPick)
-                results.isEmpty() -> Centre("Nothing found for \"${query.trim()}\".")
-                visible.isEmpty() -> Centre(
-                    "Nothing from the chosen sources. All ${results.size} results are hidden."
+    val visible = state.visible
+    val facets = remember(results) { SearchFilter.sources(results, SOURCE_LABELS) }
+    // The search box, the filters and the notes. With results on screen they are the first
+    // row of the list, so a short phone or one held sideways is not left with a sliver of
+    // results under a fixed header. Before there are results there is nothing to scroll.
+    val header: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { state.query = it },
+                    label = { Text("Search") },
+                    placeholder = { Text("What are you looking for?") },
+                    leadingIcon = { androidx.compose.material3.Icon(Lucide.Search, contentDescription = null) },
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { if (!busy) run() }),
+                    modifier = Modifier.fillMaxWidth()
                 )
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(visible, key = { it.source + it.infoHash }) { result ->
-                        SearchResultCard(result, SOURCE_LABELS[result.source]) {
-                            onPick(result.magnet)
-                        }
-                    }
+                Spacer(Modifier.height(8.dp))
+                CategoryAndSearchRow(
+                    group = group,
+                    onGroup = { entry ->
+                        state.group = entry
+                        if (isSearchable(state.query)) run()
+                    },
+                    busy = busy,
+                    onSearch = { run() },
+                    // Present only once there is something to throw away. This is what the
+                    // search used to do by itself, quietly, on navigating away.
+                    canClear = state.hasAnything,
+                    onClear = { state.clear() }
+                )
+            }
+
+            // Said out loud, above the results. A search that quietly drops a source looks like
+            // one that found nothing, and those are very different things to be told.
+            outcome?.offlineNote()?.let {
+                Text(
+                    it,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+            message?.let {
+                Text(
+                    it,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+
+            // Which sources are being shown. Only once there are results - a filter listing sites
+            // that have not been asked yet is a row of tabs on an empty page - and each chip
+            // carries its own count, so switching one off is a decision about how many rows
+            // are being hidden, made before it is made.
+            if (facets.size > 1) {
+                SourceFilterRow(
+                    facets = facets,
+                    selected = state.sources,
+                    hidden = results.size - visible.size,
+                    onToggle = { state.toggleSource(it) }
+                )
+            }
+        }
+    }
+    if (results.isNotEmpty() && visible.isNotEmpty()) {
+        LazyColumn(modifier.fillMaxSize()) {
+            item { header() }
+            items(visible, key = { it.source + it.infoHash }) { result ->
+                SearchResultCard(result, SOURCE_LABELS[result.source]) {
+                    onPick(result.magnet)
+                }
+            }
+        }
+    } else {
+        Column(modifier.fillMaxSize()) {
+            header()
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    results.isEmpty() && busy -> Centre("Asking every source...")
+                    results.isEmpty() && message == null && outcome == null -> TorrentPicks(onPick)
+                    results.isEmpty() -> Centre("Nothing found for \"${query.trim()}\".")
+                    else -> Centre("Nothing from the chosen sources. All ${results.size} results are hidden.")
                 }
             }
         }

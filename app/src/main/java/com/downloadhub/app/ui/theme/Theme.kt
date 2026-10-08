@@ -229,7 +229,7 @@ fun Modifier.screws(inset: Dp = 8.dp, radius: Dp = 3.5.dp): Modifier {
 @Composable
 fun Lcd(value: String, ghost: String, modifier: Modifier = Modifier, glow: Color = LocalLcdGlow.current, fontSize: TextUnit = 26.sp) {
     val shape = RoundedCornerShape(6.dp)
-    Box(
+    androidx.compose.foundation.layout.BoxWithConstraints(
         modifier
             .clip(shape)
             .background(Color(0xFF0B0C09))
@@ -248,6 +248,12 @@ fun Lcd(value: String, ghost: String, modifier: Modifier = Modifier, glow: Color
             .padding(horizontal = 10.dp, vertical = 4.dp),
         contentAlignment = Alignment.CenterEnd
     ) {
+        // Every digit cell is 0.6 em wide in the mono face, so the biggest size at which the
+        // whole display fits is known up front. On a narrow phone, or with the system text set
+        // large, the figure steps down instead of being cut off at the edge.
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val fit = (maxWidth.value - 20f) / (ghost.length * 0.6f) / density.fontScale
+        val fontSize = minOf(fontSize.value, fit.coerceAtLeast(8f)).sp
         Text("8".repeat(ghost.length), fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = fontSize, color = glow.copy(alpha = 0.10f), maxLines = 1, softWrap = false)
         Text(
             value.padStart(ghost.length),
@@ -324,7 +330,9 @@ fun LcdPlate(text: String, modifier: Modifier = Modifier) {
             .border(1.5.dp, Color(0xFF8E9486), shape)
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
-        Text(text, fontFamily = Dot, fontWeight = FontWeight.Black, fontSize = 24.sp, color = Color(0xFF1F2419), maxLines = 1, softWrap = false)
+        // A longer title steps down a size, and one that still does not fit ends in an ellipsis
+        // rather than running off the bar.
+        Text(text, fontFamily = Dot, fontWeight = FontWeight.Black, fontSize = if (text.length > 11) 17.sp else 24.sp, color = Color(0xFF1F2419), maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 

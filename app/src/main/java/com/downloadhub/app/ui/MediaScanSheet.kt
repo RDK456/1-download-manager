@@ -1,5 +1,7 @@
 package com.downloadhub.app.ui
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.CirclePlay
 import com.composables.icons.lucide.ExternalLink
@@ -66,6 +68,7 @@ fun MediaScanSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)

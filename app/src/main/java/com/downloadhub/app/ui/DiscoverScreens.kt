@@ -1,5 +1,6 @@
 package com.downloadhub.app.ui
 
+import androidx.compose.foundation.verticalScroll
 import com.downloadhub.app.ui.theme.inkPanel
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.BookOpen
@@ -75,7 +76,7 @@ data class DiscoverTile(val title: String, val subtitle: String, val icon: Image
 /** The Discover tab: free books, free TV and the player, each a tap away. */
 @Composable
 fun DiscoverScreen(tiles: List<DiscoverTile>, onOpen: (AppDestination) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         tiles.forEach { tile ->
             Box(Modifier.fillMaxWidth().inkPanel().clickable { onOpen(tile.destination) }) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

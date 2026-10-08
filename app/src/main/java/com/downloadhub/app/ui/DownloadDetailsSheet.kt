@@ -8,6 +8,7 @@ import com.composables.icons.lucide.Play
 import com.composables.icons.lucide.RotateCw
 import com.composables.icons.lucide.Share2
 import com.composables.icons.lucide.Trash2
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -83,6 +84,9 @@ fun DownloadDetailsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // A sheet is only as tall as the screen allows; anything past that has to
+                // scroll or it is simply cut off (a short phone, or one held sideways).
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)

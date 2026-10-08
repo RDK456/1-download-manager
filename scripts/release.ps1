@@ -54,6 +54,10 @@ param(
     # A desktop-only change produces a byte-identical APK, and shipping it again
     # just makes people re-download 126 MB they already have.
     [switch]$DesktopOnly,
+    # Publishes only the Android assets (the APKs) and leaves the Windows version, the
+    # installer, the portable zip, the update delta and the browser extensions alone.
+    # An Android-only change should not rebuild and re-upload 130 MB of Windows files.
+    [switch]$AndroidOnly,
     # Release notes as a string, or as a file.
     #
     # Prefer -NotesFile. Passing prose through -Notes on a command line means the
@@ -75,6 +79,7 @@ if ($NotesFile) {
 }
 
 $ErrorActionPreference = 'Stop'
+if ($DesktopOnly -and $AndroidOnly) { throw '-DesktopOnly and -AndroidOnly cannot be combined; run without either for a full release.' }
 
 function Compare-VersionNumbers([string]$a, [string]$b) {
     $ap = @($a -split '\.' | ForEach-Object { [int]$_ })
@@ -189,7 +194,7 @@ try {
     # here is what stops the two from drifting, which previously shipped a release
     # whose MSI was named after a version nobody had released.
     $propsFile = Join-Path $RepoRoot 'gradle.properties'
-    if (Test-Path $propsFile) {
+    if ((Test-Path $propsFile) -and -not $AndroidOnly) {
         $propsText = [System.IO.File]::ReadAllText($propsFile)
         $propsText = [regex]::Replace($propsText, '(?m)^appVersion=.*$', "appVersion=$newVersion")
         [System.IO.File]::WriteAllText($propsFile, $propsText)
@@ -203,9 +208,10 @@ try {
     # The Windows installer is built from the same run. Leaving it to a separate
     # manual step is how a release once shipped with no MSI at all: the APK was
     # built, the release went out, and the installer was quietly missing.
-    $hasDesktop = Test-Path (Join-Path $RepoRoot 'desktop\build.gradle.kts')
+    $hasDesktop = (Test-Path (Join-Path $RepoRoot 'desktop\build.gradle.kts')) -and -not $AndroidOnly
     if (-not $SkipTests) {
-        $targets = @(':core:test', ':desktop:test')
+        $targets = @(':core:test')
+        if (-not $AndroidOnly) { $targets += ':desktop:test' }
         if (-not $DesktopOnly) {
             # Only worth building an APK that is about to be published. Assembling it
             # for a desktop-only release costs several minutes and produces an

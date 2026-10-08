@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -102,6 +103,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.animateFloat
@@ -833,72 +835,76 @@ private fun DownloadsScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(onPickTorrent) }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    Column(modifier = Modifier.fillMaxSize()) {
-        SummaryBand(summary, onPauseAll = onPauseAll, onResumeAll = onResumeAll)
-        // List or grid, remembered, as a key beside the search box.
-        val context = androidx.compose.ui.platform.LocalContext.current
-        val prefs = remember { context.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE) }
-        var showDone by rememberSaveable { mutableStateOf(false) }
-        var grid by remember { mutableStateOf(prefs.getBoolean("downloads_grid", false)) }
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.material3.OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            modifier = Modifier.weight(1f),
-            shape = MaterialTheme.shapes.small,
-            singleLine = true,
-            label = {
-                Text(if (showTorrentAction) "Search torrents" else "Search downloads")
-            },
-            leadingIcon = { Icon(Lucide.Search, contentDescription = null) },
-            // The list filters as you type, so the keyboard's Search just puts it away.
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
-            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { keyboard?.hide() })
-        )
-        IconButton(onClick = { grid = !grid; prefs.edit().putBoolean("downloads_grid", grid).apply() }, modifier = Modifier.size(52.dp)) {
-            Icon(if (grid) Lucide.List else Lucide.LayoutGrid, contentDescription = if (grid) "Show as list" else "Show as grid")
-        }
-        }
-        // The kinds, on the Downloads tab only. The Torrents tab is already one kind,
-        // and offering three ways to ask for torrents on a screen that is torrents is
-        // a row of chips where one of them is always right.
-        if (!showTorrentAction) {
-            KindFilterRow(
-                kind = kind,
-                counts = kindCounts,
-                onKindChange = onKindChange
-            )
-        }
-        if (kind != LibraryKind.ALL || filter != DownloadFilter.ALL || category != null) {
-            ActiveFilterRow(
-                filter = filter,
-                category = category,
-                onFilterChange = onFilterChange,
-                onCategoryChange = onCategoryChange
-            )
-        }
-        // Finished downloads get their own tab, so the main list is what is still moving
-        // rather than a long tail of done things.
-        val doneCount = items.count { it.status == DownloadStatus.COMPLETED }
-        val shown = items.filter { (it.status == DownloadStatus.COMPLETED) == showDone }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            SegmentRow(
-                options = listOf("IN PROGRESS ${items.size - doneCount}", "COMPLETED $doneCount"),
-                selected = if (showDone) 1 else 0,
-                onSelect = { showDone = it == 1 },
-                modifier = Modifier.weight(1f)
-            )
-        }
-        if (shown.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                EmptyDownloads(
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE) }
+    var showDone by rememberSaveable { mutableStateOf(false) }
+    var grid by remember { mutableStateOf(prefs.getBoolean("downloads_grid", false)) }
+    // Finished downloads get their own tab, so the main list is what is still moving
+    // rather than a long tail of done things.
+    val doneCount = items.count { it.status == DownloadStatus.COMPLETED }
+    val shown = items.filter { (it.status == DownloadStatus.COMPLETED) == showDone }
+
+    // Everything above the list is the first item of the list. As a fixed block over it, the
+    // panel, search, kinds and switch could be taller than a short phone or a phone held
+    // sideways, leaving the list no room at all and nothing to scroll.
+    val header: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth()) {
+            SummaryBand(summary, onPauseAll = onPauseAll, onResumeAll = onResumeAll)
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
                     modifier = Modifier.weight(1f),
+                    shape = MaterialTheme.shapes.small,
+                    singleLine = true,
+                    label = {
+                        Text(if (showTorrentAction) "Search torrents" else "Search downloads")
+                    },
+                    leadingIcon = { Icon(Lucide.Search, contentDescription = null) },
+                    // The list filters as you type, so the keyboard Search key just puts it away.
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { keyboard?.hide() })
+                )
+                IconButton(onClick = { grid = !grid; prefs.edit().putBoolean("downloads_grid", grid).apply() }, modifier = Modifier.size(52.dp)) {
+                    Icon(if (grid) Lucide.List else Lucide.LayoutGrid, contentDescription = if (grid) "Show as list" else "Show as grid")
+                }
+            }
+            // The kinds, on the Downloads tab only. The Torrents tab is already one kind,
+            // and offering three ways to ask for torrents on a screen that is torrents is
+            // a row of chips where one of them is always right.
+            if (!showTorrentAction) {
+                KindFilterRow(kind = kind, counts = kindCounts, onKindChange = onKindChange)
+            }
+            if (kind != LibraryKind.ALL || filter != DownloadFilter.ALL || category != null) {
+                ActiveFilterRow(
+                    filter = filter,
+                    category = category,
+                    onFilterChange = onFilterChange,
+                    onCategoryChange = onCategoryChange
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SegmentRow(
+                    options = listOf("IN PROGRESS ${items.size - doneCount}", "COMPLETED $doneCount"),
+                    selected = if (showDone) 1 else 0,
+                    onSelect = { showDone = it == 1 },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+
+    if (shown.isEmpty()) {
+        androidx.compose.foundation.lazy.LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            item { header() }
+            item {
+                EmptyDownloads(
                     title = when {
                         items.isEmpty() -> emptyTitle
                         showDone -> "Nothing finished yet"
@@ -910,7 +916,9 @@ private fun DownloadsScreen(
                         else -> "Everything is done. Completed has the lot."
                     }
                 )
-                if (showTorrentAction) {
+            }
+            if (showTorrentAction) {
+                item {
                     OutlinedButton(
                         onClick = {
                             torrentPicker.launch(
@@ -923,7 +931,7 @@ private fun DownloadsScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 32.dp, vertical = 24.dp)
+                            .padding(start = 32.dp, end = 32.dp, top = 8.dp, bottom = 96.dp)
                     ) {
                         Icon(Lucide.FolderOpen, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -931,49 +939,65 @@ private fun DownloadsScreen(
                     }
                 }
             }
-        } else if (grid) {
-            androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
-                columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(156.dp),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(shown.size, key = { shown[it].id }) { index ->
-                    val item = shown[index]
-                    Box(Modifier.animateItem()) {
-                        DownloadTile(
-                            item = item,
-                            loader = loader,
-                            onClick = { onSelect(item.id) },
-                            onPause = { onPause(item.id) },
-                            onResume = { onResume(item.id) },
-                            onRetry = { onRetry(item.id) }
-                        )
-                    }
+        }
+    } else if (grid) {
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(156.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 96.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Across every column, and out to the screen edges: the grid side padding
+            // is for the tiles, and the header already pads itself.
+            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                Box(Modifier.bleed(16.dp)) { header() }
+            }
+            items(shown.size, key = { shown[it].id }) { index ->
+                val item = shown[index]
+                Box(Modifier.animateItem()) {
+                    DownloadTile(
+                        item = item,
+                        loader = loader,
+                        onClick = { onSelect(item.id) },
+                        onPause = { onPause(item.id) },
+                        onResume = { onResume(item.id) },
+                        onRetry = { onRetry(item.id) }
+                    )
                 }
             }
-        } else {
-            LazyColumn(
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(shown, key = { it.id }) { item ->
-                    // Slides into place on add, remove and re-sort instead of jumping.
-                    Box(Modifier.animateItem()) {
-                        DownloadCard(
-                            item = item,
-                            loader = loader,
-                            onClick = { onSelect(item.id) },
-                            onPause = { onPause(item.id) },
-                            onResume = { onResume(item.id) },
-                            onRetry = { onRetry(item.id) },
-                            onDelete = { onDelete(item.id) }
-                        )
-                    }
+        }
+    } else {
+        androidx.compose.foundation.lazy.LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item { header() }
+            items(shown, key = { it.id }) { item ->
+                // Slides into place on add, remove and re-sort instead of jumping.
+                Box(Modifier.padding(horizontal = 16.dp).animateItem()) {
+                    DownloadCard(
+                        item = item,
+                        loader = loader,
+                        onClick = { onSelect(item.id) },
+                        onPause = { onPause(item.id) },
+                        onResume = { onResume(item.id) },
+                        onRetry = { onRetry(item.id) },
+                        onDelete = { onDelete(item.id) }
+                    )
                 }
             }
         }
     }
+}
+
+/** Makes this the full width of a list whose contentPadding is [inset] on each side. */
+private fun Modifier.bleed(inset: androidx.compose.ui.unit.Dp): Modifier = layout { measurable, constraints ->
+    val extra = (inset * 2).roundToPx()
+    val wide = constraints.maxWidth + extra
+    val placeable = measurable.measure(constraints.copy(minWidth = wide, maxWidth = wide))
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-extra / 2, 0) }
 }
 
 /**
@@ -982,6 +1006,7 @@ private fun DownloadsScreen(
  * a phone cut the last card in half with nothing to say there was more.
  */
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun SummaryBand(summary: TabSummary, onPauseAll: () -> Unit = {}, onResumeAll: () -> Unit = {}) {
     val free = remember(summary.completed) {
         runCatching { android.os.StatFs(android.os.Environment.getExternalStorageDirectory().path).availableBytes }.getOrDefault(-1L)
@@ -1034,7 +1059,7 @@ private fun SummaryBand(summary: TabSummary, onPauseAll: () -> Unit = {}, onResu
             // The panel's own keys: stop or start everything, where the speed is.
             if (summary.active > 0 || summary.paused > 0) {
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (summary.active > 0) PanelKey("PAUSE ALL", Lucide.Pause, accent = false, onClick = onPauseAll)
                     if (summary.paused > 0) PanelKey("RESUME ALL", Lucide.Play, accent = true, onClick = onResumeAll)
                 }
@@ -1445,7 +1470,7 @@ private fun SegmentRow(options: List<String>, selected: Int, onSelect: (Int) -> 
                     fontFamily = Mono,
                     fontWeight = FontWeight.Bold,
                     color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
             }
         }
@@ -1475,7 +1500,7 @@ private fun HardwareNavBar(tabs: List<NavTab>) {
     }
     Column(Modifier.fillMaxWidth().background(scheme.background)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(scheme.onSurface.copy(alpha = 0.18f)))
-        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(66.dp)) {
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().heightIn(min = 66.dp).height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
             tabs.forEach { tab ->
                 val tint = if (tab.selected) scheme.onSurface else scheme.onSurfaceVariant
                 Column(
@@ -1508,7 +1533,8 @@ private fun HardwareNavBar(tabs: List<NavTab>) {
                         fontWeight = if (tab.selected) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 10.5.sp,
                         color = tint,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1547,17 +1573,19 @@ private fun KeyNavBar(tabs: List<NavTab>) {
             .fillMaxWidth()
             .background(scheme.background)
             .navigationBarsPadding()
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .height(androidx.compose.foundation.layout.IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         tabs.forEach { tab ->
             Box(
                 Modifier
                     .weight(1f)
+                    .fillMaxHeight()
                     .keycap(accent = false, shape = MaterialTheme.shapes.medium, depth = 3.dp, onClick = tab.onClick)
                     .background(if (tab.selected) scheme.surface else scheme.surfaceVariant)
                     .border(1.dp, scheme.onSurface.copy(alpha = 0.12f), MaterialTheme.shapes.medium)
-                    .height(64.dp)
+                    .heightIn(min = 64.dp)
                     .semantics { selected = tab.selected }
             ) {
                 Row(Modifier.align(Alignment.TopEnd).padding(top = 7.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1581,7 +1609,8 @@ private fun KeyNavBar(tabs: List<NavTab>) {
                         fontWeight = if (tab.selected) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 10.sp,
                         color = scheme.onSurface,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
