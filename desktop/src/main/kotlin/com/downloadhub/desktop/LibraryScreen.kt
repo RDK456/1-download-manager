@@ -253,6 +253,9 @@ fun LibraryScreen(
      * resizable.
      */
     var detailPaneHeight by rememberSaveable { mutableStateOf(PANE_DEFAULT_DP) }
+    // Shut until a tab is clicked: selecting a row shows the tab strip and nothing more,
+    // so the list keeps the window.
+    var detailOpen by rememberSaveable { mutableStateOf(false) }
     /**
      * The column widths, kept for as long as the window is open.
      *
@@ -705,6 +708,8 @@ fun LibraryScreen(
                             item = detailItem,
                             tab = TorrentTab.forDownload(detailItem.isTorrent, detailTab),
                             onTab = { detailTab = it },
+                            expanded = detailOpen,
+                            onExpandedChange = { detailOpen = it },
                             // Never the list's room. The pane draws at a fixed height and
                             // the list takes what is left, so a short window - or a pane
                             // the user had once made taller - left the list with nothing

@@ -200,6 +200,17 @@ class UpdateAndRevealTest {
         )
     }
 
+    /** One click: a finished installer or delta download goes straight on to the install. */
+    @Test
+    fun updateNowInstallsWithoutASecondClick() {
+        val controller = File("src/main/kotlin/com/downloadhub/desktop/DesktopController.kt").readText()
+        val body = controller.substringAfter("fun downloadUpdate(").substringBefore("fun launchInstaller()")
+        assertTrue(
+            "both the delta path and the full installer path must start the install themselves:\n$body",
+            body.split("launchInstaller()").size - 1 >= 2
+        )
+    }
+
     /** A downloaded file the user cannot start should still be findable. */
     @Test
     fun aDownloadedUpdateCanBeFoundAfterwards() {

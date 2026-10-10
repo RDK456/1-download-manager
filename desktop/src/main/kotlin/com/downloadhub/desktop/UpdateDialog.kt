@@ -90,7 +90,7 @@ fun updateActionsFor(
 
     return when (update) {
         is UpdateCheck.Available -> UpdateActions(
-            confirm = "Download installer",
+            confirm = "Update now",
             onConfirm = UpdateAction.DOWNLOAD_INSTALLER,
             secondary = if (hasPortable) "Portable zip" else null,
             onSecondary = UpdateAction.DOWNLOAD_PORTABLE,
@@ -308,7 +308,7 @@ private fun summaryFor(state: DesktopUiState): String = when (val update = state
         } else {
             "${update.release.displayName} has been downloaded."
         }
-        "$headline\nYou are on ${state.appVersion}. The installer keeps your settings and downloads."
+        "$headline\nYou are on ${state.appVersion}. One click downloads it, installs it and restarts the app; your settings and downloads are kept."
     }
 
     is UpdateCheck.UpToDate -> "You are on ${update.version}, which is the newest release."

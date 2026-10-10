@@ -769,7 +769,9 @@ class DesktopController(
     }
 
     /**
-     * Fetches an update asset, then offers to run it.
+     * Fetches an update asset and, for an installer or a delta, installs it and restarts
+     * straight away: one click on Update now is the whole update. The portable zip is the
+     * exception, because it is unpacked beside the old copy and the user chooses when to switch.
      *
      * [portable] picks the zip instead of the .msi. Windows Installer fails on some
      * machines in a way nothing in the app can fix, and the zip needs no installer at
@@ -801,6 +803,7 @@ class DesktopController(
                     _updateProgress.value = -1
                     _downloadedUpdate.value = delta
                     refresh()
+                    launchInstaller()
                     return@launch
                 }
                 _updateProgress.value = 0
@@ -827,6 +830,9 @@ class DesktopController(
                     )
                 }
             refresh()
+            // Straight on to the install: no second button to find. A failure to start it is
+            // reported by launchInstaller and leaves the file where it is.
+            if (kind == UpdateKind.INSTALLER && _downloadedUpdate.value != null) launchInstaller()
         }
     }
 

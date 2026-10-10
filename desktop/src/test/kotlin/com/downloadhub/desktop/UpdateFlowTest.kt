@@ -143,7 +143,7 @@ class UpdateFlowTest {
             progress = -1,
             hasPortable = true
         )
-        assertEquals("Download installer", actions.confirm)
+        assertEquals("Update now", actions.confirm)
         assertEquals(UpdateAction.DOWNLOAD_INSTALLER, actions.onConfirm)
         assertEquals("Portable zip", actions.secondary)
         assertEquals(UpdateAction.DOWNLOAD_PORTABLE, actions.onSecondary)

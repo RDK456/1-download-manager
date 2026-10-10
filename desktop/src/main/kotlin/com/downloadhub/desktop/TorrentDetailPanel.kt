@@ -35,7 +35,9 @@ import com.downloadhub.core.DownloadItem
 import com.downloadhub.core.DownloadSource
 import com.downloadhub.core.DownloadStatus
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.OutlinedTextField
 import java.io.File
@@ -140,6 +142,12 @@ fun TorrentDetailPanel(
     onTab: (TorrentTab) -> Unit,
     paneHeight: Float,
     onPaneHeightChange: (Float) -> Unit,
+    /**
+     * Collapsed, the pane is only its tab strip and the list keeps the room. A click on a
+     * tab opens the pane on it; a click on the tab that is already open closes it again.
+     */
+    expanded: Boolean = true,
+    onExpandedChange: (Boolean) -> Unit = {},
     /** Sets one file's priority. Null where the pane cannot change it. */
     onFilePriority: ((Int, com.downloadhub.core.FilePriority) -> Unit)? = null,
     /** Bytes fetched per file, from the engine's last poll. */
@@ -152,7 +160,11 @@ fun TorrentDetailPanel(
     modifier: Modifier = Modifier
 ) {
     Column(modifier.fillMaxWidth()) {
-        PaneResizeHandle(height = paneHeight, onHeight = onPaneHeightChange)
+        if (expanded) {
+            PaneResizeHandle(height = paneHeight, onHeight = onPaneHeightChange)
+        } else {
+            HorizontalDivider(color = AppTheme.Palette.outlineVariant)
+        }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         // Only the tabs there is something behind, for this download.
         //
@@ -162,9 +174,16 @@ fun TorrentDetailPanel(
         TorrentTab.forDownload(item?.isTorrent == true).forEach { entry ->
             TorrentTabButton(
                 label = entry.label,
-                selected = entry == tab,
+                selected = expanded && entry == tab,
                 enabled = item != null,
-                onClick = { onTab(entry) }
+                onClick = {
+                    if (expanded && entry == tab) {
+                        onExpandedChange(false)
+                    } else {
+                        onTab(entry)
+                        onExpandedChange(true)
+                    }
+                }
             )
         }
             Spacer(Modifier.weight(1f))
@@ -186,9 +205,9 @@ fun TorrentDetailPanel(
             }
         }
 
-        HorizontalDivider(color = AppTheme.Palette.outlineVariant)
+        if (expanded) HorizontalDivider(color = AppTheme.Palette.outlineVariant)
 
-        Box(
+        if (expanded) Box(
             Modifier
                 .fillMaxWidth()
                 .height(paneHeight.dp)
@@ -231,7 +250,8 @@ private fun PaneResizeHandle(height: Float, onHeight: (Float) -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()
-            .height(7.dp)
+            .height(10.dp)
+            .pointerHoverIcon(PointerIcon(java.awt.Cursor(java.awt.Cursor.N_RESIZE_CURSOR)))
             .onPointerEvent(PointerEventType.Press) { event ->
                 val mouse = event.nativeEvent as? java.awt.event.MouseEvent
                 if (mouse != null && mouse.button == java.awt.event.MouseEvent.BUTTON1) {
@@ -264,6 +284,16 @@ private fun PaneResizeHandle(height: Float, onHeight: (Float) -> Unit) {
                     if (dragging) AppTheme.Palette.accent else AppTheme.Palette.outlineVariant
                 )
         )
+        // A grip, so the strip reads as something to take hold of rather than a rule.
+        Box(
+            Modifier
+                .width(40.dp)
+                .height(4.dp)
+                .background(
+                    if (dragging) AppTheme.Palette.accent else AppTheme.Palette.muted.copy(alpha = 0.6f),
+                    RoundedCornerShape(2.dp)
+                )
+        )
     }
 }
 
@@ -284,7 +314,7 @@ const val PANE_DEFAULT_DP = 300f
      * way round: a detail pane exists to say more about a download, not to replace
      * the list of them, and on a short window an uncapped pane took the lot.
      */
-    const val LIST_MIN_DP = 110f
+    const val LIST_MIN_DP = 260f
 
 @Composable
 private fun TorrentTabContent(

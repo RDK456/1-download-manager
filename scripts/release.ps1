@@ -154,7 +154,8 @@ try {
         if (-not $windowsVersion) {
             throw 'appVersion not found in gradle.properties; a desktop-only release needs it to compute the next version'
         }
-        $baseVersion = $windowsVersion
+        # The higher of the two: an Android-only release may already have used the next number.
+        $baseVersion = Compare-VersionNumbers $windowsVersion $oldVersion
     } elseif ($windowsVersion) {
         $baseVersion = Compare-VersionNumbers $windowsVersion $oldVersion
     }
