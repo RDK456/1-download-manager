@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -63,6 +64,16 @@ import com.downloadhub.core.TorrentSelection
 import com.downloadhub.core.TorrentStopCondition
 import java.io.File
 import java.util.Locale
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Magnet
+import com.composables.icons.lucide.File as LucideFile
 
 /**
  * Where a new download starts from.
@@ -370,29 +381,32 @@ fun AddDownloadDialog(
             .focusable()
     ) {
         // ---- the heading, with the buttons on the same line --------------------
-        Row(
-            Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (pending.isTorrent) "Add torrent" else "Add download",
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = DIALOG_PRIMARY
-                )
-                Text(
-                    // The fetched name when there is one: a magnet's `dn=` is a guess
-                    // its author typed, and the swarm's metadata is the real one.
-                    if (metainfo.name.isNotBlank()) metainfo.name else pending.name,
-                    fontSize = 12.sp,
-                    color = DIALOG_SECONDARY,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        // The fetched name when there is one: a magnet's `dn=` is a guess its author typed,
+        // and the swarm's metadata is the real one.
+        val shownName = if (metainfo.name.isNotBlank()) metainfo.name else pending.name
+        val category = remember(shownName) {
+            com.downloadhub.core.LinkParser.categoryFor(com.downloadhub.core.DownloadSource.HTTP, shownName)
         }
-        Spacer(Modifier.height(10.dp))
+        val isMagnet = pending.link.startsWith("magnet:", ignoreCase = true)
+        val kindLabel = when {
+            isMagnet -> "Magnet"
+            pending.isTorrent -> "Torrent"
+            else -> category.name.lowercase().replaceFirstChar { it.uppercase() }
+        }
+        val summary = when {
+            metainfo.files.isNotEmpty() ->
+                "${metainfo.files.size} files - ${DisplayFormat.bytes(metainfo.totalSize)}"
+            pending.isTorrent -> if (loading) "Reading the file list..." else "File list not loaded yet"
+            else -> hostOf(pending.link)
+        }
+        DownloadHeader(
+            heading = if (pending.isTorrent) "Add torrent" else "Add download",
+            title = shownName,
+            subtitle = summary,
+            icon = if (pending.isTorrent) Lucide.Magnet else iconFor(category),
+            badge = kindLabel
+        )
+        Spacer(Modifier.height(12.dp))
 
         // ---- two columns -------------------------------------------------------
         BoxWithConstraints(
@@ -418,77 +432,94 @@ fun AddDownloadDialog(
                     .verticalScroll(rememberScrollState())
                     .padding(end = 14.dp)
             ) {
-                SectionLabel("Save at")
-                // The Browse button beside the field, not under it: a folder you can
-                // only type into is a folder nobody chooses.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = directory,
-                        onValueChange = { directory = it },
-                        label = { Text("Folder", fontSize = 12.sp) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f).onEnter(canConfirm) { confirm() }
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    OutlinedButton(
-                        onClick = { onPickDirectory()?.let { directory = it.absolutePath } },
-                        modifier = Modifier.height(36.dp)
-                    ) { Text("Browse", fontSize = 12.sp) }
-                }
-                if (metainfo.files.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = folder,
-                        onValueChange = { folder = it },
-                        label = { Text("Content layout - folder name", fontSize = 12.sp) },
-                        singleLine = true,
-                        enabled = !metainfo.isSingleFile,
-                        modifier = Modifier.fillMaxWidth().onEnter(canConfirm) { confirm() }
-                    )
+                DialogCard {
+                    CardTitle("Save to")
+                    // The Browse button beside the field, not under it: a folder you can
+                    // only type into is a folder nobody chooses.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = directory,
+                            onValueChange = { directory = it },
+                            label = { Text("Folder", fontSize = 12.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).onEnter(canConfirm) { confirm() }
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        OutlinedButton(
+                            onClick = { onPickDirectory()?.let { directory = it.absolutePath } },
+                            modifier = Modifier.height(36.dp)
+                        ) { Text("Browse", fontSize = 12.sp) }
+                    }
+                    // Said before the download starts, not after it fails halfway.
+                    val free = freeSpace(directory)
+                    if (free != null) {
+                        val short = chosenSize > free
+                        Text(
+                            if (short) "Not enough room: needs ${DisplayFormat.bytes(chosenSize)}, ${DisplayFormat.bytes(free)} free"
+                            else "${DisplayFormat.bytes(free)} free on this drive",
+                            fontSize = 11.sp,
+                            color = if (short) AppTheme.Palette.error else DIALOG_SECONDARY,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    if (metainfo.files.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = folder,
+                            onValueChange = { folder = it },
+                            label = { Text("Content layout - folder name", fontSize = 12.sp) },
+                            singleLine = true,
+                            enabled = !metainfo.isSingleFile,
+                            modifier = Modifier.fillMaxWidth().onEnter(canConfirm) { confirm() }
+                        )
+                    }
                 }
 
                 if (pending.isTorrent) {
-                    SectionLabel("Torrent options")
-                    TickRow("Start torrent", startNow) { startNow = it }
-                    TickRow("Download in sequential order", sequential) { sequential = it }
-                    TickRow(
-                        "Download first and last pieces first",
-                        firstLastPieces
-                    ) { firstLastPieces = it }
+                    Spacer(Modifier.height(10.dp))
+                    DialogCard {
+                        CardTitle("Torrent options")
+                        TickRow("Start torrent", startNow) { startNow = it }
+                        TickRow("Download in sequential order", sequential) { sequential = it }
+                        TickRow(
+                            "Download first and last pieces first",
+                            firstLastPieces
+                        ) { firstLastPieces = it }
 
-                    Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "Stop condition",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp,
-                            color = DIALOG_PRIMARY,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        StopDropdown(selected = stopWhen, onChange = { stopWhen = it })
-                    }
-                    if (stopWhen > 1) {
-                        Spacer(Modifier.height(4.dp))
-                        OutlinedTextField(
-                            value = stopValue,
-                            onValueChange = { stopValue = it },
-                            label = {
-                                Text(
-                                    when (stopWhen) {
-                                        2 -> "Ratio (for example 2.0)"
-                                        3 -> "Amount in MB (for example 500)"
-                                        else -> "Minutes (for example 30)"
-                                    },
-                                    fontSize = 12.sp
-                                )
-                            },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Stop condition",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp,
+                                color = DIALOG_PRIMARY,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            StopDropdown(selected = stopWhen, onChange = { stopWhen = it })
+                        }
+                        if (stopWhen > 1) {
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = stopValue,
+                                onValueChange = { stopValue = it },
+                                label = {
+                                    Text(
+                                        when (stopWhen) {
+                                            2 -> "Ratio (for example 2.0)"
+                                            3 -> "Amount in MB (for example 500)"
+                                            else -> "Minutes (for example 30)"
+                                        },
+                                        fontSize = 12.sp
+                                    )
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
 
-                    Spacer(Modifier.height(12.dp))
-                    TorrentInformationBlock(metainfo)
+                    Spacer(Modifier.height(10.dp))
+                    DialogCard { TorrentInformationBlock(metainfo) }
                 }
             }
 
@@ -523,17 +554,58 @@ fun AddDownloadDialog(
                         color = DIALOG_SECONDARY
                     )
                 } else if (!pending.isTorrent) {
-                    Box(Modifier.onFocusChanged { typingRequest = it.hasFocus }) {
-                        HttpRequestFields(
-                            headers = headersText,
-                            onHeaders = { headersText = it },
-                            cookies = cookies,
-                            onCookies = { cookies = it },
-                            username = username,
-                            onUsername = { username = it },
-                            password = password,
-                            onPassword = { password = it }
-                        )
+                    // What is about to be fetched, then the request fields tucked away: they are
+                    // for the few sites that refuse a bare link, not something to read every time.
+                    var showRequest by remember(pending.link) { mutableStateOf(false) }
+                    Column(Modifier.fillMaxSize()) {
+                        DialogCard {
+                            CardTitle("Details")
+                            InfoRow("Link", pending.link.take(400))
+                            InfoRow("Site", hostOf(pending.link))
+                            InfoRow("Type", kindLabel)
+                            InfoRow("Saved as", File(directory.trim(), shownName).path)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    showRequest = !showRequest
+                                    // The fields leave with their focus; Enter must mean OK again.
+                                    if (!showRequest) typingRequest = false
+                                }
+                                .padding(vertical = 6.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (showRequest) Lucide.ChevronDown else Lucide.ChevronRight,
+                                contentDescription = null,
+                                tint = DIALOG_SECONDARY,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Advanced - headers, cookies and login",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = DIALOG_PRIMARY
+                            )
+                        }
+                        if (showRequest) {
+                            Box(Modifier.weight(1f).onFocusChanged { typingRequest = it.hasFocus }) {
+                                HttpRequestFields(
+                                    headers = headersText,
+                                    onHeaders = { headersText = it },
+                                    cookies = cookies,
+                                    onCookies = { cookies = it },
+                                    username = username,
+                                    onUsername = { username = it },
+                                    password = password,
+                                    onPassword = { password = it }
+                                )
+                            }
+                        }
                     }
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -587,19 +659,31 @@ fun AddDownloadDialog(
         }
 
         // ---- the buttons -------------------------------------------------------
+        HorizontalDivider(color = AppTheme.Palette.outlineVariant)
         Row(
             Modifier
                 .fillMaxWidth()
+                .background(AppTheme.Palette.raised)
                 .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 14.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Text(
+                if (metainfo.files.isNotEmpty()) "${selected.value.size} of ${metainfo.files.size} files selected" else "",
+                fontSize = 11.sp,
+                color = DIALOG_SECONDARY,
+                modifier = Modifier.weight(1f)
+            )
             TextButton(onClick = onDismiss) { Text("Cancel", color = DIALOG_SECONDARY) }
             Spacer(Modifier.width(8.dp))
             // Disabled rather than silently doing nothing when nothing is selected:
             // a button that looks live and then adds nothing is the bug this dialog
             // was built to avoid.
-            Button(onClick = { confirm() }, enabled = canConfirm) { Text(if (pending.isTorrent) "OK" else "Add") }
+            Button(
+                onClick = { confirm() },
+                enabled = canConfirm,
+                modifier = Modifier.height(38.dp).widthIn(min = 96.dp)
+            ) { Text(if (pending.isTorrent) "OK" else "Add download", fontWeight = FontWeight.SemiBold) }
         }
     }
 }
@@ -766,3 +850,104 @@ internal fun clipboardLink(): String? = runCatching {
         .getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
     text?.trim()?.takeIf { it.length < 4096 && !it.contains('\n') && LinkParser.isFetchable(it, null) }
 }.getOrNull()
+
+// ---- the look: cards, a header with a type icon, and the few helpers they need ----------
+
+/** A rounded, raised panel that groups one block of options. */
+@Composable
+private fun DialogCard(content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(10.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(AppTheme.Palette.raised)
+            .border(1.dp, AppTheme.Palette.outlineVariant, shape)
+            .padding(12.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun CardTitle(text: String) {
+    Text(
+        text.uppercase(Locale.US),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.sp,
+        color = DIALOG_SECONDARY,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+}
+
+/** The icon tile, name, source line and type badge across the top of the window. */
+@Composable
+private fun DownloadHeader(heading: String, title: String, subtitle: String, icon: ImageVector, badge: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(46.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(AppTheme.Palette.accentContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = AppTheme.Palette.onAccentContainer, modifier = Modifier.size(24.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                heading.uppercase(Locale.US),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+                color = DIALOG_SECONDARY
+            )
+            Text(
+                title,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
+                color = DIALOG_PRIMARY,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (subtitle.isNotBlank()) {
+                Text(subtitle, fontSize = 12.sp, color = DIALOG_SECONDARY, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            badge,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = AppTheme.Palette.onAccentContainer,
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(AppTheme.Palette.accentContainer)
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+        )
+    }
+}
+
+private fun iconFor(category: com.downloadhub.core.DownloadCategory): ImageVector = when (category) {
+    com.downloadhub.core.DownloadCategory.VIDEO -> DlmIcons.Videos
+    com.downloadhub.core.DownloadCategory.AUDIO -> DlmIcons.Music
+    com.downloadhub.core.DownloadCategory.IMAGE -> DlmIcons.Pictures
+    com.downloadhub.core.DownloadCategory.PROGRAM -> DlmIcons.Programs
+    com.downloadhub.core.DownloadCategory.COMPRESSED, com.downloadhub.core.DownloadCategory.ARCHIVE -> DlmIcons.Compressed
+    com.downloadhub.core.DownloadCategory.DOCUMENT -> DlmIcons.Documents
+    else -> Lucide.LucideFile
+}
+
+/** The site a link points at, or the link itself when it has no host (a local file). */
+internal fun hostOf(link: String): String =
+    runCatching { java.net.URI(link.trim()).host }.getOrNull()?.removePrefix("www.") ?: link.take(60)
+
+/** Free bytes on the drive the folder is (or would be) on; null when it cannot be told. */
+internal fun freeSpace(path: String): Long? {
+    var dir: File? = path.trim().takeIf { it.isNotEmpty() }?.let { File(it) }
+    while (dir != null && !dir.exists()) dir = dir.parentFile
+    return dir?.usableSpace?.takeIf { it > 0 }
+}

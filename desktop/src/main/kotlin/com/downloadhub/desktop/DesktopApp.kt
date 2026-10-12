@@ -93,6 +93,7 @@ fun SettingsDialog(
     var connections by remember { mutableStateOf(settings.connectionsPerDownload.toString()) }
     var retries by remember { mutableStateOf(settings.maxRetries.toString()) }
     var closeToTray by remember { mutableStateOf(settings.closeToTray) }
+    var startMinimised by remember { mutableStateOf(settings.startMinimised) }
     // Read from the registry, which is the only record of it (see AutoStart).
     val autoStartAvailable = remember { AutoStart.available() }
     val autoStartWas = remember { AutoStart.isEnabled() }
@@ -200,6 +201,11 @@ fun SettingsDialog(
                             TickRow("Delete the cache when an unfinished download is removed", deleteCache) { deleteCache = it }
                             SectionHeading("Window")
                             TickRow("Close to the system tray", closeToTray) { closeToTray = it }
+                            TickRow(
+                                "Start minimized",
+                                startMinimised,
+                                detail = "Opens in the taskbar instead of over what you are doing."
+                            ) { startMinimised = it }
                             TickRow(
                                 "Start with Windows",
                                 autoStart,
@@ -432,6 +438,7 @@ fun SettingsDialog(
                         speedLimitBytesPerSecond = (speed.toLongOrNull() ?: 0L) * 1024L,
                         maxRetries = retries.toIntOrNull()?.coerceIn(0, 5) ?: 2,
                         closeToTray = closeToTray,
+                        startMinimised = startMinimised,
                         // Trimmed: a trailing space in a path is a folder that does not exist.
                         cacheDir = cache.trim(),
                         deleteCacheWhenRemoved = deleteCache,

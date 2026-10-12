@@ -132,8 +132,12 @@ fun main(args: Array<String>) {
                 palette = ThemePalette.fromValue(state.settings.themePalette),
                 mode = themeMode
             ) {
-            // Started by Windows at sign-in (AutoStart): open minimized, not over what the user is doing.
-            val windowState = rememberWindowState(size = DpSize(1180.dp, 720.dp), isMinimized = AutoStart.SWITCH in args)
+            // Started by Windows at sign-in (AutoStart), or asked for in Settings: open minimized,
+            // not over what the user is doing. Read once, so toggling it never hides a live window.
+            val windowState = rememberWindowState(
+                size = DpSize(1180.dp, 720.dp),
+                isMinimized = AutoStart.SWITCH in args || controller.settings.value.startMinimised
+            )
             var visible by remember { mutableStateOf(true) }
             // The link-entry step, which only exists to collect a link before the
             // pre-download dialog. It used to be the only step, and when that dialog was
@@ -211,6 +215,21 @@ fun main(args: Array<String>) {
             val failedNow = coreItems.any { it.status == com.downloadhub.core.DownloadStatus.FAILED }
             LaunchedEffect(activeNow, speedNow, progressNow) {
                 tray.update(activeNow, speedNow, progressNow?.percent)
+            }
+            // A download that finishes while the window is in the tray or minimized is easy to
+            // miss, so say so. Downloads already finished at launch are not announced.
+            val announced = remember { mutableSetOf<String>() }
+            var announcedSeeded by remember { mutableStateOf(false) }
+            LaunchedEffect(state.items) {
+                val done = state.items.filter { it.status == com.downloadhub.core.DownloadStatus.COMPLETED }
+                val fresh = done.filter { announced.add(it.id) }
+                if (announcedSeeded && fresh.isNotEmpty() && (!visible || windowState.isMinimized)) {
+                    tray.notify(
+                        if (fresh.size == 1) "Download complete" else "${fresh.size} downloads complete",
+                        fresh.joinToString(", ") { it.fileName }.take(120)
+                    )
+                }
+                announcedSeeded = true
             }
             val windowTitle = progressNow?.let { p ->
                 val speed = com.downloadhub.core.DisplayFormat.speed(speedNow)

@@ -98,3 +98,25 @@ async function renderMedia() {
 }
 
 renderMedia();
+
+// ---- switch the integration off for this site -----------------------------------------
+async function setupSite() {
+  const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
+  let host = "";
+  try {
+    host = new URL(tab.url).hostname.replace(/^www./, "");
+  } catch (error) {}
+  if (!host || !/^https?:/i.test(tab.url)) return;
+  const stored = await ext.storage.local.get(["excludedSites"]);
+  const sites = stored.excludedSites || [];
+  document.getElementById("siteName").textContent = host;
+  const box = document.getElementById("site");
+  box.checked = sites.includes(host);
+  document.getElementById("siteRow").hidden = false;
+  box.addEventListener("change", async () => {
+    const now = (await ext.storage.local.get(["excludedSites"])).excludedSites || [];
+    const next = box.checked ? [...new Set([...now, host])] : now.filter((s) => s !== host);
+    await ext.storage.local.set({ excludedSites: next });
+  });
+}
+setupSite();

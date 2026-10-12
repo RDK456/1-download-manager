@@ -88,6 +88,11 @@ class SystemTrayIcon(
         }
     }
 
+    /** A balloon from the tray icon; clicking it opens the window, like the icon itself. */
+    fun notify(title: String, text: String) {
+        runCatching { trayIcon?.displayMessage(title, text, TrayIcon.MessageType.INFO) }
+    }
+
     fun remove() {
         trayIcon?.let { runCatching { SystemTray.getSystemTray().remove(it) } }
         trayIcon = null

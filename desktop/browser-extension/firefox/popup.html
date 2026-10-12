@@ -48,12 +48,15 @@
       .media .meta { font: 11px ui-monospace, Consolas, monospace; color: #b5b1a4; margin-top: 2px; }
       .media button { padding: 5px 9px; font-size: 12px; }
       .empty { color: #817d71; font-size: 12px; }
+      [hidden] { display: none !important; }
       details summary { cursor: pointer; color: #b5b1a4; margin-top: 16px; }
     </style>
   </head>
   <body>
     <h1>1 download manager</h1>
     <div id="state">checking the app…</div>
+
+    <label class="row" id="siteRow" hidden><input id="site" type="checkbox" /> <span>Not on <b id="siteName"></b></span></label>
 
     <h2>MEDIA ON THIS PAGE</h2>
     <div id="media"><div class="empty">Play the video and its streams show up here.</div></div>

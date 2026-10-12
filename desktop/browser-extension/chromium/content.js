@@ -9,10 +9,30 @@
 const MEDIA_EXTENSIONS = [
   ".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".flv", ".mp3", ".m4a",
   ".flac", ".wav", ".opus", ".aac", ".zip", ".rar", ".7z", ".tar", ".gz",
-  ".iso", ".apk", ".exe", ".msi", ".torrent",
+  ".iso", ".apk", ".exe", ".msi", ".torrent", ".dmg", ".pkg", ".deb", ".rpm", ".appimage",
+  ".msix", ".appx", ".jar", ".img", ".bin", ".cab", ".xz", ".bz2", ".zst", ".tgz", ".001",
+  ".mpg", ".mpeg", ".wmv", ".3gp", ".ogg", ".ogv", ".wma",
 ];
 
 let appAvailable = false;
+// Hosts the user switched the integration off for (popup > "Not on this site").
+let siteExcluded = false;
+const api = typeof browser !== "undefined" ? browser : chrome;
+
+function hostExcluded(list) {
+  const host = location.hostname.replace(/^www./, "");
+  return (list || []).some((site) => host === site || host.endsWith("." + site));
+}
+api.storage.local.get(["excludedSites"]).then((stored) => {
+  siteExcluded = hostExcluded(stored.excludedSites);
+  if (siteExcluded) placeButtons();
+}).catch(() => {});
+api.storage.onChanged.addListener((changes) => {
+  if (changes.excludedSites) {
+    siteExcluded = hostExcluded(changes.excludedSites.newValue);
+    placeButtons();
+  }
+});
 
 function looksLikeFile(href) {
   if (!href) return false;
@@ -64,31 +84,43 @@ function notify(text) {
   setTimeout(() => toast.remove(), 2600);
 }
 
-async function handOff(url, fileName) {
-  const result = await chrome.runtime.sendMessage({
-    type: "queue-link",
-    url: url,
-    referer: location.href,
-    fileName: fileName || "",
-    review: true, // the app shows its Add Download window before anything is queued
-  });
-  if (result && result.ok) {
-    notify("Queued in 1 download manager");
-  } else {
-    notify("1 download manager: " + ((result && result.reason) || "not connected"));
+/** Asks the app to take a link; false (never a throw) when it could not, so the caller can fall back. */
+async function sendLink(url, extra) {
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: "queue-link",
+      url: url,
+      referer: location.href,
+      review: true, // the app shows its Add Download window before anything is queued
+      ...extra,
+    });
+    return result || { ok: false, reason: "not connected" };
+  } catch (error) {
+    // The extension was reloaded under this page, or its worker could not be reached.
+    return { ok: false, reason: "extension restarted - reload the page" };
   }
 }
+
+async function handOff(url, fileName) {
+  const result = await sendLink(url, { fileName: fileName || "" });
+  notify(result.ok ? "Opened in 1 download manager" : "1 download manager: " + (result.reason || "not connected"));
+  return result.ok;
+}
+
+// The one anchor whose click is being replayed for the browser to handle after a failed hand-off.
+let replaying = null;
 
 document.addEventListener(
   "click",
   (event) => {
     if (event.defaultPrevented || event.button !== 0) return;
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (siteExcluded) return;
 
-    const anchor = event.target instanceof Element
-      ? event.target.closest("a[href]")
-      : null;
-    if (!anchor) return;
+    // composedPath sees through shadow DOM, where event.target is only the shadow host.
+    const path = event.composedPath ? event.composedPath() : [event.target];
+    const anchor = path.find((node) => node instanceof Element && node.matches("a[href]")) || null;
+    if (!anchor || anchor === replaying) return;
     if (!isDownloadLink(anchor)) return;
     // A magnet handed to the browser is a torrent we can take over.
     const href = anchor.getAttribute("href") || "";
@@ -102,7 +134,13 @@ document.addEventListener(
     event.preventDefault();
     event.stopPropagation();
     const name = anchor.getAttribute("download") || "";
-    handOff(anchor.href, name);
+    handOff(anchor.href, name).then((ok) => {
+      if (ok) return;
+      // Never leave a dead link: give the click back to the browser.
+      replaying = anchor;
+      anchor.click();
+      replaying = null;
+    });
   },
   true
 );
@@ -170,12 +208,7 @@ function buttonFor(player) {
   key.addEventListener("click", async (event) => {
     event.stopPropagation();
     // Opens the app's Add Download window for this video; nothing is queued until it is confirmed there.
-    const result = await chrome.runtime.sendMessage({
-      type: "queue-link",
-      url: linkFor(player),
-      referer: location.href,
-      review: true,
-    });
+    const result = await sendLink(linkFor(player), {});
     notify(result && result.ok
       ? "Opened in 1 download manager"
       : "1 download manager: " + ((result && result.reason) || "not connected"));
@@ -186,7 +219,9 @@ function buttonFor(player) {
 }
 
 function placeButtons() {
-  if (!appAvailable) {
+  // A small frame is usually an ad or a widget; an embedded player is big enough to be the point.
+  const tooSmallFrame = window !== window.top && (innerWidth < 400 || innerHeight < 225);
+  if (!appAvailable || siteExcluded || tooSmallFrame) {
     buttons.forEach((wrap) => wrap.remove());
     buttons.clear();
     return;

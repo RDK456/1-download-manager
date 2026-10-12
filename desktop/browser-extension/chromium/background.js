@@ -102,13 +102,15 @@ async function sendToApp(url, options = {}) {
 // The page asks for the current tab's links, and for any link to be queued.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "queue-link") {
-    sendToApp(message.url, {
+    // Signed-in downloads need the site's cookies, which only this side can read.
+    (/^https?:/i.test(message.url || "") ? cookieHeaderFor(message.url) : Promise.resolve("")).then((cookies) => sendToApp(message.url, {
       referer: message.referer,
       fileName: message.fileName,
+      cookies,
       review: message.review,
       audioOnly: message.audioOnly,
       height: message.height,
-    }).then(
+    })).then(
       sendResponse
     );
     return true; // keep the channel open for the async reply
@@ -151,11 +153,23 @@ async function cookieHeaderFor(url) {
   }
 }
 
+/** True when the address belongs to a site the user switched the integration off for. */
+function siteIsExcluded(address, sites) {
+  let host = "";
+  try {
+    host = new URL(address).hostname.replace(/^www./, "");
+  } catch (error) {
+    return false;
+  }
+  return (sites || []).some((site) => host === site || host.endsWith("." + site));
+}
+
 downloadsApi.downloads.onCreated.addListener(async (item) => {
-  const { autoCapture } = await downloadsApi.storage.local.get(["autoCapture"]);
+  const { autoCapture, excludedSites } = await downloadsApi.storage.local.get(["autoCapture", "excludedSites"]);
   if (autoCapture === false) return;
   if (item.byExtensionId) return; // started by an extension, possibly on purpose
   const url = item.finalUrl || item.url || "";
+  if (siteIsExcluded(item.referrer, excludedSites) || siteIsExcluded(url, excludedSites)) return;
   // blob:, data: and file: exist only inside this browser; the app cannot fetch them.
   if (!/^https?:/i.test(url)) return;
   const name = (item.filename || "").split(/[\/]/).pop();
@@ -236,6 +250,22 @@ async function pairIfNeeded() {
 // segments are skipped: the button on the player handles YouTube properly.
 const mediaApi = typeof browser !== "undefined" ? browser : chrome;
 const tabMedia = new Map(); // tabId -> [{ url, kind, size }]
+// The worker is stopped after ~30s idle and its memory goes with it, so the list is mirrored
+// into session storage (cleared when the browser closes) and reloaded on wake-up.
+const mediaStore = mediaApi.storage.session;
+const mediaReady = (mediaStore ? mediaStore.get("media") : Promise.resolve({}))
+  .then((stored) => {
+    for (const [id, list] of Object.entries((stored && stored.media) || {})) {
+      if (!tabMedia.has(Number(id))) tabMedia.set(Number(id), list);
+    }
+  })
+  .catch(() => {});
+function saveMedia() {
+  try {
+    const done = mediaStore && mediaStore.set({ media: Object.fromEntries(tabMedia) });
+    if (done && done.catch) done.catch(() => {});
+  } catch (error) {}
+}
 const MEDIA_TYPE = /^(video|audio)\/|mpegurl|dash\+xml/i;
 const MEDIA_PATH = /\.(m3u8|mpd|mp4|m4v|webm|mkv|mov|mp3|m4a|aac|flac|ogg|oga|opus|wav)$/i;
 const STREAM = /mpegurl|dash\+xml|\.m3u8$|\.mpd$/i;
@@ -252,7 +282,8 @@ function updateBadge(tabId) {
 }
 
 mediaApi.webRequest.onResponseStarted.addListener(
-  (details) => {
+  async (details) => {
+    await mediaReady;
     if (details.tabId < 0 || !/^https?:/i.test(details.url)) return;
     let url;
     try {
@@ -274,6 +305,7 @@ mediaApi.webRequest.onResponseStarted.addListener(
     const kind = stream ? "Stream" : /^audio\//i.test(type) || /\.(mp3|m4a|aac|flac|ogg|oga|opus|wav)$/i.test(url.pathname) ? "Audio" : "Video";
     list.push({ url: details.url, kind, size });
     tabMedia.set(details.tabId, list.slice(-25));
+    saveMedia();
     updateBadge(details.tabId);
   },
   { urls: ["<all_urls>"], types: ["media", "xmlhttprequest", "other"] },
@@ -283,16 +315,19 @@ mediaApi.webRequest.onResponseStarted.addListener(
 mediaApi.tabs.onUpdated.addListener((tabId, change) => {
   // A new page in the tab: what the last one played no longer applies.
   if (change.status === "loading" && change.url) {
-    tabMedia.delete(tabId);
-    updateBadge(tabId);
+    mediaReady.then(() => {
+      tabMedia.delete(tabId);
+      saveMedia();
+      updateBadge(tabId);
+    });
   }
 });
-mediaApi.tabs.onRemoved.addListener((tabId) => tabMedia.delete(tabId));
+mediaApi.tabs.onRemoved.addListener((tabId) => mediaReady.then(() => { tabMedia.delete(tabId); saveMedia(); }));
 
 mediaApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message && message.type === "page-media") {
-    sendResponse(tabMedia.get(message.tabId) || []);
-    return false;
+    mediaReady.then(() => sendResponse(tabMedia.get(message.tabId) || []));
+    return true;
   }
   return false;
 });
