@@ -552,7 +552,7 @@ fun main(args: Array<String>) {
                                 LaunchedEffect(window) {
                                     window.iconImages = AppArtwork.windowIcons()
                                     window.minimumSize = java.awt.Dimension(520, 300)
-                                    raiseAboveBrowser(window)
+                                    ForegroundWindow.raise(window)
                                 }
                                 QuickAddDialog(
                                     pending = pending,
@@ -594,7 +594,7 @@ fun main(args: Array<String>) {
                                 // resizable window needs a point where "smaller" stops
                                 // meaning "worse".
                                 window.minimumSize = PRE_DOWNLOAD_MINIMUM_SIZE
-                                raiseAboveBrowser(window)
+                                ForegroundWindow.raise(window)
                             }
                             AddDownloadDialog(
                                 pending = pending,
@@ -658,17 +658,4 @@ private fun showTaskbarProgress(window: java.awt.Window, progress: com.downloadh
             }
         )
     }
-}
-
-/**
- * Brings a freshly opened dialog in front of whatever the user is looking at, normally the
- * browser that caught the download. Windows refuses a plain toFront() from a process that
- * is not in the foreground, and leaves the window behind the browser; briefly making it
- * always-on-top is the one thing that is honoured.
- */
-private fun raiseAboveBrowser(window: java.awt.Window) {
-    window.isAlwaysOnTop = true
-    window.toFront()
-    window.requestFocus()
-    window.isAlwaysOnTop = false
 }
