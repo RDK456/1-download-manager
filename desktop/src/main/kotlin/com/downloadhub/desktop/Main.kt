@@ -201,7 +201,6 @@ fun main(args: Array<String>) {
                     val arrived = IntakeChannel.take()
                     if (arrived.isNotEmpty()) {
                         controller.queueTargets(arrived)
-                        showWindow()
                     }
                 }
             }
@@ -380,29 +379,6 @@ fun main(args: Array<String>) {
                     // Hiding to the tray disposes the Window and these with it, which
                     // is the behaviour wanted anyway: a dialog cannot be used while
                     // its window is off screen.
-                    // Every route into the app - a `.torrent` from Explorer, a magnet from
-                    // a browser, a link from a second copy - comes through here and is
-                    // shown in the pre-download dialog. It used to take a File and so
-                    // could only carry a `.torrent` off disk, which meant a magnet from
-                    // the browser had nowhere to go and was queued unseen.
-                    LaunchedEffect(Unit) {
-                        controller.onDownloadNeedsReview = { link ->
-                            val pending = PendingDownload.forLink(link)
-                            if (pending == null) {
-                                problem = "That cannot be downloaded: $link"
-                            } else {
-                                pendingAdd = pending
-                            }
-                            // Raised whether or not it parsed. A link that cannot be read
-                            // has to say so, and the message would otherwise sit behind a
-                            // window the user cannot see.
-                            showWindow()
-                        }
-                        // Only now that the callback exists can a link be shown in the
-                        // dialog, so the command line and any hand-over are acted on
-                        // after this rather than before.
-                        controller.queueTargets(startupTargets)
-                    }
 
                     if (showSetup) {
                         SetupDialog(
@@ -456,111 +432,6 @@ fun main(args: Array<String>) {
                         )
                     }
 
-                    /**
-                     * The pre-download window is a real window, not a dialog.
-                     *
-                     * It has to be. The things asked for - click outside and it stays,
-                     * drag it somewhere, drag it bigger, maximise it - are all things a
-                     * hand-drawn panel over the main window cannot do, because it is part
-                     * of that window and shares its bounds. An OS window gets them from
-                     * the window manager, which already knows how.
-                     *
-                     * It is a `Window` rather than a `Dialog`, so it brings its own compose
-                     * scene and needs none from the main one. Opening the magnet's file
-                     * list raises the *main* window, not this one, so it comes forward to
-                     * be seen.
-                     */
-                    pendingAdd?.let { pending ->
-                        // A video goes to the YouTube section instead of this window.
-                        //
-                        // Everything this window offers is about a torrent: which files out of
-                        // forty, what to call the content folder, when to stop seeding. A video
-                        // has no file list and no share ratio, so those options would be a pane
-                        // of disabled controls - and everything a video does need, the
-                        // listing and every quality the extractor offers, lives in the
-                        // section. The link travels with it, already loading.
-                        if (LinkParser.sourceFor(pending.link) == DownloadSource.YOUTUBE) {
-                            pendingAdd = null
-                            youTubePrefill = pending.link
-                            return@let
-                        }
-                        // A plain link has no files to choose: AB Download Manager's short
-                        // window - category, folder, name, size - rather than the torrent one.
-                        if (!pending.isTorrent) {
-                            androidx.compose.ui.window.DialogWindow(
-                                onCloseRequest = { pendingAdd = null },
-                                title = "Add Download - 1 download manager",
-                                state = quickAddState,
-                                resizable = true
-                            ) {
-                                LaunchedEffect(window) {
-                                    window.iconImages = AppArtwork.windowIcons()
-                                    window.minimumSize = java.awt.Dimension(520, 300)
-                                }
-                                QuickAddDialog(
-                                    pending = pending,
-                                    root = state.settings.downloadDirFile(),
-                                    rules = state.settings.categoryRules.map { it.toRule() },
-                                    onPickDirectory = { pickFolder(File(state.settings.downloadDir)) },
-                                    onExpand = { open ->
-                                        quickAddState.size = DpSize(640.dp, if (open) 660.dp else 420.dp)
-                                    },
-                                    onConfirm = { request ->
-                                        pendingAdd = null
-                                        controller.actions.addPrepared(request)
-                                    },
-                                    onDismiss = { pendingAdd = null }
-                                )
-                            }
-                            return@let
-                        }
-                        Window(
-                            onCloseRequest = { pendingAdd = null },
-                            title = if (pending.isTorrent) {
-                                "Add torrent - 1 download manager"
-                            } else {
-                                "Add download - 1 download manager"
-                            },
-                            state = preDownloadState,
-                            resizable = true
-                        ) {
-                            // The same icon as the main window, set explicitly rather than
-                            // left to the exe's resources. Set here and not inherited, this
-                            // window carried Compose's own default - a running Java cup -
-                            // while the app it belongs to had an icon everywhere else.
-                            LaunchedEffect(window) {
-                                window.iconImages = AppArtwork.windowIcons()
-                                // A floor, and a deliberate one. The window is free to be
-                                // resized to any size at all, and below about this the two
-                                // columns have nothing to give each other: the options lose
-                                // the file list and the file list loses its headings. A
-                                // resizable window needs a point where "smaller" stops
-                                // meaning "worse".
-                                window.minimumSize = PRE_DOWNLOAD_MINIMUM_SIZE
-                            }
-                            AddDownloadDialog(
-                                pending = pending,
-                                defaultDirectory = state.settings.downloadDir,
-                                deleteCacheWhenRemoved = state.settings.deleteCacheWhenRemoved,
-                                // The window is the parent, so the chooser is owned by the
-                                // app and appears in front of it rather than behind.
-                                onPickDirectory = { pickFolder(File(state.settings.downloadDir)) },
-                                // A magnet carries no file list. It has one - in the
-                                // swarm's metadata, a few kilobytes away - and until it was
-                                // asked for, a magnet was the one kind of download where
-                                // you could not see what you were about to get, take three
-                                // files out of forty, or say no.
-                                onLoadMetadata = controller.actions.readMagnetMetadata,
-                                onConfirm = { request ->
-                                    // Close first: leaving the window open while the row
-                                    // appears underneath reads as two things at once.
-                                    pendingAdd = null
-                                    controller.actions.addPrepared(request)
-                                },
-                                onDismiss = { pendingAdd = null }
-                            )
-                        }
-                    }
 
                     problem?.let { reason ->
                         TorrentProblemDialog(message = reason) { problem = null }
@@ -610,6 +481,139 @@ fun main(args: Array<String>) {
                     }
                 }
             }
+
+            // App level, not inside the main Window: the window is not composed while it is in
+            // the tray, and a download caught by the browser must still be reviewable then.
+                    // Every route into the app - a `.torrent` from Explorer, a magnet from
+                    // a browser, a link from a second copy - comes through here and is
+                    // shown in the pre-download dialog. It used to take a File and so
+                    // could only carry a `.torrent` off disk, which meant a magnet from
+                    // the browser had nowhere to go and was queued unseen.
+                    LaunchedEffect(Unit) {
+                        controller.onDownloadNeedsReview = { link ->
+                            val pending = PendingDownload.forLink(link)
+                            if (pending == null) {
+                                problem = "That cannot be downloaded: $link"
+                                // The message lives in the main window, so raise it; a
+                                // parsed link gets its own dialog and leaves the tray alone.
+                                showWindow()
+                            } else {
+                                pendingAdd = pending
+                            }
+                        }
+                        // Only now that the callback exists can a link be shown in the
+                        // dialog, so the command line and any hand-over are acted on
+                        // after this rather than before.
+                        controller.queueTargets(startupTargets)
+                    }
+
+                    /**
+                     * The pre-download window is a real window, not a dialog.
+                     *
+                     * It has to be. The things asked for - click outside and it stays,
+                     * drag it somewhere, drag it bigger, maximise it - are all things a
+                     * hand-drawn panel over the main window cannot do, because it is part
+                     * of that window and shares its bounds. An OS window gets them from
+                     * the window manager, which already knows how.
+                     *
+                     * It is a `Window` rather than a `Dialog`, so it brings its own compose
+                     * scene and needs none from the main one. Opening the magnet's file
+                     * list raises the *main* window, not this one, so it comes forward to
+                     * be seen.
+                     */
+                    pendingAdd?.let { pending ->
+                        // A video goes to the YouTube section instead of this window.
+                        //
+                        // Everything this window offers is about a torrent: which files out of
+                        // forty, what to call the content folder, when to stop seeding. A video
+                        // has no file list and no share ratio, so those options would be a pane
+                        // of disabled controls - and everything a video does need, the
+                        // listing and every quality the extractor offers, lives in the
+                        // section. The link travels with it, already loading.
+                        if (LinkParser.sourceFor(pending.link) == DownloadSource.YOUTUBE) {
+                            pendingAdd = null
+                            youTubePrefill = pending.link
+                            return@let
+                        }
+                        // A plain link has no files to choose: AB Download Manager's short
+                        // window - category, folder, name, size - rather than the torrent one.
+                        if (!pending.isTorrent) {
+                            androidx.compose.ui.window.DialogWindow(
+                                onCloseRequest = { pendingAdd = null },
+                                title = "Add Download - 1 download manager",
+                                state = quickAddState,
+                                resizable = true
+                            ) {
+                                LaunchedEffect(window) {
+                                    window.iconImages = AppArtwork.windowIcons()
+                                    window.minimumSize = java.awt.Dimension(520, 300)
+                                    window.toFront()
+                                }
+                                QuickAddDialog(
+                                    pending = pending,
+                                    root = state.settings.downloadDirFile(),
+                                    rules = state.settings.categoryRules.map { it.toRule() },
+                                    onPickDirectory = { pickFolder(File(state.settings.downloadDir)) },
+                                    onExpand = { open ->
+                                        quickAddState.size = DpSize(640.dp, if (open) 660.dp else 420.dp)
+                                    },
+                                    onConfirm = { request ->
+                                        pendingAdd = null
+                                        controller.actions.addPrepared(request)
+                                    },
+                                    onDismiss = { pendingAdd = null }
+                                )
+                            }
+                            return@let
+                        }
+                        Window(
+                            onCloseRequest = { pendingAdd = null },
+                            title = if (pending.isTorrent) {
+                                "Add torrent - 1 download manager"
+                            } else {
+                                "Add download - 1 download manager"
+                            },
+                            state = preDownloadState,
+                            resizable = true
+                        ) {
+                            // The same icon as the main window, set explicitly rather than
+                            // left to the exe's resources. Set here and not inherited, this
+                            // window carried Compose's own default - a running Java cup -
+                            // while the app it belongs to had an icon everywhere else.
+                            LaunchedEffect(window) {
+                                window.iconImages = AppArtwork.windowIcons()
+                                // A floor, and a deliberate one. The window is free to be
+                                // resized to any size at all, and below about this the two
+                                // columns have nothing to give each other: the options lose
+                                // the file list and the file list loses its headings. A
+                                // resizable window needs a point where "smaller" stops
+                                // meaning "worse".
+                                window.minimumSize = PRE_DOWNLOAD_MINIMUM_SIZE
+                                window.toFront()
+                            }
+                            AddDownloadDialog(
+                                pending = pending,
+                                defaultDirectory = state.settings.downloadDir,
+                                deleteCacheWhenRemoved = state.settings.deleteCacheWhenRemoved,
+                                // The window is the parent, so the chooser is owned by the
+                                // app and appears in front of it rather than behind.
+                                onPickDirectory = { pickFolder(File(state.settings.downloadDir)) },
+                                // A magnet carries no file list. It has one - in the
+                                // swarm's metadata, a few kilobytes away - and until it was
+                                // asked for, a magnet was the one kind of download where
+                                // you could not see what you were about to get, take three
+                                // files out of forty, or say no.
+                                onLoadMetadata = controller.actions.readMagnetMetadata,
+                                onConfirm = { request ->
+                                    // Close first: leaving the window open while the row
+                                    // appears underneath reads as two things at once.
+                                    pendingAdd = null
+                                    controller.actions.addPrepared(request)
+                                },
+                                onDismiss = { pendingAdd = null }
+                            )
+                        }
+                    }
             }
         }
     } finally {
