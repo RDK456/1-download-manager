@@ -71,34 +71,14 @@ object CaptureRules {
         val uri = runCatching { URI(link) }.getOrNull() ?: return null
         if (uri.scheme?.lowercase(Locale.US) !in ALLOWED_SCHEMES) return null
         val host = uri.host?.lowercase(Locale.US) ?: return null
-        if (host.isBlank() || !PlausibleDomains.contains(host)) return null
+        // Any host: only the extension can obtain the pairing token, and a download from a
+        // site that was not on a list is exactly what used to be left to the browser.
+        if (host.isBlank()) return null
         return link
     }
 
     private fun isPlausibleMagnet(link: String): Boolean =
         link.contains("xt=urn:btih:") && link.length <= MAX_LINK_LENGTH
-
-    /**
-     * Hosts the extension may hand over.
-     *
-     * It deliberately covers known media and file hosts plus a YouTube form, rather
-     * than anything at all, so a compromised page cannot use the app as a relay for
-     * arbitrary addresses.
-     */
-    private val PlausibleDomains = setOf(
-        "youtube.com", "youtu.be", "www.youtube.com", "m.youtube.com",
-        "vimeo.com", "www.vimeo.com",
-        "github.com", "objects.githubusercontent.com", "raw.githubusercontent.com",
-        "mediafire.com", "www.mediafire.com",
-        "drive.google.com",
-        "dropbox.com", "www.dropbox.com",
-        "onedrive.live.com",
-        "sourceforge.net", "downloads.sourceforge.net",
-        "archive.org", "ia801504.us.archive.org",
-        "mega.nz",
-        "gutenberg.org", "www.gutenberg.org",
-        "kernel.org", "cdn.kernel.org"
-    )
 
     const val MAX_LINK_LENGTH = 4096
 }

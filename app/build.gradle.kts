@@ -27,8 +27,8 @@ android {
         applicationId = "com.downloadhub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 68
-        versionName = "2.2.2"
+        versionCode = 69
+        versionName = "2.2.5"
 
         // Single source of truth for the About page and the in-app updater.
         buildConfigField("String", "GITHUB_OWNER", "\"RDK456\"")
@@ -68,10 +68,10 @@ android {
 
     buildTypes {
         release {
-            // Obfuscation is intentionally off: the JNI engines (libtorrent4j,
-            // yt-dlp/FFmpeg wrapper) and Room reflection are easier to keep correct
-            // without a device to test on.
-            isMinifyEnabled = false
+            // Shrinking and resource shrinking on; the JNI engines (libtorrent4j, yt-dlp/FFmpeg
+            // wrapper), Room and serialization are kept whole in proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -57,9 +57,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Set by the Quick Settings tile: take the copied link now, even one seen before. */
+    private var clipboardRequested = false
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) pickUpCopiedLink()
+        if (!hasFocus) return
+        val forced = clipboardRequested
+        clipboardRequested = false
+        pickUpCopiedLink(forced)
     }
 
     /**
@@ -68,16 +74,20 @@ class MainActivity : ComponentActivity() {
      * focused app read the clipboard. Each link is picked up once, and never one that is
      * already in the list (the app's own "copy link" would otherwise come straight back).
      */
-    private fun pickUpCopiedLink() {
+    private fun pickUpCopiedLink(forced: Boolean = false) {
         val clipboard = getSystemService(android.content.ClipboardManager::class.java) ?: return
         val text = runCatching { clipboard.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() }
-            .getOrNull() ?: return
-        val link = LinkParser.extractFirstLink(text)
-            ?.takeIf { com.downloadhub.core.LinkParser.looksLikeDownload(it) } ?: return
+            .getOrNull()
+        val link = text?.let { LinkParser.extractFirstLink(it) }
+            ?.takeIf { com.downloadhub.core.LinkParser.looksLikeDownload(it) }
+        if (link == null) {
+            if (forced) viewModel.notify("No download link on the clipboard")
+            return
+        }
         val prefs = getSharedPreferences("clipboard", MODE_PRIVATE)
-        if (prefs.getString("last", null) == link) return
+        if (!forced && prefs.getString("last", null) == link) return
         prefs.edit().putString("last", link).apply()
-        if (viewModel.allDownloads.value.any { it.url == link }) return
+        if (!forced && viewModel.allDownloads.value.any { it.url == link }) return
         incomingLink = link
     }
 
@@ -94,6 +104,11 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra(EXTRA_OPEN_UPDATES, false)) {
             intent.removeExtra(EXTRA_OPEN_UPDATES)
             openUpdates = true
+        }
+
+        if (intent.getBooleanExtra(EXTRA_FROM_CLIPBOARD, false)) {
+            intent.removeExtra(EXTRA_FROM_CLIPBOARD)
+            clipboardRequested = true
         }
 
         val sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
@@ -152,6 +167,9 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_DOWNLOAD_ID = "download_id"
+
+        /** Set by the Quick Settings tile: add whatever link is on the clipboard. */
+        const val EXTRA_FROM_CLIPBOARD = "from_clipboard"
 
         /** Set by the update notification so tapping it lands on the update screen. */
         const val EXTRA_OPEN_UPDATES = "open_updates"

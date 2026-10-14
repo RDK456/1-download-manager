@@ -161,13 +161,21 @@ function siteIsExcluded(address, sites) {
 }
 
 downloadsApi.downloads.onCreated.addListener(async (item) => {
-  const { autoCapture, excludedSites } = await downloadsApi.storage.local.get(["autoCapture", "excludedSites"]);
-  if (autoCapture === false) return;
-  if (item.byExtensionId) return; // started by an extension, possibly on purpose
   const url = item.finalUrl || item.url || "";
-  if (siteIsExcluded(item.referrer, excludedSites) || siteIsExcluded(url, excludedSites)) return;
   // blob:, data: and file: exist only inside this browser; the app cannot fetch them.
-  if (!/^https?:/i.test(url)) return;
+  if (item.byExtensionId || !/^https?:/i.test(url)) return;
+  // Hold the browser's copy at once, as AB Download Manager does: otherwise a small file
+  // finishes while the app is still answering and gets saved twice, or not handed over.
+  // Everything below that decides "not ours" must let it go again.
+  const hold = downloadsApi.downloads.pause(item.id).catch(() => {});
+  const release = async () => {
+    await hold;
+    try { await downloadsApi.downloads.resume(item.id); } catch (error) {}
+  };
+  const { autoCapture, excludedSites } = await downloadsApi.storage.local.get(["autoCapture", "excludedSites"]);
+  if (autoCapture === false || siteIsExcluded(item.referrer, excludedSites) || siteIsExcluded(url, excludedSites)) {
+    return release();
+  }
   const name = (item.filename || "").split(/[\/]/).pop();
   const result = await sendToApp(url, {
     referer: item.referrer || "",
@@ -175,7 +183,8 @@ downloadsApi.downloads.onCreated.addListener(async (item) => {
     cookies: await cookieHeaderFor(url),
     review: true, // shown in the Add Download window; the browser's copy is cancelled once it is up
   });
-  if (!result.ok) return;
+  if (!result.ok) return release(); // app closed or refused: the browser carries on as usual
+  await hold;
   try {
     await downloadsApi.downloads.cancel(item.id);
     await downloadsApi.downloads.erase({ id: item.id });

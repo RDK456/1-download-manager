@@ -91,11 +91,10 @@ class CaptureRulesTest {
     }
 
     @Test
-    fun unknownHostsAreRejected() {
-        // Not a blanket allow: the app must not become a relay for any address a
-        // compromised page decides to hand it.
-        assertNull(CaptureRules.normaliseLink("https://random.example.org/file.zip"))
-        assertNull(CaptureRules.normaliseLink("https://192.168.1.10/share/file.mp4"))
+    fun anyHostIsAccepted() {
+        for (link in listOf("https://random.example.org/file.zip", "https://192.168.1.10/share/file.mp4")) {
+            assertEquals(link, CaptureRules.normaliseLink(link))
+        }
     }
 
     @Test

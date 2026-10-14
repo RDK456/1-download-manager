@@ -20,16 +20,12 @@
   },
   "permissions": [
     "storage",
-    "activeTab",
-    "scripting",
     "downloads",
     "cookies",
     "contextMenus",
     "webRequest"
   ],
   "host_permissions": [
-    "http://127.0.0.1/*",
-    "http://localhost/*",
     "<all_urls>"
   ],
   "background": {

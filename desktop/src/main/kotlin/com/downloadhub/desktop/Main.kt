@@ -134,11 +134,11 @@ fun main(args: Array<String>) {
             ) {
             // Started by Windows at sign-in (AutoStart), or asked for in Settings: open minimized,
             // not over what the user is doing. Read once, so toggling it never hides a live window.
-            val windowState = rememberWindowState(
-                size = DpSize(1180.dp, 720.dp),
-                isMinimized = AutoStart.SWITCH in args || controller.settings.value.startMinimised
-            )
-            var visible by remember { mutableStateOf(true) }
+            val windowState = rememberWindowState(size = DpSize(1180.dp, 720.dp))
+            // Straight to the tray, with no taskbar button: a minimised window still sits there.
+            var visible by remember {
+                mutableStateOf(!(AutoStart.SWITCH in args || controller.settings.value.startMinimised))
+            }
             // The link-entry step, which only exists to collect a link before the
             // pre-download dialog. It used to be the only step, and when that dialog was
             // replaced this flag was left setting a piece of state nothing read, so `+`

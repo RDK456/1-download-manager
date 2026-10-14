@@ -146,14 +146,17 @@ class CaptureServerTest {
     }
 
     @Test
-    fun aHandOffForAnUnknownHostIsRefused() {
+    fun aHandOffForAnyHostIsQueuedButAnUnsupportedSchemeIsRefused() {
         val queued = mutableListOf<CaptureRequest>()
         val server = CaptureServer(token, onQueue = { queued += it })
         try {
             server.start()
             val (code, _) = post(server, """{"url":"https://random.example.org/x.zip"}""")
-            assertEquals(400, code)
-            assertTrue(queued.isEmpty())
+            assertEquals(200, code)
+            assertEquals(1, queued.size)
+            val (refused, _) = post(server, """{"url":"ftp://random.example.org/x.zip"}""")
+            assertEquals(400, refused)
+            assertEquals(1, queued.size)
         } finally {
             server.stop()
         }

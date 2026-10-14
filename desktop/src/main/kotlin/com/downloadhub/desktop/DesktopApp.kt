@@ -210,7 +210,7 @@ fun SettingsDialog(
                                 "Start with Windows",
                                 autoStart,
                                 enabled = autoStartAvailable,
-                                detail = if (autoStartAvailable) "Opens minimized to the taskbar when you sign in."
+                                detail = if (autoStartAvailable) "Opens hidden in the system tray when you sign in."
                                 else "Available in the installed app."
                             ) { autoStart = it }
                         }

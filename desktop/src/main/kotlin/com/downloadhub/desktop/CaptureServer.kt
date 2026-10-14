@@ -231,7 +231,7 @@ class CaptureServer(
 
     companion object {
         const val DEFAULT_PORT = 38621
-        private const val MAX_BODY_BYTES = 32 * 1024
+        private const val MAX_BODY_BYTES = 256 * 1024
 
         /** A fresh shared secret per install. */
         fun newToken(): String {
