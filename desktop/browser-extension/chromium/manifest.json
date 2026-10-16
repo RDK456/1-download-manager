@@ -12,6 +12,7 @@
   "permissions": [
     "storage",
     "downloads",
+    "downloads.ui",
     "cookies",
     "contextMenus",
     "webRequest"

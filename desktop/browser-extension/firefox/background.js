@@ -160,6 +160,86 @@ function siteIsExcluded(address, sites) {
   return (sites || []).some((site) => host === site || host.endsWith("." + site));
 }
 
+// ---- decide at the response, before the browser's download exists --------------------
+//
+// The response headers say "this is a file" (Content-Disposition: attachment, or a binary type)
+// before the browser turns the response into a download item. The hand-off to the app starts
+// here, so by the time downloads.onCreated fires the app already has the link. Firefox can
+// block the response outright, so its download never starts at all; Chromium (MV3) cannot,
+// and cancels the item the moment the app has answered.
+const handledResponses = new Map(); // response url -> Promise of the app's answer
+
+function headerOf(details, name) {
+  const found = (details.responseHeaders || []).find((h) => h.name.toLowerCase() === name);
+  return found ? found.value || "" : "";
+}
+
+const FILE_TYPE = /^application\/(octet-stream|zip|x-zip|x-7z|x-rar|vnd\.rar|gzip|x-gzip|x-tar|x-bzip2?|x-xz|vnd\.android\.package-archive|x-msdownload|x-msi|x-iso9660-image|x-bittorrent|x-apple-diskimage|x-debian-package|x-rpm|java-archive)/i;
+
+function isFileResponse(details) {
+  if (details.method !== "GET" || details.statusCode < 200 || details.statusCode > 299) return false;
+  if (details.type !== "main_frame" && details.type !== "sub_frame") return false;
+  if (/attachment/i.test(headerOf(details, "content-disposition"))) return true;
+  return FILE_TYPE.test(headerOf(details, "content-type"));
+}
+
+async function offerResponse(details) {
+  const { autoCapture, excludedSites } = await downloadsApi.storage.local.get(["autoCapture", "excludedSites"]);
+  const page = details.originUrl || details.documentUrl || "";
+  if (autoCapture === false || siteIsExcluded(page, excludedSites) || siteIsExcluded(details.url, excludedSites)) {
+    return { ok: false, reason: "excluded" };
+  }
+  const disposition = headerOf(details, "content-disposition");
+  const named = /filename\*?=(?:UTF-8'')?"?([^";]+)/i.exec(disposition);
+  let fileName = "";
+  try { fileName = named ? decodeURIComponent(named[1].trim()) : ""; } catch (error) {}
+  return sendToApp(details.url, {
+    referer: page,
+    fileName,
+    cookies: await cookieHeaderFor(details.url),
+    review: true,
+  });
+}
+
+function offerOnce(details) {
+  const known = handledResponses.get(details.url);
+  if (known) return known;
+  const answer = offerResponse(details);
+  handledResponses.set(details.url, answer);
+  setTimeout(() => handledResponses.delete(details.url), 30000);
+  return answer;
+}
+
+const canBlock = typeof browser !== "undefined"; // Firefox keeps blocking webRequest in MV3
+downloadsApi.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    if (!isFileResponse(details)) return undefined;
+    const answer = offerOnce(details);
+    // Blocking: cancel the response once the app has taken it; otherwise let it through.
+    return canBlock ? answer.then((r) => (r.ok ? { cancel: true } : {})) : undefined;
+  },
+  { urls: ["http://*/*", "https://*/*"] },
+  canBlock ? ["responseHeaders", "blocking"] : ["responseHeaders"]
+);
+
+// The browser's download bubble is hidden while a download is being handed over, so the
+// copy that is about to be cancelled never flashes up. (Chromium only; needs "downloads.ui".)
+// Shown again when nothing is in flight, and on every worker start in case it was cut short.
+let handing = 0;
+function browserDownloadUi(enabled) {
+  try { Promise.resolve(downloadsApi.downloads.setUiOptions?.({ enabled })).catch(() => {}); } catch (error) {}
+}
+browserDownloadUi(true);
+async function whileHidingBrowserUi(work) {
+  handing++;
+  browserDownloadUi(false);
+  try {
+    return await work();
+  } finally {
+    setTimeout(() => { if (--handing === 0) browserDownloadUi(true); }, 1500);
+  }
+}
+
 downloadsApi.downloads.onCreated.addListener(async (item) => {
   const url = item.finalUrl || item.url || "";
   // blob:, data: and file: exist only inside this browser; the app cannot fetch them.
@@ -168,6 +248,10 @@ downloadsApi.downloads.onCreated.addListener(async (item) => {
   // finishes while the app is still answering and gets saved twice, or not handed over.
   // Everything below that decides "not ours" must let it go again.
   const hold = downloadsApi.downloads.pause(item.id).catch(() => {});
+  return whileHidingBrowserUi(() => handOver(item, url, hold));
+});
+
+async function handOver(item, url, hold) {
   const release = async () => {
     await hold;
     try { await downloadsApi.downloads.resume(item.id); } catch (error) {}
@@ -177,19 +261,39 @@ downloadsApi.downloads.onCreated.addListener(async (item) => {
     return release();
   }
   const name = (item.filename || "").split(/[\/]/).pop();
-  const result = await sendToApp(url, {
-    referer: item.referrer || "",
-    fileName: name,
-    cookies: await cookieHeaderFor(url),
-    review: true, // shown in the Add Download window; the browser's copy is cancelled once it is up
-  });
+  // Already offered at the response (above): wait for that answer instead of asking twice.
+  const earlier = handledResponses.get(url) || handledResponses.get(item.url);
+  const result = earlier
+    ? await earlier
+    : await sendToApp(url, {
+        referer: item.referrer || "",
+        fileName: name,
+        cookies: await cookieHeaderFor(url),
+        review: true, // shown in the Add Download window; the browser's copy is cancelled once it is up
+      });
   if (!result.ok) return release(); // app closed or refused: the browser carries on as usual
   await hold;
+  await dropBrowserCopy(item.id);
+}
+
+// Removes the browser's own copy so only the app's remains: cancelled, any file it already
+// finished deleted, and the entry erased - each step on its own, so one failing (a small
+// file that completed before the cancel) cannot leave a "Canceled" row or a duplicate file.
+const handedOver = new Set();
+async function dropBrowserCopy(id) {
+  handedOver.add(id);
+  try { await downloadsApi.downloads.cancel(id); } catch (error) {}
   try {
-    await downloadsApi.downloads.cancel(item.id);
-    await downloadsApi.downloads.erase({ id: item.id });
-  } catch (error) {
-    // Already finished or gone; the app has its own copy either way.
+    const [found] = await downloadsApi.downloads.search({ id });
+    if (found && found.state === "complete" && found.exists) await downloadsApi.downloads.removeFile(id);
+  } catch (error) {}
+  try { await downloadsApi.downloads.erase({ id }); } catch (error) {}
+}
+// The cancel can land after the first erase; once the item settles, erase it again.
+downloadsApi.downloads.onChanged.addListener((delta) => {
+  if (handedOver.has(delta.id) && delta.state && delta.state.current !== "in_progress") {
+    handedOver.delete(delta.id);
+    downloadsApi.downloads.erase({ id: delta.id }).catch(() => {});
   }
 });
 

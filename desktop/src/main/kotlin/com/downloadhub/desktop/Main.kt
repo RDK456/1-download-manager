@@ -149,6 +149,13 @@ fun main(args: Array<String>) {
             // The download waiting to be looked at before it is queued, whatever kind
             // of download it is.
             var pendingAdd by remember { mutableStateOf<PendingDownload?>(null) }
+            // Links gathered for the link grabber (a batch paste, or several browser downloads
+            // at once), and downloads that arrived while another window was open.
+            val grabLinks = remember { androidx.compose.runtime.mutableStateListOf<String>() }
+            val waiting = remember { androidx.compose.runtime.mutableStateListOf<PendingDownload>() }
+            LaunchedEffect(pendingAdd, waiting.size) {
+                if (pendingAdd == null && waiting.isNotEmpty()) pendingAdd = waiting.removeAt(0)
+            }
             /**
              * A YouTube link the pre-download window handed over, loaded once by the
              * YouTube section.
@@ -424,9 +431,7 @@ fun main(args: Array<String>) {
                             // after another, is not a review anyone would sit through.
                             onBatch = { links ->
                                 showNew = false
-                                links.forEach { link ->
-                                    controller.actions.addPrepared(linkRequest(LinkParser.fileNameFrom(link), link, state.settings))
-                                }
+                                grabLinks.addAll(links.filter { it !in grabLinks })
                             },
                             onDismiss = { showNew = false }
                         )
@@ -503,7 +508,22 @@ fun main(args: Array<String>) {
                                 youTubePrefill = pending.link
                                 showWindow()
                             } else {
-                                pendingAdd = pending
+                                val open = pendingAdd
+                                val plain = !pending.isTorrent
+                                when {
+                                    // A burst of downloads from the browser: one window each would
+                                    // overwrite the last (its browser copy is already cancelled, so it
+                                    // would be lost), so they gather in the link grabber instead.
+                                    plain && grabLinks.isNotEmpty() ->
+                                        if (pending.link !in grabLinks) grabLinks.add(pending.link)
+                                    plain && open != null && !open.isTorrent -> {
+                                        if (open.link != pending.link) grabLinks.addAll(listOf(open.link, pending.link))
+                                        pendingAdd = null
+                                    }
+                                    // A magnet or torrent while another window is up waits its turn.
+                                    open != null -> waiting.add(pending)
+                                    else -> pendingAdd = pending
+                                }
                             }
                         }
                         // Only now that the callback exists can a link be shown in the
@@ -526,6 +546,32 @@ fun main(args: Array<String>) {
                      * list raises the *main* window, not this one, so it comes forward to
                      * be seen.
                      */
+                    if (grabLinks.isNotEmpty()) {
+                        androidx.compose.ui.window.DialogWindow(
+                            onCloseRequest = { grabLinks.clear() },
+                            title = "Link grabber - 1 download manager",
+                            state = androidx.compose.ui.window.rememberDialogState(size = DpSize(760.dp, 520.dp)),
+                            resizable = true
+                        ) {
+                            LaunchedEffect(window) {
+                                window.iconImages = AppArtwork.windowIcons()
+                                window.minimumSize = java.awt.Dimension(560, 320)
+                                ForegroundWindow.raise(window)
+                            }
+                            LinkGrabberDialog(
+                                links = grabLinks,
+                                makeRequest = { name, url, start, folder ->
+                                    linkRequest(name, url, state.settings).let {
+                                        it.copy(saveDirectory = folder ?: it.saveDirectory, startImmediately = start)
+                                    }
+                                },
+                                onQueue = controller.actions.addPrepared,
+                                onPickDirectory = { pickFolder(File(state.settings.downloadDir)) },
+                                onDone = { grabLinks.clear() }
+                            )
+                        }
+                    }
+
                     pendingAdd?.let { pending ->
                         // A video goes to the YouTube section instead of this window.
                         //
