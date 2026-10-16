@@ -152,6 +152,14 @@ fun DownloadHubApp(
     val rssRules by viewModel.rssRules.collectAsStateWithLifecycle()
     val rssItems by viewModel.rssItems.collectAsStateWithLifecycle()
     val rssRefreshing by viewModel.rssRefreshing.collectAsStateWithLifecycle()
+    val uiScale by viewModel.uiScale.collectAsStateWithLifecycle()
+    val systemDensity = androidx.compose.ui.platform.LocalDensity.current
+    val scaledDensity = remember(systemDensity, uiScale) {
+        androidx.compose.ui.unit.Density(systemDensity.density * uiScale, systemDensity.fontScale)
+    }
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalDensity provides scaledDensity
+    ) {
     DownloadHubTheme(themeMode, appTheme) {
         val context = LocalContext.current
         val visibleItems by viewModel.visibleDownloads.collectAsStateWithLifecycle()
@@ -533,6 +541,8 @@ fun DownloadHubApp(
                         appVersion = updateViewModel.currentVersion,
                         update = update,
                         onThemeChange = viewModel::setTheme,
+                        uiScale = uiScale,
+                        onUiScaleChange = viewModel::setUiScale,
                         onDestinationChange = viewModel::setDestinationTreeUri,
                         onAbout = { navigate(AppDestination.ABOUT) },
                         onDownloadSettings = { navigate(AppDestination.DOWNLOAD_SETTINGS) },
@@ -740,6 +750,7 @@ fun DownloadHubApp(
                 onDismiss = updateViewModel::dismiss
             )
         }
+    }
     }
 }
 
@@ -1224,6 +1235,8 @@ private fun SettingsScreen(
     appVersion: String,
     update: UpdateSnapshot,
     onThemeChange: (ThemeMode) -> Unit,
+    uiScale: Float,
+    onUiScaleChange: (Float) -> Unit,
     onDestinationChange: (String?) -> Unit,
     onAbout: () -> Unit,
     onDownloadSettings: () -> Unit,
@@ -1287,6 +1300,18 @@ private fun SettingsScreen(
                 title = "About 1 download manager",
                 subtitle = "Version, source code and updates"
             ) { onAbout() }
+        }
+
+        SettingsSection("Display scaling") {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Small" to 0.85f, "Default" to 1f, "Large" to 1.15f, "Larger" to 1.3f).forEach { (label, value) ->
+                    androidx.compose.material3.FilterChip(
+                        selected = kotlin.math.abs(uiScale - value) < 0.01f,
+                        onClick = { onUiScaleChange(value) },
+                        label = { Text(label) }
+                    )
+                }
+            }
         }
 
         SettingsSection("App updates") {

@@ -37,7 +37,6 @@ data class ReleaseInfo(
         }
         return apks.firstOrNull { apk -> KNOWN_ABIS.none { apk.name.endsWith("-$it.apk", ignoreCase = true) } }
             ?: apks.firstOrNull()
-            ?: assets.firstOrNull()
     }
 
     fun isNewerThan(currentVersion: String): Boolean =

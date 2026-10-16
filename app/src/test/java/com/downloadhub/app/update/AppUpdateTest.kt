@@ -56,6 +56,8 @@ class AppUpdateTest {
         )
         assertEquals("DownloadHub-debug.apk", release.installAsset()?.name)
         assertNull(release("v1.2.0", emptyList()).installAsset())
+        // A desktop-only release must not count as an Android update.
+        assertNull(release("v1.2.0", listOf(ReleaseAsset("app.msi", "https://example.com/app.msi", 9))).installAsset())
     }
 
     /** The APK built for the phone's processor, half the size; the universal one otherwise. */

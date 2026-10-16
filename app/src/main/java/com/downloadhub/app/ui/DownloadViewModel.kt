@@ -112,6 +112,11 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         .stateIn(viewModelScope, SharingStarted.Lazily, ThemeMode.SYSTEM)
     val appTheme: StateFlow<AppTheme> = settings.appTheme
         .stateIn(viewModelScope, SharingStarted.Lazily, AppTheme.SIGNAL)
+    val uiScale: StateFlow<Float> = settings.uiScale
+        .stateIn(viewModelScope, SharingStarted.Lazily, 1f)
+    fun setUiScale(scale: Float) {
+        viewModelScope.launch { settings.setUiScale(scale) }
+    }
     val downloadSettings: StateFlow<DownloadSettings> = settings.downloadSettings
         .stateIn(viewModelScope, SharingStarted.Lazily, DownloadSettings())
     val destinationTreeUri: StateFlow<String?> = settings.destinationTreeUri

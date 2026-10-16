@@ -258,6 +258,17 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    private val uiScaleKey = androidx.datastore.preferences.core.floatPreferencesKey("ui_scale")
+
+    /** Interface size multiplier on top of the system display size; 1.0 = system default. */
+    val uiScale: Flow<Float> = context.downloadHubDataStore.data.map { preferences ->
+        (preferences[uiScaleKey] ?: 1f).coerceIn(0.8f, 1.4f)
+    }
+
+    suspend fun setUiScale(scale: Float) {
+        context.downloadHubDataStore.edit { it[uiScaleKey] = scale.coerceIn(0.8f, 1.4f) }
+    }
+
     suspend fun setAppTheme(theme: AppTheme) {
         context.downloadHubDataStore.edit { preferences ->
             preferences[themeSchemeKey] = theme.name
