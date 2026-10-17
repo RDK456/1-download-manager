@@ -47,9 +47,11 @@ fun Card(
     if (UiGeneration.expressive) {
         androidx.compose.material3.Card(
             modifier = modifier,
-            shape = MaterialTheme.shapes.extraLarge,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-            elevation = CardDefaults.cardElevation(0.dp),
+            // What a caller states outright wins; the tonal card is only the default.
+            shape = shape ?: MaterialTheme.shapes.extraLarge,
+            colors = colors ?: CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+            elevation = elevation ?: CardDefaults.cardElevation(0.dp),
+            border = border,
             content = content
         )
     } else {

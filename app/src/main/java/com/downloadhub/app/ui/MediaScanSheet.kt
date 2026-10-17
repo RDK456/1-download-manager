@@ -95,7 +95,7 @@ fun MediaScanSheet(
                     Spacer(Modifier.height(4.dp))
                     LazyColumn(
                         modifier = Modifier.heightIn(max = 420.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(if (com.downloadhub.app.ui.theme.UiGeneration.expressive) 2.dp else 6.dp)
                     ) {
                         itemsIndexed(state.items, key = { _, it -> it.url }) { index, candidate ->
                             if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
@@ -107,6 +107,7 @@ fun MediaScanSheet(
                                     supporting = kindLabel(candidate),
                                     titleLines = 1,
                                     onClick = { onPick(candidate) },
+                                    trailingRepeatsClick = true,
                                     trailing = { Icon(Lucide.Download, contentDescription = "Download " + candidate.label) }
                                 )
                                 return@itemsIndexed

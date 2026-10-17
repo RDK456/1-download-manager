@@ -181,4 +181,10 @@ Every screen now has an expressive branch (the Classic look still draws the old 
 - Shared pieces: `component/Lists.kt` (`BadgeRow`, `HintCard`, `SectionLabel`), plus the drop-ins in `DropIns.kt`.
 - Checked on the emulator: Search, YouTube, Discover, TV (offline state), Archive, Books, Settings, Queues, RSS, Advanced, About, light and dark.
 - Not checked on a device: Player, media scan sheet, filter sheet, torrent Content/Trackers/Peers tabs (only re-themed), large text and RTL on the new rows.
-- Known: the `Card` drop-in ignores explicit `colors` in the new look; the one deliberate case (About's GitHub card) uses the stock card.
+- The `Card` drop-in honours explicit `colors`, `shape`, `elevation` and `border`; the tonal card is only its default.
+
+## Bug pass
+
+Fixed: a queue deleted while a sheet is open no longer strands the download (falls back to Main with a message); quality rows get their own segmented shape; segmented lists sit 2 dp apart; Search and list rows announce one action; Advanced radio rows select across the row; Archive shows a retry row when the next page fails and restores the open item; downloads paused for a delete are resumed if the process dies inside the undo window; links carrying a login or signed token are not kept in saved state; torrent Content, Trackers and Peers sit on one tonal surface.
+
+Still open: the torrent preview and the Player queue are not restored after a kill; Books and torrent "picks" lists stop silently if a page fails to load; the ANR and the slow cold start seen on the emulator are unexplained (software rendering, needs a real device).

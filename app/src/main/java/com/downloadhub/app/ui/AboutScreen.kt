@@ -70,8 +70,7 @@ fun AboutScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // GitHub logo -> opens the project's git page.
-        // The stock card: the brand colour is deliberate and the themed drop-in would repaint it.
-        androidx.compose.material3.Card(
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onOpenRepo),

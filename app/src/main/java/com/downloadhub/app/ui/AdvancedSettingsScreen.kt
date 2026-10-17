@@ -4,11 +4,13 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -95,9 +97,16 @@ fun AdvancedSettingsScreen(
 
         Section("Proxy") {
             ProxyType.entries.forEach { type ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = draft.proxy.type == type, onClick = { draft = draft.copy(proxy = draft.proxy.copy(type = type)) })
-                    Text(type.label.replace("Windows", "system"))
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(
+                        selected = draft.proxy.type == type,
+                        role = androidx.compose.ui.semantics.Role.RadioButton,
+                        onClick = { draft = draft.copy(proxy = draft.proxy.copy(type = type)) }
+                    ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = draft.proxy.type == type, onClick = null)
+                    Text(type.label.replace("Windows", "system"), Modifier.padding(start = 8.dp))
                 }
             }
             if (draft.proxy.type == ProxyType.HTTP || draft.proxy.type == ProxyType.SOCKS) {
@@ -141,9 +150,16 @@ fun AdvancedSettingsScreen(
             Toggle("Local Peer Discovery", draft.lsd) { draft = draft.copy(lsd = it) }
             Toggle("Anonymous mode", draft.anonymous) { draft = draft.copy(anonymous = it) }
             TorrentEncryption.entries.forEach { mode ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = draft.encryption == mode, onClick = { draft = draft.copy(encryption = mode) })
-                    Text(mode.label)
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(
+                        selected = draft.encryption == mode,
+                        role = androidx.compose.ui.semantics.Role.RadioButton,
+                        onClick = { draft = draft.copy(encryption = mode) }
+                    ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = draft.encryption == mode, onClick = null)
+                    Text(mode.label, Modifier.padding(start = 8.dp))
                 }
             }
             OutlinedTextField(maxConnections, { maxConnections = it.filter(Char::isDigit).take(5) }, label = { Text("Maximum connections (blank = default)") }, singleLine = true, keyboardOptions = number, modifier = Modifier.fillMaxWidth())

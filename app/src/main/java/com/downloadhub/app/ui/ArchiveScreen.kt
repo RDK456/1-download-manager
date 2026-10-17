@@ -70,6 +70,15 @@ import kotlin.random.Random
  * (video, audio, books, software and apps, images, data). Opening an item lists its files;
  * one tap queues all of them, or any one alone.
  */
+/** Keeps the open item through the app being closed in the background. */
+private val ArchiveItemSaver = androidx.compose.runtime.saveable.Saver<ArchiveItem?, List<String>>(
+    save = { item -> item?.let { listOf(it.id, it.title, it.creator, it.mediatype, it.sizeBytes.toString(), it.downloads.toString()) }.orEmpty() },
+    restore = { v ->
+        if (v.size < 6) null
+        else ArchiveItem(v[0], v[1], v[2], v[3], v[4].toLongOrNull() ?: 0L, v[5].toLongOrNull() ?: 0L)
+    }
+)
+
 @Composable
 fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -80,7 +89,8 @@ fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Uni
     var more by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf<String?>(null) }
-    var open by remember { mutableStateOf<ArchiveItem?>(null) }
+    var open by rememberSaveable(stateSaver = ArchiveItemSaver) { mutableStateOf<ArchiveItem?>(null) }
+    var moreFailed by remember { mutableStateOf(false) }
     var attempt by remember { mutableStateOf(0) }
 
     var loadingMore by remember { mutableStateOf(false) }
@@ -93,6 +103,7 @@ fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Uni
     LaunchedEffect(submitted, type, attempt) {
         loading = true
         failed = null
+        moreFailed = false
         page = if (submitted.isBlank()) 1 + Random.nextInt(ArchiveOrg.BROWSE_DEPTH) else 1
         items = runCatching { fetch(page) }
             .onFailure { failed = "Could not reach the Internet Archive." }
@@ -135,7 +146,8 @@ fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Uni
                 Text(failed ?: "Nothing found.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             }
             else -> {
-                if (more) LoadMoreAtEnd(list) {
+                // Stops asking after a failure; the Try again row below clears it and asks once more.
+                if (more && !moreFailed) LoadMoreAtEnd(list) {
                     if (loadingMore) return@LoadMoreAtEnd
                     loadingMore = true
                     val next = runCatching { fetch(page + 1) }.getOrNull()
@@ -143,11 +155,19 @@ fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Uni
                         page++
                         items = (items + next).distinctBy { it.id }
                         more = next.size == ArchiveOrg.PAGE_SIZE
+                    } else {
+                        moreFailed = true
                     }
                     loadingMore = false
                 }
-                LazyColumn(state = list, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(state = list, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(if (com.downloadhub.app.ui.theme.UiGeneration.expressive) 2.dp else 8.dp)) {
                     itemsIndexed(items, key = { _, it -> it.id }) { index, item -> ArchiveRow(item, loader, index, items.size) { open = item } }
+                    if (moreFailed) item {
+                        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Couldn't load more.", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            TextButton(onClick = { moreFailed = false }) { Text("Try again") }
+                        }
+                    }
                     if (loadingMore) item {
                         Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)

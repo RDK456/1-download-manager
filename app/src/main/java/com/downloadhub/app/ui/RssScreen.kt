@@ -69,7 +69,7 @@ fun RssScreen(
             OutlinedButton(onClick = { editingRules = true }) { Text("Download rules (${rules.count { it.enabled }})") }
         }
         if (refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(if (com.downloadhub.app.ui.theme.UiGeneration.expressive) 2.dp else 8.dp), modifier = Modifier.fillMaxSize()) {
             if (feeds.isEmpty() && com.downloadhub.app.ui.theme.UiGeneration.expressive) {
                 item {
                     com.downloadhub.app.ui.expressive.component.EmptyState(
@@ -90,7 +90,7 @@ fun RssScreen(
             }
             feeds.forEach { feed ->
                 item(key = "feed-" + feed.url) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = if (com.downloadhub.app.ui.theme.UiGeneration.expressive) 12.dp else 0.dp)) {
                         Text(
                             feed.name.ifBlank { feed.url },
                             style = MaterialTheme.typography.titleSmall,
@@ -110,6 +110,7 @@ fun RssScreen(
                             icon = com.composables.icons.lucide.Lucide.Rss,
                             supporting = item.published.ifBlank { null },
                             onClick = { onDownload(item) },
+                            trailingRepeatsClick = true,
                             trailing = { androidx.compose.material3.FilledTonalButton(onClick = { onDownload(item) }) { Text("Get") } }
                         )
                         return@itemsIndexed

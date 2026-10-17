@@ -50,12 +50,12 @@ fun QueuesScreen(
     var editing by remember { mutableStateOf<Pair<AppQueue, Boolean>?>(null) }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(if (com.downloadhub.app.ui.theme.UiGeneration.expressive) 2.dp else 10.dp)
     ) {
         item {
             val hint = "A stopped queue starts nothing. A schedule starts and stops a queue by itself; " +
                 "Android checks it about every 15 minutes."
-            if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.component.HintCard(hint) else Text(
+            if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.component.HintCard(hint, Modifier.padding(bottom = 8.dp)) else Text(
                 hint,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -93,7 +93,7 @@ fun QueuesScreen(
         item {
             OutlinedButton(
                 onClick = { editing = AppQueue("q" + System.currentTimeMillis().toString(36), "") to true },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(top = if (com.downloadhub.app.ui.theme.UiGeneration.expressive) 8.dp else 0.dp)
             ) { Text("New queue") }
         }
     }

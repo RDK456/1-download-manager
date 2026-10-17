@@ -603,9 +603,11 @@ private fun YouTubeSingleQuality(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                audios.forEach { format ->
+                audios.forEachIndexed { rowIndex, format ->
                     val bytes = format.sizeBytes
                     FormatRow(
+                        index = rowIndex,
+                        count = audios.size,
                         title = "${format.qualityLabel} · ${format.ext}",
                         subtitle = buildString {
                             format.totalBitrate?.let { append(it).append(" kbps") }
@@ -618,9 +620,11 @@ private fun YouTubeSingleQuality(
                 }
             }
         } else {
-            videos.forEach { format ->
+            videos.forEachIndexed { rowIndex, format ->
                 val total = (format.sizeBytes ?: 0L) + (bestAudio?.sizeBytes ?: 0L)
                 FormatRow(
+                    index = rowIndex,
+                    count = videos.size,
                     // "4K", not "1772p": a row nobody can compare against another
                     // row is not a choice, and the exact height is in the subtitle.
                     title = format.displayLabel,
@@ -673,6 +677,8 @@ private fun YouTubeSingleQuality(
 
 @Composable
 private fun FormatRow(
+    index: Int,
+    count: Int,
     title: String,
     subtitle: String,
     /** Null renders as "size unknown": the extractor did not say. */
@@ -684,7 +690,7 @@ private fun FormatRow(
         androidx.compose.material3.SegmentedListItem(
             onClick = onClick,
             selected = selected,
-            shapes = androidx.compose.material3.ListItemDefaults.segmentedShapes(0, 3),
+            shapes = androidx.compose.material3.ListItemDefaults.segmentedShapes(index, count),
             modifier = Modifier.padding(vertical = 1.dp),
             trailingContent = { Text(if (sizeBytes != null && sizeBytes > 0L) formatBytes(sizeBytes) else "unknown") },
             supportingContent = if (subtitle.isBlank()) null else ({ Text(subtitle.trim(), maxLines = 1, overflow = TextOverflow.Ellipsis) }),

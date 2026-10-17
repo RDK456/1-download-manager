@@ -242,8 +242,10 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
         viewModelScope.launch { _selectedId.collect { saved[SAVED_SELECTED] = it } }
         viewModelScope.launch {
             _editorSeed.collect { seed ->
-                saved[SAVED_EDITOR_OPEN] = seed != null
-                saved[SAVED_EDITOR_LINK] = seed?.link
+                // A link that carries a login or a signed token is not written to the record.
+                val keep = seed != null && com.downloadhub.app.ui.expressive.model.linkSafeToSave(seed.link)
+                saved[SAVED_EDITOR_OPEN] = keep
+                saved[SAVED_EDITOR_LINK] = if (keep) seed?.link else null
                 saved[SAVED_EDITOR_SOURCE] = seed?.source?.name
             }
         }
@@ -512,6 +514,7 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
     fun addBatch(links: List<String>, startPaused: Boolean = false, queueId: String? = null) {
         if (links.isEmpty()) return
         viewModelScope.launch {
+            val queue = resolveQueue(queueId)
             val ids = links.mapNotNull { link ->
                 val source = LinkParser.sourceFor(link)
                 val youTube = source == DownloadSource.YOUTUBE
@@ -531,8 +534,8 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
             closeEditor()
             if (ids.isNotEmpty()) {
                 val now = System.currentTimeMillis()
-                if (queueId != null && queueId != com.downloadhub.app.ui.expressive.model.MAIN_QUEUE_ID) {
-                    ids.forEach { app.container.database.downloadDao().updateQueue(it, queueId, now) }
+                if (queue != null) {
+                    ids.forEach { app.container.database.downloadDao().updateQueue(it, queue, now) }
                 }
                 if (startPaused) {
                     ids.forEach { repository.setStatus(it, DownloadStatus.PAUSED) }
@@ -763,8 +766,9 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
                     }
                     pendingRequest = null
                     // The queue is set before anything starts, so the first run already obeys it.
-                    if (queueId != null && queueId != com.downloadhub.app.ui.expressive.model.MAIN_QUEUE_ID) {
-                        app.container.database.downloadDao().updateQueue(it.id, queueId, System.currentTimeMillis())
+                    val queue = resolveQueue(queueId)
+                    if (queue != null) {
+                        app.container.database.downloadDao().updateQueue(it.id, queue, System.currentTimeMillis())
                     }
                     if (startPaused) {
                         repository.setStatus(it.id, DownloadStatus.PAUSED)
@@ -872,6 +876,7 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
             pausedForDelete.add(it.id)
             sendAction(DownloadService.ACTION_PAUSE, it.id)
         }
+        savePausedForDelete()
         pendingDeletes.add(items.map { it.id })
         _pendingIds.value = pendingDeletes.ids()
         if (_selectedId.value in ids) _selectedId.value = null
@@ -888,6 +893,15 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
         _pendingIds.value = pendingDeletes.ids()
         // What was running when the delete was asked for runs again, rather than being left paused.
         ids.filter { pausedForDelete.remove(it) }.forEach { resume(it) }
+        savePausedForDelete()
+    }
+
+    /**
+     * Kept in the saved-state record so a process that dies inside the undo window does not leave
+     * those downloads paused for good: the next start resumes them (see the init block).
+     */
+    private fun savePausedForDelete() {
+        saved[SAVED_PAUSED_FOR_DELETE] = ArrayList(pausedForDelete)
     }
 
     private suspend fun commitPendingDeletes() {
@@ -895,6 +909,7 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
         _pendingIds.value = pendingDeletes.ids()
         due.forEach { id ->
             pausedForDelete.remove(id)
+            savePausedForDelete()
             repository.get(id)?.let { item ->
                 if (item.status.isActiveCompat) DownloadService.action(getApplication(), DownloadService.ACTION_CANCEL, id)
                 repository.delete(item)
@@ -1454,8 +1469,9 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
                             System.currentTimeMillis()
                         )
                     }
-                    if (queueId != null && queueId != com.downloadhub.app.ui.expressive.model.MAIN_QUEUE_ID) {
-                        app.container.database.downloadDao().updateQueue(created.id, queueId, System.currentTimeMillis())
+                    val queue = resolveQueue(queueId)
+                    if (queue != null) {
+                        app.container.database.downloadDao().updateQueue(created.id, queue, System.currentTimeMillis())
                     }
                     if (startPaused) {
                         repository.setStatus(created.id, DownloadStatus.PAUSED)
@@ -1467,6 +1483,26 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
                 }
                 .onFailure { _events.emit(DownloadEvent.Message(it.message ?: "Could not add the torrent")) }
         }
+    }
+
+    // Last in the class so everything it touches is built before it runs.
+    init {
+        // Only a process that died between "Delete" and the end of the undo window gets here with
+        // anything. Nothing was removed, so what was running runs again.
+        saved.get<ArrayList<String>>(SAVED_PAUSED_FOR_DELETE)?.takeIf { it.isNotEmpty() }?.let { ids ->
+            saved[SAVED_PAUSED_FOR_DELETE] = null
+            ids.forEach { resume(it) }
+        }
+    }
+
+    /**
+     * The queue an add should join, or null for the main one. A queue deleted while the sheet was
+     * open is dropped with a message instead of leaving the download pointing at nothing.
+     */
+    private suspend fun resolveQueue(requested: String?): String? {
+        val resolved = com.downloadhub.app.ui.expressive.model.resolveQueueId(requested, queues.value.map { it.id })
+        if (resolved.fellBack) _events.emit(DownloadEvent.Message("That queue no longer exists. Added to Main."))
+        return resolved.id
     }
 
     private fun requestFromTorrent(name: String, path: String): DownloadCreateRequest =
@@ -1564,6 +1600,7 @@ private fun android.content.ContentResolver.displayName(uri: Uri): String? {
     }
 }
 
+private const val SAVED_PAUSED_FOR_DELETE = "paused_for_delete"
 private const val SAVED_QUERY = "query"
 private const val SAVED_FILTER = "filter"
 private const val SAVED_CATEGORY = "category"

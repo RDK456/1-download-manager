@@ -89,6 +89,7 @@ internal fun TorrentExtras(
             FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("Peers (${peers.size})") })
         }
         val muted = MaterialTheme.colorScheme.onSurfaceVariant
+        TonalGroup {
         if (tab == 0) {
             ContentList(id, content, onFilesWanted)
         } else if (tab == 2) {
@@ -129,6 +130,21 @@ internal fun TorrentExtras(
                 }
             }
         }
+        }
+    }
+}
+
+/** The tab's body on a tonal surface in the new look, so it reads as one block under the chips. */
+@Composable
+private fun TonalGroup(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+        androidx.compose.material3.Surface(
+            Modifier.fillMaxWidth(),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) { Column(Modifier.padding(12.dp), content = content) }
+    } else {
+        Column(content = content)
     }
 }
 

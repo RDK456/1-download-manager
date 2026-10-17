@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.downloadhub.app.ui.expressive.model.StateShapeKind
@@ -58,6 +59,8 @@ fun BadgeRow(
     supporting: String? = null,
     titleLines: Int = 2,
     onClick: () -> Unit,
+    /** True when the trailing control only repeats the row's own tap, so a screen reader hears one action. */
+    trailingRepeatsClick: Boolean = false,
     trailing: (@Composable () -> Unit)? = null
 ) {
     val (fill, onFill) = badgeColors(kind)
@@ -68,6 +71,9 @@ fun BadgeRow(
     }
     val body: @Composable () -> Unit = { Text(title, maxLines = titleLines, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmallEmphasized) }
     val second: (@Composable () -> Unit)? = supporting?.let { { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis) } }
+    val trailingContent: (@Composable () -> Unit)? = trailing?.let { t ->
+        if (trailingRepeatsClick) ({ androidx.compose.foundation.layout.Box(Modifier.clearAndSetSemantics { }) { t() } }) else t
+    }
     val shapes = ListItemDefaults.segmentedShapes(index = index, count = count)
-    SegmentedListItem(onClick = onClick, shapes = shapes, modifier = modifier, leadingContent = badge, supportingContent = second, trailingContent = trailing, content = body)
+    SegmentedListItem(onClick = onClick, shapes = shapes, modifier = modifier, leadingContent = badge, supportingContent = second, trailingContent = trailingContent, content = body)
 }
