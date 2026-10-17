@@ -121,6 +121,9 @@ fun AddSheet(
     var link by rememberSaveable(seed.link) { mutableStateOf(seed.link) }
     var fileName by rememberSaveable(seed.fileName) { mutableStateOf(seed.fileName.orEmpty()) }
     var request by remember(seed.link) { mutableStateOf(HttpRequestOptions()) }
+    // The link is only looked at over the network once the user has changed it themselves.
+    // One that arrived from a share or an intent is never probed on its own.
+    var edited by remember(seed.link) { mutableStateOf(false) }
     var showRequest by remember(seed.link) { mutableStateOf(false) }
     var category by remember(seed.source) { mutableStateOf(seed.category) }
 
@@ -140,7 +143,7 @@ fun AddSheet(
     // Look at a plain link once typing has paused. Cancelled and restarted on every edit.
     var notes by remember { mutableStateOf<List<AddNote>?>(null) }
     var probing by remember { mutableStateOf(false) }
-    val probeable = check is LinkCheck.Http || check is LinkCheck.Duplicate
+    val probeable = edited && (check is LinkCheck.Http || check is LinkCheck.Duplicate)
     LaunchedEffect(link, probeable, online) {
         notes = null
         if (!probeable) { probing = false; return@LaunchedEffect }
@@ -148,7 +151,8 @@ fun AddSheet(
         if (!online) { notes = interpretProbe(null, link, -1, false); return@LaunchedEffect }
         probing = true
         val target = LinkParser.extractFirstLink(link) ?: link.trim()
-        val probe = LinkProbe.probe(target, request)
+        // No cookies or login are sent: those are for the real download (see LinkProbe).
+        val probe = LinkProbe.probe(target)
         notes = interpretProbe(probe, target, freeBytes(), isRemovableTree(destinationTreeUri))
         probing = false
     }
@@ -180,7 +184,7 @@ fun AddSheet(
                             Text("Link on your clipboard", style = MaterialTheme.typography.titleSmallEmphasized)
                             Text(suggestion, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
-                        TextButton({ link = suggestion }) { Text("Use") }
+                        TextButton({ edited = true; link = suggestion }) { Text("Use") }
                     }
                 }
             }
@@ -188,7 +192,7 @@ fun AddSheet(
             val invalid = check as? LinkCheck.Invalid
             TextField(
                 value = link,
-                onValueChange = { link = it },
+                onValueChange = { edited = true; link = it },
                 modifier = Modifier.fillMaxWidth(),
                 shape = TextFieldDefaults.roundedShape,
                 colors = TextFieldDefaults.tonalColors(),
@@ -204,7 +208,7 @@ fun AddSheet(
                     if (probing) Loader(Modifier.size(32.dp))
                     else IconButton({
                         val text = context.getSystemService(ClipboardManager::class.java)?.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
-                        if (!text.isNullOrBlank()) link = text
+                        if (!text.isNullOrBlank()) { edited = true; link = text }
                     }) { Icon(Lucide.ClipboardPaste, contentDescription = "Paste link") }
                 }
             )

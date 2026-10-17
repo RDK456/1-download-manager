@@ -468,7 +468,7 @@ fun DownloadHubApp(
                 // rather than a flash.
                 androidx.compose.animation.Crossfade(
                     targetState = destination,
-                    animationSpec = androidx.compose.animation.core.tween(180),
+                    animationSpec = if (BuildConfig.EXPRESSIVE_UI) MaterialTheme.motionScheme.defaultEffectsSpec() else androidx.compose.animation.core.tween(180),
                     label = "tab"
                 ) { destination ->
                 when (destination) {
@@ -599,7 +599,10 @@ fun DownloadHubApp(
                         ytdlpUpdate = ytdlpUpdate,
                         onRetryYtDlp = viewModel::retryYtDlpSync
                     )
-                    AppDestination.DISCOVER -> DiscoverScreen(
+                    AppDestination.DISCOVER -> if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.screen.discover.DiscoverHome(
+                        tiles = discoverTiles(),
+                        onOpen = { navigate(it) }
+                    ) else DiscoverScreen(
                         tiles = discoverTiles(),
                         onOpen = { navigate(it) }
                     )
@@ -658,7 +661,12 @@ fun DownloadHubApp(
                         onDelete = viewModel::deleteQueue,
                         onToggle = viewModel::setQueueStarted
                     )
-                    AppDestination.THEMES -> ThemePickerScreen(
+                    AppDestination.THEMES -> if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.screen.settings.ThemesScreen(
+                        appTheme = appTheme,
+                        themeMode = themeMode,
+                        onThemeChange = viewModel::setAppTheme,
+                        onModeChange = viewModel::setTheme
+                    ) else ThemePickerScreen(
                         appTheme = appTheme,
                         themeMode = themeMode,
                         onThemeChange = viewModel::setAppTheme,
