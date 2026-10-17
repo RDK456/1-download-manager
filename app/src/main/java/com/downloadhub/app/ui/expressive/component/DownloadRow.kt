@@ -24,6 +24,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.CircleAlert
@@ -111,22 +114,27 @@ fun DownloadRow(
         },
         supportingContent = {
             Column {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        model.headline,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (model.isError) scheme.error else scheme.onSurfaceVariant
-                    )
-                    if (model.detail.isNotEmpty()) {
-                        Text(model.detail, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Mono), color = scheme.onSurfaceVariant)
-                    }
-                    if (model.swarm != null) {
-                        Text(model.swarm, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-                    }
-                    if (big && model.speed != null) {
-                        Text("${model.speed}  ${model.eta}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Mono), color = scheme.onSurfaceVariant)
-                    }
-                }
+                // One wrapping Text, not a FlowRow of Texts: the FlowRow reported two lines of height
+                // for one line of content, so rows with a detail were 16 dp taller than they looked.
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = if (model.isError) scheme.error else scheme.onSurfaceVariant)) { append(model.headline) }
+                        if (model.detail.isNotEmpty()) {
+                            append("  ")
+                            withStyle(SpanStyle(fontFamily = Mono)) { append(model.detail) }
+                        }
+                        if (model.swarm != null) {
+                            append("  ")
+                            append(model.swarm)
+                        }
+                        if (big && model.speed != null) {
+                            append("  ")
+                            withStyle(SpanStyle(fontFamily = Mono)) { append("${model.speed}  ${model.eta}") }
+                        }
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onSurfaceVariant
+                )
                 if (model.bar != com.downloadhub.app.ui.expressive.model.BarStyle.NONE) {
                     Spacer(Modifier.height(6.dp))
                     RowBar(model.bar, model.progress)

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -76,12 +77,20 @@ fun ThemesScreen(
         Preview(appTheme, dark, themeMode == ThemeMode.AMOLED)
 
         Text("Colour", style = MaterialTheme.typography.titleLargeEmphasized)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Equal cells that fill the row, as many as fit at 72 dp: a fixed 76 dp cell left a strip of
+        // empty space on the right of a narrow screen.
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = ((maxWidth + 12.dp) / (72.dp + 12.dp)).toInt().coerceAtLeast(2)
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            maxItemsInEachRow = columns
+        ) {
             AppTheme.entries.forEach { theme ->
                 val selected = theme == appTheme
                 Column(
                     Modifier
-                        .width(76.dp)
+                        .weight(1f)
                         .selectable(selected = selected, role = Role.RadioButton, onClick = { onThemeChange(theme) }),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -96,6 +105,9 @@ fun ThemesScreen(
                     Text(theme.label, style = MaterialTheme.typography.labelMedium, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
                 }
             }
+            // Pads the last row so its cells keep the width of the rows above.
+            repeat((columns - AppTheme.entries.size % columns) % columns) { Spacer(Modifier.weight(1f)) }
+        }
         }
     }
 }
