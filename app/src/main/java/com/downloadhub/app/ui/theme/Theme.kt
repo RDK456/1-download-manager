@@ -142,7 +142,7 @@ fun DownloadHubTheme(
  * black background and looks like the theme did not apply.
  */
 @Composable
-private fun MatchSystemBarsToTheme() {
+internal fun MatchSystemBarsToTheme() {
     val view = LocalView.current
     if (view.isInEditMode) return
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
