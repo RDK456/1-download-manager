@@ -87,7 +87,12 @@ sealed interface DownloadEvent {
     data class Deleted(val ids: List<String>, val text: String) : DownloadEvent
 }
 
-class DownloadViewModel(application: Application) : AndroidViewModel(application) {
+/**
+ * [saved] is the system's saved-state record for this screen. It survives the process being
+ * killed in the background, so what the person was looking at (the open download, the add
+ * sheet and what was in it, the search and filters) is still there when the app comes back.
+ */
+class DownloadViewModel(application: Application, private val saved: androidx.lifecycle.SavedStateHandle) : AndroidViewModel(application) {
     private val app = application as DownloadHubApplication
     private val repository = app.container.repository
     private val settings = app.container.settings
@@ -214,12 +219,35 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         syncYtDlpInBackground()
     }
 
-    private val query = MutableStateFlow("")
-    private val filter = MutableStateFlow(DownloadFilter.ALL)
-    private val categoryFilter = MutableStateFlow<DownloadCategory?>(null)
-    private val kindFilter = MutableStateFlow(LibraryKind.ALL)
-    private val _selectedId = MutableStateFlow<String?>(null)
-    private val _editorSeed = MutableStateFlow<EditorSeed?>(null)
+    private val query = MutableStateFlow(saved.get<String>(SAVED_QUERY).orEmpty())
+    private val filter = MutableStateFlow(saved.get<String>(SAVED_FILTER).toEnum(DownloadFilter.ALL))
+    private val categoryFilter = MutableStateFlow(saved.get<String>(SAVED_CATEGORY).toEnumOrNull<DownloadCategory>())
+    private val kindFilter = MutableStateFlow(saved.get<String>(SAVED_KIND).toEnum(LibraryKind.ALL))
+    private val _selectedId = MutableStateFlow(saved.get<String>(SAVED_SELECTED))
+    private val _editorSeed = MutableStateFlow(
+        if (saved.get<Boolean>(SAVED_EDITOR_OPEN) == true) {
+            EditorSeed(
+                link = saved.get<String>(SAVED_EDITOR_LINK).orEmpty(),
+                source = saved.get<String>(SAVED_EDITOR_SOURCE).toEnum(DownloadSource.HTTP)
+            )
+        } else null
+    )
+
+    // Everything above is written to the saved-state record as it changes.
+    init {
+        viewModelScope.launch { query.collect { saved[SAVED_QUERY] = it } }
+        viewModelScope.launch { filter.collect { saved[SAVED_FILTER] = it.name } }
+        viewModelScope.launch { categoryFilter.collect { saved[SAVED_CATEGORY] = it?.name } }
+        viewModelScope.launch { kindFilter.collect { saved[SAVED_KIND] = it.name } }
+        viewModelScope.launch { _selectedId.collect { saved[SAVED_SELECTED] = it } }
+        viewModelScope.launch {
+            _editorSeed.collect { seed ->
+                saved[SAVED_EDITOR_OPEN] = seed != null
+                saved[SAVED_EDITOR_LINK] = seed?.link
+                saved[SAVED_EDITOR_SOURCE] = seed?.source?.name
+            }
+        }
+    }
     private val _pageScan = MutableStateFlow<PageScanState>(PageScanState.Idle)
     private val _events = MutableSharedFlow<DownloadEvent>(extraBufferCapacity = 8)
     val events = _events.asSharedFlow()
@@ -1409,7 +1437,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
      * Queues the previewed torrent with only [selected] files. The choice is written
      * before the service starts, so the engine sees it on the first pass.
      */
-    fun confirmTorrentPreview(selected: Set<Int>) {
+    fun confirmTorrentPreview(selected: Set<Int>, startPaused: Boolean = false, queueId: String? = null) {
         val preview = _torrentPreview.value ?: return
         _torrentPreview.value = null
         viewModelScope.launch {
@@ -1426,8 +1454,16 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                             System.currentTimeMillis()
                         )
                     }
-                    DownloadService.start(getApplication(), listOf(created.id))
-                    _events.emit(DownloadEvent.Message("Torrent added to the queue"))
+                    if (queueId != null && queueId != com.downloadhub.app.ui.expressive.model.MAIN_QUEUE_ID) {
+                        app.container.database.downloadDao().updateQueue(created.id, queueId, System.currentTimeMillis())
+                    }
+                    if (startPaused) {
+                        repository.setStatus(created.id, DownloadStatus.PAUSED)
+                        _events.emit(DownloadEvent.Message("Torrent added, paused"))
+                    } else {
+                        DownloadService.start(getApplication(), listOf(created.id))
+                        _events.emit(DownloadEvent.Message("Torrent added to the queue"))
+                    }
                 }
                 .onFailure { _events.emit(DownloadEvent.Message(it.message ?: "Could not add the torrent")) }
         }
@@ -1527,3 +1563,19 @@ private fun android.content.ContentResolver.displayName(uri: Uri): String? {
         if (index >= 0 && it.moveToFirst()) it.getString(index) else null
     }
 }
+
+private const val SAVED_QUERY = "query"
+private const val SAVED_FILTER = "filter"
+private const val SAVED_CATEGORY = "category"
+private const val SAVED_KIND = "kind"
+private const val SAVED_SELECTED = "selected"
+private const val SAVED_EDITOR_OPEN = "editor_open"
+private const val SAVED_EDITOR_LINK = "editor_link"
+private const val SAVED_EDITOR_SOURCE = "editor_source"
+
+/** A stored enum name back to the enum, or [default] when it is missing or no longer exists. */
+private inline fun <reified E : Enum<E>> String?.toEnum(default: E): E =
+    this?.let { name -> enumValues<E>().firstOrNull { it.name == name } } ?: default
+
+private inline fun <reified E : Enum<E>> String?.toEnumOrNull(): E? =
+    this?.let { name -> enumValues<E>().firstOrNull { it.name == name } }

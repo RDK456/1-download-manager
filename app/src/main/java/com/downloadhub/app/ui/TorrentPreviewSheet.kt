@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
+import com.downloadhub.app.ui.expressive.component.Button
 import com.downloadhub.app.ui.expressive.shape.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -67,9 +67,10 @@ data class TorrentPreview(
 @Composable
 fun TorrentPreviewSheet(
     preview: TorrentPreview,
-    onConfirm: (Set<Int>) -> Unit,
+    onConfirm: (Set<Int>, Boolean, String?) -> Unit,
     onDismiss: () -> Unit,
-    onRetry: () -> Unit = {}
+    onRetry: () -> Unit = {},
+    queues: List<com.downloadhub.app.data.AppQueue> = emptyList()
 ) {
     val meta = preview.metainfo
     val tree = remember(meta) { meta?.let { m -> contentTree(m.files.map { ContentRow(it.path, it.index, it.size) }) }.orEmpty() }
@@ -81,7 +82,11 @@ fun TorrentPreviewSheet(
     LaunchedEffect(meta) { if (meta != null && selected.isEmpty()) selected = TorrentSelection.allSelected(meta) }
     val hasList = meta != null && meta.files.isNotEmpty()
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        dragHandle = if (com.downloadhub.app.ui.theme.UiGeneration.expressive) ({ com.downloadhub.app.ui.expressive.component.SheetHandle() }) else ({ androidx.compose.material3.BottomSheetDefaults.DragHandle() })
+    ) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -133,13 +138,26 @@ fun TorrentPreviewSheet(
                     HorizontalDivider()
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = { onConfirm(selected) },
-                    enabled = !hasList || selected.isNotEmpty()
-                ) { Text(if (preview.loading) "Download all" else "Download") }
+            val canGo = !hasList || selected.isNotEmpty()
+            val goLabel = if (preview.loading) "Download all" else "Download"
+            if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                // The arrow adds it paused or into another queue, the same as for a link.
+                Column(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    com.downloadhub.app.ui.expressive.screen.add.AddSplitButton(
+                        label = goLabel,
+                        enabled = canGo,
+                        choices = com.downloadhub.app.ui.expressive.model.addChoices(queues),
+                        onAdd = { onConfirm(selected, false, null) },
+                        onChoose = { onConfirm(selected, it.options.startPaused, it.options.queueId) }
+                    )
+                    TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(onClick = { onConfirm(selected, false, null) }, enabled = canGo) { Text(goLabel) }
+                }
             }
         }
     }

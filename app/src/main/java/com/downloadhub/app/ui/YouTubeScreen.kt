@@ -17,14 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
+import com.downloadhub.app.ui.expressive.component.Button
 import androidx.compose.material3.Checkbox
 import com.downloadhub.app.ui.expressive.shape.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.downloadhub.app.ui.expressive.component.OutlinedButton
 import com.downloadhub.app.ui.expressive.component.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -337,9 +337,26 @@ fun YouTubeScreen(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            items(entries, key = { it.id }) { entry ->
+            itemsIndexed(entries, key = { _, it -> it.id }) { index, entry ->
                 val known = knownIds.contains(entry.id)
                 val on = checked.contains(entry.id)
+                if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                    val detail = listOfNotNull(
+                        formatDuration(entry.durationSeconds).takeIf { entry.durationSeconds > 0L },
+                        entry.uploader,
+                        "In queue".takeIf { known }
+                    ).joinToString(" · ")
+                    androidx.compose.material3.SegmentedListItem(
+                        onClick = { checked = if (on) checked - entry.id else checked + entry.id },
+                        enabled = !known,
+                        selected = on,
+                        shapes = androidx.compose.material3.ListItemDefaults.segmentedShapes(index, entries.size),
+                        leadingContent = { Checkbox(checked = on || known, enabled = !known, onCheckedChange = null) },
+                        supportingContent = if (detail.isEmpty()) null else ({ Text(detail, maxLines = 1, overflow = TextOverflow.Ellipsis) }),
+                        content = { Text(entry.title, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    )
+                    return@itemsIndexed
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -649,6 +666,18 @@ private fun FormatRow(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+        androidx.compose.material3.SegmentedListItem(
+            onClick = onClick,
+            selected = selected,
+            shapes = androidx.compose.material3.ListItemDefaults.segmentedShapes(0, 3),
+            modifier = Modifier.padding(vertical = 1.dp),
+            trailingContent = { Text(if (sizeBytes != null && sizeBytes > 0L) formatBytes(sizeBytes) else "unknown") },
+            supportingContent = if (subtitle.isBlank()) null else ({ Text(subtitle.trim(), maxLines = 1, overflow = TextOverflow.Ellipsis) }),
+            content = { Text(title) }
+        )
+        return
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()

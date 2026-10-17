@@ -27,8 +27,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.downloadhub.app.ui.expressive.component.Button
+import com.downloadhub.app.ui.expressive.component.Card
 import com.downloadhub.app.ui.expressive.shape.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme

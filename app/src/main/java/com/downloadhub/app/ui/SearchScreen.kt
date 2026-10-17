@@ -24,8 +24,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.downloadhub.app.ui.expressive.component.Button
+import com.downloadhub.app.ui.expressive.component.Card
 import com.downloadhub.app.ui.expressive.shape.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +59,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.lazy.itemsIndexed
 
 /**
  * Find something to download.
@@ -82,6 +83,17 @@ import androidx.compose.material3.TextButton
  * takes over the screen and puts back exactly the way a person gets to compare one
  * torrent against the four next to it.
  */
+/** Keeps the search box and the chosen category through the app being closed in the background. */
+val SearchStateSaver = androidx.compose.runtime.saveable.listSaver<SearchScreenState, String>(
+    save = { listOf(it.query, it.group.name) },
+    restore = { saved ->
+        SearchScreenState().apply {
+            query = saved[0]
+            group = SearchGroup.entries.firstOrNull { it.name == saved[1] } ?: SearchGroup.MOVIES
+        }
+    }
+)
+
 class SearchScreenState {
     var query by mutableStateOf("")
     var group by mutableStateOf(SearchGroup.MOVIES)
@@ -242,8 +254,8 @@ fun SearchScreen(
     if (results.isNotEmpty() && visible.isNotEmpty()) {
         LazyColumn(modifier.fillMaxSize()) {
             item { header() }
-            items(visible, key = { it.source + it.infoHash }) { result ->
-                SearchResultCard(result, SOURCE_LABELS[result.source]) {
+            itemsIndexed(visible, key = { _, it -> it.source + it.infoHash }) { index, result ->
+                SearchResultCard(result, SOURCE_LABELS[result.source], index, visible.size) {
                     onPick(result.magnet)
                 }
             }
@@ -355,8 +367,8 @@ private fun TorrentPicks(onPick: (String) -> Unit) {
             }
         }
         LazyColumn(Modifier.fillMaxSize(), state = list) {
-            items(picks, key = { it.infoHash }) { pick ->
-                SearchResultCard(pick, "Internet Archive") { onPick(pick.magnet) }
+            itemsIndexed(picks, key = { _, it -> it.infoHash }) { index, pick ->
+                SearchResultCard(pick, "Internet Archive", index, picks.size) { onPick(pick.magnet) }
             }
             if (loading) item {
                 Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
@@ -399,8 +411,14 @@ private fun Centre(text: String, busy: Boolean = false) {
 private fun SearchResultCard(
     result: SearchResult,
     sourceLabel: String?,
+    index: Int,
+    count: Int,
     onDownload: () -> Unit
 ) {
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+        com.downloadhub.app.ui.expressive.screen.search.SearchRow(result, sourceLabel, index, count, onDownload)
+        return
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()

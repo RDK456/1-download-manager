@@ -213,7 +213,7 @@ fun DownloadHubApp(
         // single download. Holding it here survives navigation, and `remember` rather
         // than `rememberSaveable` is deliberate: a `Job` cannot be put in a bundle, and
         // a search worth keeping across a rotation is the recent one.
-        val searchState = remember { SearchScreenState() }
+        val searchState = rememberSaveable(saver = SearchStateSaver) { SearchScreenState() }
         val nav = remember(navKey) { decodeNav(navKey) }
         val rootDestination = nav.root
         val destination = nav.current
@@ -796,7 +796,8 @@ fun DownloadHubApp(
                 preview = preview,
                 onConfirm = viewModel::confirmTorrentPreview,
                 onDismiss = viewModel::dismissTorrentPreview,
-                onRetry = viewModel::retryTorrentPreview
+                onRetry = viewModel::retryTorrentPreview,
+                queues = queues
             )
         }
         if (scanState is PageScanState.Found || scanState is PageScanState.Failed) {
