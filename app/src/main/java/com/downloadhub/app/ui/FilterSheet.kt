@@ -46,7 +46,8 @@ fun FilterSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        modifier = Modifier.navigationBarsPadding()
+        modifier = Modifier.navigationBarsPadding(),
+        dragHandle = if (com.downloadhub.app.ui.theme.UiGeneration.expressive) ({ com.downloadhub.app.ui.expressive.component.SheetHandle() }) else ({ androidx.compose.material3.BottomSheetDefaults.DragHandle() })
     ) {
         Column(
             modifier = Modifier
@@ -72,11 +73,12 @@ fun FilterSheet(
             }
 
             Text("Status", style = MaterialTheme.typography.titleSmall)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            // Wraps, so at a large text size every status is still on screen, not behind a swipe.
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 DownloadFilter.entries.forEach { option ->
                     FilterChip(
@@ -98,7 +100,8 @@ fun FilterSheet(
             }
 
             Spacer(Modifier.height(8.dp))
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+            if (com.downloadhub.app.ui.theme.UiGeneration.expressive) androidx.compose.material3.FilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Apply") }
+            else TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                 Text("Apply")
             }
         }

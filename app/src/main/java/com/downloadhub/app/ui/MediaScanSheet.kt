@@ -3,6 +3,7 @@ package com.downloadhub.app.ui
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.CirclePlay
 import com.composables.icons.lucide.ExternalLink
 import com.composables.icons.lucide.File
@@ -22,7 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import com.downloadhub.app.ui.expressive.component.Button
 import com.downloadhub.app.ui.expressive.shape.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,7 +64,8 @@ fun MediaScanSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        modifier = Modifier.navigationBarsPadding()
+        modifier = Modifier.navigationBarsPadding(),
+        dragHandle = if (com.downloadhub.app.ui.theme.UiGeneration.expressive) ({ com.downloadhub.app.ui.expressive.component.SheetHandle() }) else ({ androidx.compose.material3.BottomSheetDefaults.DragHandle() })
     ) {
         Column(
             modifier = Modifier
@@ -95,7 +97,20 @@ fun MediaScanSheet(
                         modifier = Modifier.heightIn(max = 420.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(state.items, key = { it.url }) { candidate ->
+                        itemsIndexed(state.items, key = { _, it -> it.url }) { index, candidate ->
+                            if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                                com.downloadhub.app.ui.expressive.component.BadgeRow(
+                                    title = candidate.label,
+                                    index = index,
+                                    count = state.items.size,
+                                    icon = iconFor(candidate.kind),
+                                    supporting = kindLabel(candidate),
+                                    titleLines = 1,
+                                    onClick = { onPick(candidate) },
+                                    trailing = { Icon(Lucide.Download, contentDescription = "Download " + candidate.label) }
+                                )
+                                return@itemsIndexed
+                            }
                             MediaRow(candidate = candidate, onClick = { onPick(candidate) })
                         }
                     }
@@ -103,7 +118,13 @@ fun MediaScanSheet(
                         Text("Close")
                     }
                 }
-                is PageScanState.Scanning -> {
+                is PageScanState.Scanning -> if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CircularProgressIndicator(Modifier.size(64.dp))
+                        Text("Checking the page", style = MaterialTheme.typography.headlineSmall)
+                        Text("Looking for video, audio and files...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
                     Text("Checking the page", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(6.dp))
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -114,7 +135,16 @@ fun MediaScanSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                is PageScanState.Failed -> {
+                is PageScanState.Failed -> if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                    com.downloadhub.app.ui.expressive.component.EmptyState(
+                        com.downloadhub.app.ui.expressive.model.StateShapeKind.PENTAGON,
+                        Lucide.File,
+                        "Nothing to download here",
+                        state.message,
+                        primary = com.downloadhub.app.ui.expressive.component.EmptyAction("Try again", onRescan),
+                        secondary = com.downloadhub.app.ui.expressive.component.EmptyAction("Close", onDismiss)
+                    )
+                } else {
                     Text("Nothing to download here", style = MaterialTheme.typography.headlineSmall)
                     Text(
                         state.message,

@@ -72,7 +72,13 @@ fun MiniPlayer(onOpen: () -> Unit) {
     val state by AppPlayer.state.collectAsState()
     val current = state.current ?: return
     val position = rememberPlayerPosition()
-    Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
+    val expressive = com.downloadhub.app.ui.theme.UiGeneration.expressive
+    Surface(
+        tonalElevation = if (expressive) 0.dp else 3.dp,
+        shape = if (expressive) androidx.compose.foundation.shape.RoundedCornerShape(28.dp) else androidx.compose.ui.graphics.RectangleShape,
+        color = if (expressive) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
+        modifier = (if (expressive) Modifier.padding(horizontal = 12.dp, vertical = 4.dp) else Modifier).fillMaxWidth().clickable(onClick = onOpen)
+    ) {
         Column {
             if (!current.isLive && state.durationMillis > 0) {
                 LinearProgressIndicator(
@@ -140,13 +146,37 @@ fun PlayerScreen(library: List<AppPlayer.Item>) {
         item(key = "heading") {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text("Your music and videos", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                if (library.isEmpty()) {
+                if (library.isEmpty() && com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                    com.downloadhub.app.ui.expressive.component.HintCard("Finished music and video downloads appear here.", Modifier.padding(top = 8.dp))
+                } else if (library.isEmpty()) {
                     Text("Finished music and video downloads appear here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
         itemsIndexed(library, key = { _, item -> item.uri }) { index, item ->
             val playing = item.uri == current?.uri
+            val start = {
+                // Songs play as a list, so next and previous move through them; a video plays alone.
+                if (item.isVideo) AppPlayer.play(context, listOf(item), 0)
+                else {
+                    val songs = library.filter { !it.isVideo }
+                    AppPlayer.play(context, songs, songs.indexOf(item))
+                }
+            }
+            if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                com.downloadhub.app.ui.expressive.component.BadgeRow(
+                    title = item.title,
+                    index = index,
+                    count = library.size,
+                    icon = if (item.isVideo) Lucide.Film else Lucide.Music,
+                    kind = if (playing) com.downloadhub.app.ui.expressive.model.StateShapeKind.COOKIE else com.downloadhub.app.ui.expressive.model.StateShapeKind.CIRCLE,
+                    supporting = if (playing) (if (state.playing) "Playing" else "Paused") else null,
+                    titleLines = 1,
+                    onClick = start,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                return@itemsIndexed
+            }
             Row(
                 Modifier
                     .fillMaxWidth()

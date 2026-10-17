@@ -92,7 +92,8 @@ fun YtDlpStatusRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp)
             )
-            TextButton(
+            if (com.downloadhub.app.ui.theme.UiGeneration.expressive) androidx.compose.material3.FilledTonalButton(onClick = onRetry, modifier = Modifier.padding(top = 6.dp)) { Text("Try again") }
+            else TextButton(
                 onClick = onRetry,
                 modifier = Modifier.padding(top = 2.dp)
             ) {

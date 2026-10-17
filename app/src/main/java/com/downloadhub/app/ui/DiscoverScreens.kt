@@ -54,6 +54,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -166,7 +167,15 @@ fun BooksScreen(loader: ThumbnailCache, catalog: FreeCatalog, onDownload: (BookR
             }
         }
         val shown = if (showingPicks) picks else results.filter { source == null || it.source == source }
-        if (shown.isEmpty()) {
+        if (shown.isEmpty() && com.downloadhub.app.ui.theme.UiGeneration.expressive && !busy && !(showingPicks && picking)) {
+            com.downloadhub.app.ui.expressive.component.EmptyState(
+                if (showingPicks) com.downloadhub.app.ui.expressive.model.StateShapeKind.PENTAGON else com.downloadhub.app.ui.expressive.model.StateShapeKind.CIRCLE,
+                Lucide.BookOpen,
+                if (showingPicks) "Couldn't load picks" else "Nothing found",
+                if (showingPicks) catalog.blurb else "Try fewer words, or a surname.",
+                primary = if (showingPicks) com.downloadhub.app.ui.expressive.component.EmptyAction("Try again", { scope.launch { morePicks(reset = true) } }) else null
+            )
+        } else if (shown.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 when {
                     busy || (showingPicks && picking) -> CircularProgressIndicator()
@@ -212,7 +221,9 @@ private fun BookCard(book: BookResult, loader: ThumbnailCache, onDownload: (Book
     Card {
         Column(Modifier.padding(8.dp)) {
             Box(
-                Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small),
+                Modifier.fillMaxWidth().aspectRatio(2f / 3f)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, if (com.downloadhub.app.ui.theme.UiGeneration.expressive) MaterialTheme.shapes.large else MaterialTheme.shapes.small)
+                    .clip(if (com.downloadhub.app.ui.theme.UiGeneration.expressive) MaterialTheme.shapes.large else MaterialTheme.shapes.small),
                 contentAlignment = Alignment.Center
             ) {
                 val image = cover

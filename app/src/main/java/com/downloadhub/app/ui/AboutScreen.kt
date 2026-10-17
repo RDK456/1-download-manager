@@ -70,11 +70,12 @@ fun AboutScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // GitHub logo -> opens the project's git page.
-        Card(
+        // The stock card: the brand colour is deliberate and the themed drop-in would repaint it.
+        androidx.compose.material3.Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onOpenRepo),
-            shape = MaterialTheme.shapes.large,
+            shape = if (com.downloadhub.app.ui.theme.UiGeneration.expressive) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(containerColor = GITHUB_MARK),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
@@ -222,6 +223,10 @@ fun AboutScreen(
 
 @Composable
 private fun AboutCard(title: String, content: @Composable () -> Unit) {
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+        SettingsSection(title, content)
+        return
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -264,7 +269,8 @@ private fun AboutRow(label: String, value: String) {
             value,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
-            maxLines = 1,
+            // Wraps in the new look: a package or repository name cut at "..." hides the part that differs.
+            maxLines = if (com.downloadhub.app.ui.theme.UiGeneration.expressive) 3 else 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(start = 12.dp)
         )

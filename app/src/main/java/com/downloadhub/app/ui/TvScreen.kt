@@ -1,5 +1,9 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+
+import com.composables.icons.lucide.Tv
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -65,12 +69,13 @@ fun TvScreen(loader: ThumbnailCache, onWatching: () -> Unit) {
     var failed by remember { mutableStateOf<String?>(null) }
     var filter by rememberSaveable { mutableStateOf("") }
     var hideBlocked by rememberSaveable { mutableStateOf(true) }
+    var attempt by remember { mutableStateOf(0) }
 
     // Every country iptv-org lists, from its catalogue; the short built-in list until then.
     var countries by remember { mutableStateOf(IptvSource.countries) }
     LaunchedEffect(Unit) { countries = IptvSource.allCountries() }
 
-    LaunchedEffect(listUrl) {
+    LaunchedEffect(listUrl, attempt) {
         loading = true
         failed = null
         channels = runCatching { IptvSource.channels(listUrl) }
@@ -126,6 +131,13 @@ fun TvScreen(loader: ThumbnailCache, onWatching: () -> Unit) {
         }
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            shown.isEmpty() && com.downloadhub.app.ui.theme.UiGeneration.expressive -> com.downloadhub.app.ui.expressive.component.EmptyState(
+                if (failed != null) com.downloadhub.app.ui.expressive.model.StateShapeKind.PENTAGON else com.downloadhub.app.ui.expressive.model.StateShapeKind.CIRCLE,
+                com.composables.icons.lucide.Lucide.Tv,
+                if (failed != null) "Can't load channels" else "No channels here",
+                failed ?: if (hideBlocked && channels.isNotEmpty()) "Everything here is geo-blocked. Turn off the filter to see it anyway." else "Try another category or country.",
+                primary = if (failed != null) com.downloadhub.app.ui.expressive.component.EmptyAction("Try again", { attempt++ }) else null
+            )
             shown.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(failed ?: "No channels here.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             }

@@ -172,3 +172,13 @@ Each phase has an exit check. Do not start the next until it passes.
 - `compileSdk`: stays 35 unless the build says otherwise.
 - Binary size: Roboto Flex is large; subset to the axes we use (`wght`, `wdth`).
 - Fonts and icons: Lucide stays; do not mix in Material Symbols.
+
+## Sub-pages pass
+
+Every screen now has an expressive branch (the Classic look still draws the old layout):
+
+- Search (rows, notes, picks empty state), YouTube (hint, loader, error, entry and format rows), Archive (rows, file rows, retry), TV (empty and retry), Books (cover shape, empty and retry), Player (floating mini player, library rows), Queues, RSS (rows, empty state), Advanced and About (tonal sections, whole-row toggles), media scan sheet and filter sheet (handle, wrapped chips, states).
+- Shared pieces: `component/Lists.kt` (`BadgeRow`, `HintCard`, `SectionLabel`), plus the drop-ins in `DropIns.kt`.
+- Checked on the emulator: Search, YouTube, Discover, TV (offline state), Archive, Books, Settings, Queues, RSS, Advanced, About, light and dark.
+- Not checked on a device: Player, media scan sheet, filter sheet, torrent Content/Trackers/Peers tabs (only re-themed), large text and RTL on the new rows.
+- Known: the `Card` drop-in ignores explicit `colors` in the new look; the one deliberate case (About's GitHub card) uses the stock card.

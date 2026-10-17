@@ -1,5 +1,9 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Download
+
+import com.composables.icons.lucide.File
+
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Search
 import android.content.Intent
@@ -21,7 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
@@ -76,6 +81,7 @@ fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Uni
     var loading by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf<String?>(null) }
     var open by remember { mutableStateOf<ArchiveItem?>(null) }
+    var attempt by remember { mutableStateOf(0) }
 
     var loadingMore by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
@@ -84,7 +90,7 @@ fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Uni
     // it, so browsing shows different things on every visit.
     suspend fun fetch(at: Int) = ArchiveOrg.search(submitted, type, at).let { if (submitted.isBlank()) it.shuffled() else it }
 
-    LaunchedEffect(submitted, type) {
+    LaunchedEffect(submitted, type, attempt) {
         loading = true
         failed = null
         page = if (submitted.isBlank()) 1 + Random.nextInt(ArchiveOrg.BROWSE_DEPTH) else 1
@@ -118,6 +124,13 @@ fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Uni
         }
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            items.isEmpty() && com.downloadhub.app.ui.theme.UiGeneration.expressive -> com.downloadhub.app.ui.expressive.component.EmptyState(
+                if (failed != null) com.downloadhub.app.ui.expressive.model.StateShapeKind.PENTAGON else com.downloadhub.app.ui.expressive.model.StateShapeKind.CIRCLE,
+                Lucide.Search,
+                if (failed != null) "Can't reach the Archive" else "Nothing found",
+                failed ?: "Try other words, or another kind of media.",
+                primary = if (failed != null) com.downloadhub.app.ui.expressive.component.EmptyAction("Try again", { attempt++ }) else null
+            )
             items.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(failed ?: "Nothing found.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             }
@@ -134,7 +147,7 @@ fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Uni
                     loadingMore = false
                 }
                 LazyColumn(state = list, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(items, key = { it.id }) { item -> ArchiveRow(item, loader) { open = item } }
+                    itemsIndexed(items, key = { _, it -> it.id }) { index, item -> ArchiveRow(item, loader, index, items.size) { open = item } }
                     if (loadingMore) item {
                         Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -147,9 +160,29 @@ fun ArchiveScreen(loader: ThumbnailCache, onDownload: (List<ArchiveFile>) -> Uni
 }
 
 @Composable
-private fun ArchiveRow(item: ArchiveItem, loader: ThumbnailCache, onOpen: () -> Unit) {
+private fun ArchiveRow(item: ArchiveItem, loader: ThumbnailCache, index: Int, count: Int, onOpen: () -> Unit) {
     var thumb by remember(item.id) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(item.id) { thumb = runCatching { loader.load(null, item.thumbnailUrl) }.getOrNull()?.asImageBitmap() }
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+        androidx.compose.material3.SegmentedListItem(
+            onClick = onOpen,
+            shapes = androidx.compose.material3.ListItemDefaults.segmentedShapes(index, count),
+            leadingContent = {
+                Box(Modifier.size(56.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))) {
+                    thumb?.let { Image(it, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+                }
+            },
+            supportingContent = {
+                Text(
+                    listOf(item.typeLabel, item.creator, item.sizeBytes.takeIf { it > 0 }?.let(::formatBytes).orEmpty())
+                        .filter { it.isNotBlank() }.joinToString(" · "),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+            },
+            content = { Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmallEmphasized) }
+        )
+        return
+    }
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(56.dp).background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small)) {
@@ -214,7 +247,19 @@ private fun ArchiveItemView(item: ArchiveItem, onDownload: (List<ArchiveFile>) -
                     )
                 }
                 LazyColumn(Modifier.padding(top = 8.dp)) {
-                    items(list, key = { it.name }) { file ->
+                    itemsIndexed(list, key = { _, it -> it.name }) { index, file ->
+                        if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                            com.downloadhub.app.ui.expressive.component.BadgeRow(
+                                title = file.name,
+                                index = index,
+                                count = list.size,
+                                icon = com.composables.icons.lucide.Lucide.File,
+                                supporting = listOf(file.format, formatBytes(file.sizeBytes)).filter { it.isNotBlank() }.joinToString(" · "),
+                                onClick = { onDownload(listOf(file)) },
+                                trailing = { androidx.compose.material3.FilledTonalIconButton(onClick = { onDownload(listOf(file)) }) { androidx.compose.material3.Icon(com.composables.icons.lucide.Lucide.Download, contentDescription = "Download " + file.name) } }
+                            )
+                            return@itemsIndexed
+                        }
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(file.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)

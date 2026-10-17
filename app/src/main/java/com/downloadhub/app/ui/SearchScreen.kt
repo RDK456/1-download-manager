@@ -220,22 +220,8 @@ fun SearchScreen(
 
             // Said out loud, above the results. A search that quietly drops a source looks like
             // one that found nothing, and those are very different things to be told.
-            outcome?.offlineNote()?.let {
-                Text(
-                    it,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-            }
-            message?.let {
-                Text(
-                    it,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-            }
+            outcome?.offlineNote()?.let { SearchNote(it, isError = true) }
+            message?.let { SearchNote(it, isError = false) }
 
             // Which sources are being shown. Only once there are results - a filter listing sites
             // that have not been asked yet is a row of tabs on an empty page - and each chip
@@ -355,6 +341,15 @@ private fun TorrentPicks(onPick: (String) -> Unit) {
 
     if (picks.isEmpty()) {
         if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        else if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+            com.downloadhub.app.ui.expressive.component.EmptyState(
+                com.downloadhub.app.ui.expressive.model.StateShapeKind.BURST,
+                Lucide.Search,
+                "Search the sources for something to download",
+                "Or browse free picks from the Internet Archive.",
+                primary = com.downloadhub.app.ui.expressive.component.EmptyAction("Show free picks", { scope.launch { more(reset = true) } }, tonal = true)
+            )
+        }
         else Centre("Search the sources for something to download.")
         return
     }
@@ -377,6 +372,33 @@ private fun TorrentPicks(onPick: (String) -> Unit) {
             }
         }
     }
+}
+
+/** A line under the search box. New look: a tonal strip, so a dropped source is not a red caption. */
+@Composable
+private fun SearchNote(text: String, isError: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+        androidx.compose.material3.Surface(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            color = if (isError) scheme.errorContainer else scheme.surfaceContainerHigh
+        ) {
+            Text(
+                text,
+                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isError) scheme.onErrorContainer else scheme.onSurfaceVariant
+            )
+        }
+        return
+    }
+    Text(
+        text,
+        fontSize = 12.sp,
+        color = if (isError) scheme.error else scheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp)
+    )
 }
 
 @Composable

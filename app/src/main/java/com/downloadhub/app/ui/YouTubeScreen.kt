@@ -169,9 +169,10 @@ fun YouTubeScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // No heading: the top bar already says YouTube.
-        Text(
-            "A video, playlist, album or channel - the section lists what the " +
-                "link holds, and downloads the rows you tick.",
+        val intro = "A video, playlist, album or channel - the section lists what the " +
+            "link holds, and downloads the rows you tick."
+        if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.component.HintCard(intro) else Text(
+            intro,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -213,7 +214,11 @@ fun YouTubeScreen(
             }
         }
 
-        if (busy && entries.isEmpty() && error == null) {
+        if (busy && entries.isEmpty() && error == null && com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalArrangement = Arrangement.Center) {
+                com.downloadhub.app.ui.expressive.shape.Loader(Modifier.size(56.dp))
+            }
+        } else if (busy && entries.isEmpty() && error == null) {
             Text(
                 "Reading what this link holds...",
                 style = MaterialTheme.typography.bodySmall,
@@ -221,7 +226,16 @@ fun YouTubeScreen(
             )
         }
         val failure = error
-        if (failure != null && !busy) {
+        if (failure != null && !busy && com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+            androidx.compose.material3.Surface(
+                Modifier.fillMaxWidth(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.errorContainer
+            ) {
+                Text(failure, Modifier.padding(14.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+            OutlinedButton(onClick = { attempt++ }, modifier = Modifier.fillMaxWidth()) { Text("Retry") }
+        } else if (failure != null && !busy) {
             Text(
                 failure,
                 style = MaterialTheme.typography.bodySmall,

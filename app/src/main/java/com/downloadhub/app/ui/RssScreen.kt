@@ -1,5 +1,9 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+
+import com.composables.icons.lucide.Rss
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,7 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -66,7 +70,16 @@ fun RssScreen(
         }
         if (refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-            if (feeds.isEmpty()) {
+            if (feeds.isEmpty() && com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                item {
+                    com.downloadhub.app.ui.expressive.component.EmptyState(
+                        com.downloadhub.app.ui.expressive.model.StateShapeKind.CIRCLE,
+                        com.composables.icons.lucide.Lucide.Rss,
+                        "No feeds yet",
+                        "Add a feed address to read its articles here. Articles that match an enabled rule are downloaded by themselves."
+                    )
+                }
+            } else if (feeds.isEmpty()) {
                 item {
                     Text(
                         "Add a feed address to read its articles here. Articles that match an enabled rule are downloaded by themselves.",
@@ -87,7 +100,20 @@ fun RssScreen(
                         TextButton(onClick = { onRemoveFeed(feed.url) }) { Text("Remove") }
                     }
                 }
-                items(items[feed.url].orEmpty(), key = { feed.url + it.guid + it.link }) { item ->
+                val articles = items[feed.url].orEmpty()
+                itemsIndexed(articles, key = { _, it -> feed.url + it.guid + it.link }) { index, item ->
+                    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                        com.downloadhub.app.ui.expressive.component.BadgeRow(
+                            title = item.title,
+                            index = index,
+                            count = articles.size,
+                            icon = com.composables.icons.lucide.Lucide.Rss,
+                            supporting = item.published.ifBlank { null },
+                            onClick = { onDownload(item) },
+                            trailing = { androidx.compose.material3.FilledTonalButton(onClick = { onDownload(item) }) { Text("Get") } }
+                        )
+                        return@itemsIndexed
+                    }
                     Card(Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f).padding(vertical = 8.dp)) {

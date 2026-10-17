@@ -1,5 +1,9 @@
 package com.downloadhub.app.ui
 
+import com.composables.icons.lucide.Lucide
+
+import com.composables.icons.lucide.List
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,7 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -49,14 +53,29 @@ fun QueuesScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Text(
-                "A stopped queue starts nothing. A schedule starts and stops a queue by itself; " +
-                    "Android checks it about every 15 minutes.",
+            val hint = "A stopped queue starts nothing. A schedule starts and stops a queue by itself; " +
+                "Android checks it about every 15 minutes."
+            if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.component.HintCard(hint) else Text(
+                hint,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        items(queues, key = { it.id }) { queue ->
+        itemsIndexed(queues, key = { _, it -> it.id }) { index, queue ->
+            if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+                com.downloadhub.app.ui.expressive.component.BadgeRow(
+                    title = queue.name,
+                    index = index,
+                    count = queues.size,
+                    icon = com.composables.icons.lucide.Lucide.List,
+                    kind = if (queue.started) com.downloadhub.app.ui.expressive.model.StateShapeKind.COOKIE
+                    else com.downloadhub.app.ui.expressive.model.StateShapeKind.SQUIRCLE,
+                    supporting = summary(queue),
+                    onClick = { editing = queue to false },
+                    trailing = { Switch(checked = queue.started, onCheckedChange = { onToggle(queue.id, it) }) }
+                )
+                return@itemsIndexed
+            }
             Card(Modifier.fillMaxWidth().clickable { editing = queue to false }) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
