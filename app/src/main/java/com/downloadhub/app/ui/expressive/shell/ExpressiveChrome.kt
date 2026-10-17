@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
@@ -72,7 +73,15 @@ fun ExpressiveNavBar(items: List<NavItem>, modifier: Modifier = Modifier) {
                         Icon(item.icon, contentDescription = null)
                     }
                 },
-                label = { Text(item.label, maxLines = 1, overflow = TextOverflow.Clip) }
+                // Shrinks to fit rather than being cut: "Downloads" was shown as "Download" on a 360 dp phone.
+                label = {
+                    Text(
+                        item.label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                        autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 12.sp)
+                    )
+                }
             )
         }
     }

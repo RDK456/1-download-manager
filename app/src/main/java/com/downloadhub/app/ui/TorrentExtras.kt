@@ -79,7 +79,12 @@ internal fun TorrentExtras(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Wraps onto a second row when the two do not fit side by side (a narrow phone, larger text).
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             OutlinedButton(onClick = onForceRecheck) { Text("Force recheck") }
             OutlinedButton(onClick = onForceReannounce) { Text("Force reannounce") }
         }

@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 
@@ -33,6 +34,10 @@ fun <T> FilterGroup(
     // With large system text four labels no longer fit side by side: let them wrap onto more
     // rows instead of cutting the words off.
     val roomy = androidx.compose.ui.platform.LocalDensity.current.fontScale < 1.3f
+    // Equal shares only for two or fewer. With more, a share is a fraction of a narrow screen and
+    // the button's own side padding leaves too little for the word: it was cut to "Syste" and
+    // "YouTub" on a 360 dp phone. Buttons size to their label instead and wrap onto a new row.
+    val equalShares = roomy && options.size <= 2
     @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
     androidx.compose.foundation.layout.FlowRow(
         modifier.fillMaxWidth(),
@@ -49,10 +54,12 @@ fun <T> FilterGroup(
                 checked = option.value == selected,
                 onCheckedChange = { if (it) onSelect(option.value) },
                 shapes = shapes,
+                // Tighter than the default 24 dp a side, so four short labels share one row on a narrow phone.
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = if (options.size > 2) 14.dp else 24.dp),
                 colors = if (unselectedContainer.isSpecified) ToggleButtonDefaults.colors(containerColor = unselectedContainer) else ToggleButtonDefaults.colors(),
-                modifier = (if (roomy) Modifier.weight(1f) else Modifier).semantics { role = Role.RadioButton }
+                modifier = (if (equalShares) Modifier.weight(1f) else Modifier).semantics { role = Role.RadioButton }
             ) {
-                Text(if (option.count != null) "${option.label} ${option.count}" else option.label, maxLines = if (roomy) 1 else 2)
+                Text(if (option.count != null) "${option.label} ${option.count}" else option.label, maxLines = 2)
             }
         }
     }
