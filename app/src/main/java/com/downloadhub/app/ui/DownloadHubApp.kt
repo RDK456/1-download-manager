@@ -684,7 +684,31 @@ fun DownloadHubApp(
         }
 
         val scanState by viewModel.pageScan.collectAsStateWithLifecycle()
+        val online by com.downloadhub.app.ui.expressive.shell.rememberOnline()
         editorSeed?.let { seed ->
+          if (BuildConfig.EXPRESSIVE_UI) {
+            com.downloadhub.app.ui.expressive.screen.add.AddSheet(
+                seed = seed,
+                existing = allItems,
+                allowTorrentFile = destination == AppDestination.TORRENTS,
+                scanning = scanState is PageScanState.Scanning,
+                online = online,
+                destinationTreeUri = destinationTreeUri,
+                freeBytes = viewModel::freeStorageBytes,
+                onDismiss = viewModel::closeEditor,
+                onAdd = viewModel::addLink,
+                onOpenYouTubeTab = { link ->
+                    viewModel.closeEditor()
+                    viewModel.setYouTubePrefill(link)
+                    navigate(AppDestination.YOUTUBE)
+                },
+                onPickTorrent = viewModel::addTorrentFile,
+                onScanPage = viewModel::scanPageForMedia,
+                onRequestOptions = viewModel::setPendingRequest,
+                onAddBatch = viewModel::addBatch,
+                onOpenExisting = { id -> viewModel.closeEditor(); viewModel.select(id) }
+            )
+          } else
             AddDownloadSheet(
                 seed = seed,
                 allowTorrentFile = destination == AppDestination.TORRENTS,
@@ -734,7 +758,6 @@ fun DownloadHubApp(
                 onDismiss = { filterSheetOpen = false }
             )
         }
-        val online by com.downloadhub.app.ui.expressive.shell.rememberOnline()
         selectedItem?.let { item ->
           if (BuildConfig.EXPRESSIVE_UI) {
             com.downloadhub.app.ui.expressive.screen.details.DetailsSheet(
