@@ -236,12 +236,14 @@ fun DownloadHubApp(
         val snackbarHostState = remember { SnackbarHostState() }
 
         fun navigate(target: AppDestination) {
+            // The details pane belongs to the list it was opened from.
+            if (target != destination && widthClass.showsDetailPane) viewModel.select(null)
             navKey = encodeNav(nav.navigate(target))
         }
 
         // Always enabled so back is never swallowed: on a sub-page it pops the
         // stack, and on a root tab it asks before leaving the app.
-        if (BuildConfig.EXPRESSIVE_UI) {
+        if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
             androidx.activity.compose.PredictiveBackHandler { events ->
                 try {
                     events.collect { backProgress = if (nav.canGoBack) it.progress else 0f }
@@ -345,7 +347,7 @@ fun DownloadHubApp(
 
         Scaffold(
             topBar = {
-                if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.shell.ExpressiveTopBar(
+                if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.shell.ExpressiveTopBar(
                     title = destinationTitle(destination),
                     onBack = if (destination.isRoot) null else ({ nav.back()?.let { navKey = encodeNav(it) } }),
                     onFilter = if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) ({ filterSheetOpen = true }) else null,
@@ -422,7 +424,7 @@ fun DownloadHubApp(
                 )
             },
             bottomBar = {
-                if (!(BuildConfig.EXPRESSIVE_UI && widthClass.usesRail) && destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
+                if (!(com.downloadhub.app.ui.theme.UiGeneration.expressive && widthClass.usesRail) && destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
                     Column {
                     // Above the tabs on every screen while something is playing.
                     if (destination != AppDestination.PLAYER) MiniPlayer(onOpen = { navigate(AppDestination.PLAYER) })
@@ -440,9 +442,9 @@ fun DownloadHubApp(
             },
             floatingActionButton = {
                 if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS && !destination.isDiscover) {
-                    if (BuildConfig.EXPRESSIVE_UI) {
+                    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
                         // Only where there is a list to add to.
-                        if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) {
+                        if ((destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) && !com.downloadhub.app.ui.expressive.shell.ExpressiveChromeState.selecting) {
                             com.downloadhub.app.ui.expressive.shell.AddMenuHost(viewModel, addMenuOpen) { addMenuOpen = it }
                         }
                     } else {
@@ -482,7 +484,7 @@ fun DownloadHubApp(
                 )
             }
             Row(Modifier.fillMaxSize().padding(padding)) {
-            if (BuildConfig.EXPRESSIVE_UI && widthClass.usesRail && destination.isRoot) {
+            if (com.downloadhub.app.ui.theme.UiGeneration.expressive && widthClass.usesRail && destination.isRoot) {
                 com.downloadhub.app.ui.expressive.shell.ExpressiveRail(
                     items = listOf(
                         com.downloadhub.app.ui.expressive.shell.NavItem("Downloads", Lucide.Download, destination == AppDestination.DOWNLOADS, mainSummary.active) { navigate(AppDestination.DOWNLOADS) },
@@ -506,15 +508,19 @@ fun DownloadHubApp(
                         alpha = 1f - 0.3f * p
                     }
             ) {
+                // Each tab keeps its own saved state (which list, which filter, what was typed)
+                // while another tab is showing, instead of starting over every time.
+                val saveableStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
                 // A short crossfade between tabs, so switching reads as a change of place
                 // rather than a flash.
                 androidx.compose.animation.Crossfade(
                     targetState = destination,
-                    animationSpec = if (BuildConfig.EXPRESSIVE_UI) MaterialTheme.motionScheme.defaultEffectsSpec() else androidx.compose.animation.core.tween(180),
+                    animationSpec = if (com.downloadhub.app.ui.theme.UiGeneration.expressive) MaterialTheme.motionScheme.defaultEffectsSpec() else androidx.compose.animation.core.tween(180),
                     label = "tab"
                 ) { destination ->
+                saveableStateHolder.SaveableStateProvider(destination.name) {
                 when (destination) {
-                    AppDestination.DOWNLOADS -> if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.screen.downloads.DownloadsTab(
+                    AppDestination.DOWNLOADS -> if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.screen.downloads.DownloadsTab(
                         viewModel = viewModel,
                         updateViewModel = updateViewModel,
                         isTorrents = false,
@@ -544,7 +550,7 @@ fun DownloadHubApp(
                         onDelete = viewModel::delete,
                         onPickTorrent = viewModel::addTorrentFile
                     )
-                    AppDestination.TORRENTS -> if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.screen.downloads.DownloadsTab(
+                    AppDestination.TORRENTS -> if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.screen.downloads.DownloadsTab(
                         viewModel = viewModel,
                         updateViewModel = updateViewModel,
                         isTorrents = true,
@@ -643,7 +649,7 @@ fun DownloadHubApp(
                         ytdlpUpdate = ytdlpUpdate,
                         onRetryYtDlp = viewModel::retryYtDlpSync
                     )
-                    AppDestination.DISCOVER -> if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.screen.discover.DiscoverHome(
+                    AppDestination.DISCOVER -> if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.screen.discover.DiscoverHome(
                         tiles = discoverTiles(),
                         onOpen = { navigate(it) }
                     ) else DiscoverScreen(
@@ -705,7 +711,7 @@ fun DownloadHubApp(
                         onDelete = viewModel::deleteQueue,
                         onToggle = viewModel::setQueueStarted
                     )
-                    AppDestination.THEMES -> if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.screen.settings.ThemesScreen(
+                    AppDestination.THEMES -> if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.screen.settings.ThemesScreen(
                         appTheme = appTheme,
                         themeMode = themeMode,
                         onThemeChange = viewModel::setAppTheme,
@@ -732,7 +738,8 @@ fun DownloadHubApp(
                     )
                 }
                 }
-                if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.component.AddMenuScrim(addMenuOpen && (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS)) { addMenuOpen = false }
+                }
+                if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.component.AddMenuScrim(addMenuOpen && (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS)) { addMenuOpen = false }
             }
             }
         }
@@ -740,7 +747,7 @@ fun DownloadHubApp(
         val scanState by viewModel.pageScan.collectAsStateWithLifecycle()
         val online by com.downloadhub.app.ui.expressive.shell.rememberOnline()
         editorSeed?.let { seed ->
-          if (BuildConfig.EXPRESSIVE_UI) {
+          if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
             com.downloadhub.app.ui.expressive.screen.add.AddSheet(
                 seed = seed,
                 existing = allItems,
@@ -813,7 +820,7 @@ fun DownloadHubApp(
             )
         }
         selectedItem?.let { item ->
-          if (BuildConfig.EXPRESSIVE_UI) {
+          if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
             if (!widthClass.showsDetailPane || !destination.isRoot || destination == AppDestination.SEARCH || destination == AppDestination.YOUTUBE || destination == AppDestination.DISCOVER) com.downloadhub.app.ui.expressive.screen.details.DetailsSheet(
                 item = item,
                 conditions = com.downloadhub.app.ui.expressive.model.RowConditions(offline = !online),
@@ -1400,6 +1407,7 @@ private fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        com.downloadhub.app.ui.expressive.component.InterfaceStyleSection()
         SettingsSection("General") {
             SettingsNavRow(
                 icon = Lucide.Download,
@@ -1645,7 +1653,7 @@ private class NavTab(
 /** The short navigation bar of the redesign, or the old rail when the flag is off. */
 @Composable
 private fun NavBarSwitch(tabs: List<NavTab>) {
-    if (BuildConfig.EXPRESSIVE_UI) {
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
         com.downloadhub.app.ui.expressive.shell.ExpressiveNavBar(
             tabs.map { com.downloadhub.app.ui.expressive.shell.NavItem(it.label, it.icon, it.selected, it.active, it.onClick) }
         )

@@ -75,7 +75,7 @@ val Mono = FontFamily(
     Font(R.font.jetbrains_mono_bold, FontWeight.Bold)
 )
 
-private val AppTypography = Typography().run {
+internal val AppTypography = Typography().run {
     fun TextStyle.grotesk(weight: FontWeight? = null, tracking: Double? = null) =
         copy(fontFamily = Grotesk, fontWeight = weight ?: fontWeight, letterSpacing = tracking?.sp ?: letterSpacing)
     copy(
@@ -98,7 +98,7 @@ private val AppTypography = Typography().run {
 }
 
 /** Square-ish, like cut paper: small radii instead of Material's bubbles and pills. */
-private val AppShapes = Shapes(
+internal val AppShapes = Shapes(
     extraSmall = RoundedCornerShape(3.dp),
     small = RoundedCornerShape(5.dp),
     medium = RoundedCornerShape(8.dp),

@@ -112,6 +112,7 @@ fun DownloadsScreen(
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit,
     onAdd: () -> Unit,
+    onOpenTorrentFile: () -> Unit,
     isTorrents: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -137,6 +138,14 @@ fun DownloadsScreen(
     val liveSelection = selected.filter { id -> items.any { it.id == id } }
     val selecting = liveSelection.isNotEmpty()
     val selectedItems = items.filter { it.id in liveSelection }
+
+    // Tell the frame, so the add button can step aside while rows are selected.
+    androidx.compose.runtime.DisposableEffect(selecting) {
+        com.downloadhub.app.ui.expressive.shell.ExpressiveChromeState.selecting = selecting
+        onDispose { com.downloadhub.app.ui.expressive.shell.ExpressiveChromeState.selecting = false }
+    }
+    // Back leaves selection before it leaves the screen.
+    androidx.activity.compose.BackHandler(enabled = selecting) { selected = emptyList() }
 
     fun toggle(id: String) {
         selected = if (id in liveSelection) liveSelection - id else liveSelection + id
@@ -214,7 +223,7 @@ fun DownloadsScreen(
                     item(key = "kinds", span = { GridItemSpan(maxLineSpan) }) {
                         FilterGroup(
                             options = listOf(LibraryKind.ALL, LibraryKind.NORMAL, LibraryKind.YOUTUBE, LibraryKind.TORRENT).map {
-                                FilterOption(it, when (it) { LibraryKind.ALL -> "All"; LibraryKind.NORMAL -> "Files"; else -> it.label }, kindCounts[it])
+                                FilterOption(it, when (it) { LibraryKind.ALL -> "All"; LibraryKind.NORMAL -> "Files"; else -> it.label }, kindCounts[it] ?: 0)
                             },
                             selected = kind,
                             onSelect = onKindChange,
@@ -262,7 +271,11 @@ fun DownloadsScreen(
                             else -> "Nothing is in progress. Finished downloads are under Finished."
                         },
                         primary = if (noneAtAll && query.isBlank()) EmptyAction("Add a link", onAdd) else null,
-                        secondary = if (noneAtAll && query.isNotBlank()) EmptyAction("Clear search", { onQueryChange("") }) else null
+                        secondary = when {
+                            noneAtAll && query.isNotBlank() -> EmptyAction("Clear search", { onQueryChange("") })
+                            noneAtAll && isTorrents -> EmptyAction("Open a .torrent file", onOpenTorrentFile)
+                            else -> null
+                        }
                     )
                 }
                 else -> itemsIndexed(shown, key = { _, it -> it.id }) { index, item ->

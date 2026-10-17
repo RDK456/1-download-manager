@@ -33,6 +33,10 @@ class PendingDeletes(
     fun ids(): Set<String> = dueAt.keys.toSet()
 
     companion object {
-        const val WINDOW_MS = 8_000L
+        /**
+         * Longer than the "Deleted" message stays on screen (ten seconds for a message with a
+         * button), so Undo is never offered after the files are already gone.
+         */
+        const val WINDOW_MS = 12_000L
     }
 }

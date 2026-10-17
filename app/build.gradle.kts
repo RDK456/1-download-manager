@@ -35,9 +35,6 @@ android {
         buildConfigField("String", "GITHUB_REPO", "\"1-download-manager\"")
         buildConfigField("String", "GITHUB_URL", "\"https://github.com/RDK456/1-download-manager\"")
 
-        // The redesigned UI (Material 3 Expressive). False builds the old look; removed at cutover.
-        buildConfigField("boolean", "EXPRESSIVE_UI", "true")
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

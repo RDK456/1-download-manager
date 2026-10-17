@@ -113,6 +113,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     // Deletes waiting out their undo window. Their rows are hidden here, at the source of
     // every list, so nothing downstream shows a row that is about to go.
     private val pendingDeletes = com.downloadhub.app.ui.expressive.model.PendingDeletes()
+    private val pausedForDelete = mutableSetOf<String>()
     private val _pendingIds = MutableStateFlow<Set<String>>(emptySet())
 
     // False until the database has answered once, so a list that is still loading can be
@@ -817,7 +818,10 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     fun deleteWithUndo(ids: List<String>) {
         val items = allDownloads.value.filter { it.id in ids }
         if (items.isEmpty()) return
-        items.filter { it.status.isActiveCompat }.forEach { sendAction(DownloadService.ACTION_PAUSE, it.id) }
+        items.filter { it.status.isActiveCompat }.forEach {
+            pausedForDelete.add(it.id)
+            sendAction(DownloadService.ACTION_PAUSE, it.id)
+        }
         pendingDeletes.add(items.map { it.id })
         _pendingIds.value = pendingDeletes.ids()
         if (_selectedId.value in ids) _selectedId.value = null
@@ -832,12 +836,15 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     fun undoDelete(ids: List<String>) {
         pendingDeletes.undo(ids)
         _pendingIds.value = pendingDeletes.ids()
+        // What was running when the delete was asked for runs again, rather than being left paused.
+        ids.filter { pausedForDelete.remove(it) }.forEach { resume(it) }
     }
 
     private suspend fun commitPendingDeletes() {
         val due = pendingDeletes.takeDue()
         _pendingIds.value = pendingDeletes.ids()
         due.forEach { id ->
+            pausedForDelete.remove(id)
             repository.get(id)?.let { item ->
                 if (item.status.isActiveCompat) DownloadService.action(getApplication(), DownloadService.ACTION_CANCEL, id)
                 repository.delete(item)

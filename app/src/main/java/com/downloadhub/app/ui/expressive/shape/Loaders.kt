@@ -35,7 +35,7 @@ fun CircularProgressIndicator(
     color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
     strokeWidth: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Unspecified
 ) {
-    if (com.downloadhub.app.BuildConfig.EXPRESSIVE_UI) {
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
         if (color.isSpecified) LoadingIndicator(modifier = modifier, color = color) else LoadingIndicator(modifier = modifier)
     } else {
         androidx.compose.material3.CircularProgressIndicator(

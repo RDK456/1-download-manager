@@ -17,7 +17,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.selected
@@ -69,20 +72,28 @@ fun DownloadRow(
         if (onPauseOrResume != null && (model.canPause || model.canResume)) {
             add(CustomAccessibilityAction(if (model.canPause) "Pause" else "Resume") { onPauseOrResume(); true })
         }
+        if (onRetry != null && model.isError) add(CustomAccessibilityAction("Retry") { onRetry(); true })
         if (onDelete != null) add(CustomAccessibilityAction("Delete") { onDelete(); true })
     }
     val spoken = model.spoken()
     val (badge, onBadge) = com.downloadhub.app.ui.expressive.shape.badgeColors(model.shape, selected)
+    // One node for a screen reader: the description, opening, selecting and the row's actions
+    // all live here. The list item inside is cleared of its own semantics (touch still works), so
+    // there is no second, half-labelled node to land on. Retry is offered as an action.
+    androidx.compose.foundation.layout.Box(modifier.semantics(mergeDescendants = true) {
+            contentDescription = spoken
+            this.selected = selected
+            customActions = actions
+            // Said out loud so the node that carries the description is also the one that opens.
+            onClick(label = "Open details") { onClick(); true }
+            onLongClick(label = "Select") { onLongClick(); true }
+        }) {
     SegmentedListItem(
         selected = selected,
         onClick = onClick,
         onLongClick = onLongClick,
         shapes = ListItemDefaults.segmentedShapes(index = index, count = count),
-        modifier = modifier.clearAndSetSemantics {
-            contentDescription = spoken
-            this.selected = selected
-            customActions = actions
-        },
+        modifier = Modifier.clearAndSetSemantics { },
         leadingContent = {
             StateShape(
                 kind = model.shape,
@@ -131,6 +142,7 @@ fun DownloadRow(
         } else null,
         content = { FileNameText(model.name) }
     )
+    }
 }
 
 private fun iconFor(source: DownloadSource): ImageVector = when (source) {

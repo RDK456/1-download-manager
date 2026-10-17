@@ -9,6 +9,7 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -25,11 +26,18 @@ fun <T> FilterGroup(
     options: List<FilterOption<T>>,
     selected: T,
     onSelect: (T) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** For use on a tonal card: unselected buttons would otherwise match the card and vanish. */
+    unselectedContainer: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified
 ) {
-    Row(
+    // With large system text four labels no longer fit side by side: let them wrap onto more
+    // rows instead of cutting the words off.
+    val roomy = androidx.compose.ui.platform.LocalDensity.current.fontScale < 1.3f
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    androidx.compose.foundation.layout.FlowRow(
         modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+        verticalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
     ) {
         options.forEachIndexed { i, option ->
             val shapes = when (i) {
@@ -41,9 +49,10 @@ fun <T> FilterGroup(
                 checked = option.value == selected,
                 onCheckedChange = { if (it) onSelect(option.value) },
                 shapes = shapes,
-                modifier = Modifier.weight(1f).semantics { role = Role.RadioButton }
+                colors = if (unselectedContainer.isSpecified) ToggleButtonDefaults.colors(containerColor = unselectedContainer) else ToggleButtonDefaults.colors(),
+                modifier = (if (roomy) Modifier.weight(1f) else Modifier).semantics { role = Role.RadioButton }
             ) {
-                Text(if (option.count != null) "${option.label} ${option.count}" else option.label, maxLines = 1)
+                Text(if (option.count != null) "${option.label} ${option.count}" else option.label, maxLines = if (roomy) 1 else 2)
             }
         }
     }

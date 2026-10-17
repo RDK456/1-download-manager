@@ -124,6 +124,8 @@ fun AddSheet(
     // The link is only looked at over the network once the user has changed it themselves.
     // One that arrived from a share or an intent is never probed on its own.
     var edited by remember(seed.link) { mutableStateOf(false) }
+    // The user asking for the look counts as acting on the link, so a shared link can be checked on request.
+    var checkRequested by remember(seed.link) { mutableStateOf(false) }
     var showRequest by remember(seed.link) { mutableStateOf(false) }
     var category by remember(seed.source) { mutableStateOf(seed.category) }
 
@@ -143,7 +145,7 @@ fun AddSheet(
     // Look at a plain link once typing has paused. Cancelled and restarted on every edit.
     var notes by remember { mutableStateOf<List<AddNote>?>(null) }
     var probing by remember { mutableStateOf(false) }
-    val probeable = edited && (check is LinkCheck.Http || check is LinkCheck.Duplicate)
+    val probeable = (edited || checkRequested) && (check is LinkCheck.Http || check is LinkCheck.Duplicate)
     LaunchedEffect(link, probeable, online) {
         notes = null
         if (!probeable) { probing = false; return@LaunchedEffect }
@@ -240,6 +242,9 @@ fun AddSheet(
                 else -> Unit
             }
             notes?.forEach { NoteCard(it) }
+            if (!edited && !checkRequested && (check is LinkCheck.Http || check is LinkCheck.Duplicate)) {
+                TextButton({ checkRequested = true }, Modifier.fillMaxWidth()) { Text("Check this link") }
+            }
 
             if (batch == null && (check is LinkCheck.Http || check is LinkCheck.Duplicate)) {
                 TextField(

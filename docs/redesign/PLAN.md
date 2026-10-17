@@ -35,9 +35,9 @@ Branch: `redesign` (never merged into `main` until Phase 8 passes). Design refer
 | 5 Other root tabs | Discover rebuilt (carousel plus list). Search and YouTube keep their layouts but take the new theme, tonal text fields, the loading indicator and expressive empty and busy states. |
 | 6 Sub-pages | Themes rebuilt. Settings, Download settings, Advanced, Queues, RSS and About keep their layouts on the new tonal section cards, fields and loader. Archive, TV, Books, Movies, Music and Player are themed only. |
 | 7 Adaptive, accessibility, performance | Rail and side details pane by window class, predictive back, row semantics with actions, large-text and right-to-left handling, stalled and seeding states. No benchmark has been run. |
-| 8 Cutover | **Not done on purpose.** The old UI and the `EXPRESSIVE_UI` flag stay until the new one has been checked on a device. |
+| 8 Cutover | **Replaced by a user option.** Both looks stay. Settings > Interface switches between New and Classic at once, and the choice is kept on the device (`UiGeneration`). The build flag is gone. |
 
-Gaps closed since the first status: Undo for delete (8 second window), loading skeleton, low-storage notice,
+Gaps closed since the first status: Undo for delete (12 second window, longer than the message it sits in), loading skeleton, low-storage notice,
 grid layout, plain-language failure reasons, link checks and probe notes in the add sheet.
 
 Still open, with the reason:

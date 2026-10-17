@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.downloadhub.app.ui.AppUpdateViewModel
 import com.downloadhub.app.ui.DownloadViewModel
 import com.downloadhub.app.ui.expressive.model.BannerKind
+import com.downloadhub.app.ui.expressive.model.DismissalLedger
 import com.downloadhub.app.ui.expressive.model.RowConditions
 import com.downloadhub.app.ui.expressive.shell.rememberNotificationsEnabled
 import com.downloadhub.app.ui.expressive.shell.rememberOnResume
@@ -46,6 +47,9 @@ fun DownloadsTab(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val torrentPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(viewModel::addTorrentFile) }
     val items by (if (isTorrents) viewModel.visibleTorrents else viewModel.visibleDownloads).collectAsStateWithLifecycle()
     val summary by (if (isTorrents) viewModel.torrentSummary else viewModel.mainSummary).collectAsStateWithLifecycle()
     val kind by viewModel.currentKind.collectAsStateWithLifecycle()
@@ -69,15 +73,19 @@ fun DownloadsTab(
     val notificationsOn by rememberNotificationsEnabled()
     val batteryExempt by rememberOnResume { viewModel.isBatteryExempt() }
 
-    var dismissed by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    // "Not now" is remembered on the device, not just while this tab is on screen: leaving the
+    // tab or closing the app must not bring the notice back (see DismissalLedger).
+    val prefs = remember { context.getSharedPreferences("banners", android.content.Context.MODE_PRIVATE) }
+    var ledger by remember { mutableStateOf(DismissalLedger.from { prefs.getLong("dismissed_${it.name}", 0L) }) }
     var expanded by rememberSaveable { mutableStateOf(false) }
 
-    val active = remember(online, notificationsOn, batteryExempt, update.status, freeBytes, needed) {
+    val active = remember(online, notificationsOn, batteryExempt, update.status, freeBytes, needed, everything.isEmpty()) {
         buildSet {
             if (storageIsLow(freeBytes, needed)) add(BannerKind.STORAGE)
             if (!online) add(BannerKind.NETWORK)
             if (!notificationsOn) add(BannerKind.NOTIFICATIONS)
-            if (!batteryExempt) add(BannerKind.BATTERY)
+            // Only worth nagging about once there is a download for the phone to stop.
+            if (!batteryExempt && everything.isNotEmpty()) add(BannerKind.BATTERY)
             if (update.status is UpdateStatus.Available) add(BannerKind.UPDATE)
         }
     }
@@ -85,6 +93,8 @@ fun DownloadsTab(
     val selected by viewModel.selectedDownload.collectAsStateWithLifecycle()
     val queues by viewModel.queues.collectAsStateWithLifecycle()
     val showPane = widePane && selected != null
+    // In a wide window the details are a pane, not a sheet, so back has to close it.
+    androidx.activity.compose.BackHandler(enabled = showPane) { viewModel.select(null) }
 
     Row(modifier) {
     DownloadsScreen(
@@ -94,7 +104,7 @@ fun DownloadsTab(
         conditions = RowConditions(offline = !online),
         activeBanners = active,
         bannerExpanded = expanded,
-        dismissedBanners = dismissed.mapNotNull { name -> BannerKind.entries.firstOrNull { it.name == name } }.toSet(),
+        dismissedBanners = ledger.dismissed(System.currentTimeMillis()),
         onBannerAction = { banner, _ ->
             when (banner) {
                 BannerKind.NOTIFICATIONS -> runCatching {
@@ -110,7 +120,11 @@ fun DownloadsTab(
                 else -> Unit
             }
         },
-        onBannerDismiss = { dismissed = dismissed + it.name },
+        onBannerDismiss = { kind ->
+            val now = System.currentTimeMillis()
+            ledger = ledger.dismiss(kind, now)
+            prefs.edit().putLong("dismissed_${kind.name}", now).apply()
+        },
         onBannerExpand = { expanded = true },
         kind = kind,
         kindCounts = kindCounts,
@@ -126,6 +140,7 @@ fun DownloadsTab(
         onPauseAll = viewModel::pauseAll,
         onResumeAll = viewModel::resumeAll,
         onAdd = { viewModel.openEditor() },
+        onOpenTorrentFile = { torrentPicker.launch(arrayOf("application/x-bittorrent", "application/vnd.torrent", "application/octet-stream")) },
         isTorrents = isTorrents,
         modifier = Modifier.weight(1f)
     )

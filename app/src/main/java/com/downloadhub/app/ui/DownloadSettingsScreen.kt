@@ -240,7 +240,7 @@ fun DownloadSettingsScreen(
 
 @Composable
 internal fun SettingsSection(title: String, content: @Composable () -> Unit) {
-    if (com.downloadhub.app.BuildConfig.EXPRESSIVE_UI) {
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
         // A tonal container with a large corner and no elevation or border: the expressive
         // card. Every settings page builds on this one, so they change together.
         androidx.compose.material3.Surface(

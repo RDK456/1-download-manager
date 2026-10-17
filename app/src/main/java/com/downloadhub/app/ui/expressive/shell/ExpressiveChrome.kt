@@ -19,6 +19,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Modifier
@@ -37,6 +38,14 @@ import com.composables.icons.lucide.Settings
 import com.composables.icons.lucide.SlidersHorizontal
 import com.composables.icons.lucide.X
 
+/**
+ * Small pieces of state the list shares with the frame around it. While rows are selected
+ * the add button steps aside for the selection toolbar.
+ */
+object ExpressiveChromeState {
+    var selecting: Boolean by androidx.compose.runtime.mutableStateOf(false)
+}
+
 /** One destination in the bottom bar. [badge] is a count of things happening, 0 for none. */
 class NavItem(val label: String, val icon: ImageVector, val selected: Boolean, val badge: Int = 0, val onClick: () -> Unit)
 
@@ -47,6 +56,12 @@ class NavItem(val label: String, val icon: ImageVector, val selected: Boolean, v
  */
 @Composable
 fun ExpressiveNavBar(items: List<NavItem>, modifier: Modifier = Modifier) {
+    // Five labels across a phone cannot grow with the system text size: at 200% they run into
+    // each other. Their size is capped (the rest of the app still follows the system setting).
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(density.density, density.fontScale.coerceAtMost(1.3f))
+    ) {
     ShortNavigationBar(modifier = modifier, arrangement = ShortNavigationBarArrangement.EqualWeight) {
         items.forEach { item ->
             ShortNavigationBarItem(
@@ -60,6 +75,7 @@ fun ExpressiveNavBar(items: List<NavItem>, modifier: Modifier = Modifier) {
                 label = { Text(item.label, maxLines = 1, overflow = TextOverflow.Clip) }
             )
         }
+    }
     }
 }
 
@@ -97,7 +113,7 @@ fun ExpressiveTopBar(
             }
             if (onSettings != null) IconButton(onSettings) { Icon(Lucide.Settings, contentDescription = "Settings") }
         },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, scrolledContainerColor = MaterialTheme.colorScheme.background)
     )
 }
 

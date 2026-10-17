@@ -369,7 +369,7 @@ private fun TorrentPicks(onPick: (String) -> Unit) {
 
 @Composable
 private fun Centre(text: String, busy: Boolean = false) {
-    if (com.downloadhub.app.BuildConfig.EXPRESSIVE_UI) {
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (busy) {
                 androidx.compose.foundation.layout.Column(

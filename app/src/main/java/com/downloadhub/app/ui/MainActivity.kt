@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
         // The display settings are read before the first frame, so it is drawn right.
         com.downloadhub.app.ui.theme.UiEffects.load(this)
         com.downloadhub.app.ui.theme.UiStyle.load(this)
+        com.downloadhub.app.ui.theme.UiGeneration.load(this)
         setContent {
             DownloadHubApp(
                 viewModel = viewModel,

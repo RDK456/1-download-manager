@@ -42,7 +42,7 @@ fun OutlinedTextField(
     shape: Shape? = null,
     colors: TextFieldColors? = null
 ) {
-    if (BuildConfig.EXPRESSIVE_UI) {
+    if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
         TextField(
             value = value,
             onValueChange = onValueChange,

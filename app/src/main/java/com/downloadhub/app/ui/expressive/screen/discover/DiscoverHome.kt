@@ -19,7 +19,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
-import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
+import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -54,9 +54,11 @@ fun DiscoverHome(tiles: List<DiscoverTile>, onOpen: (AppDestination) -> Unit, mo
         item(key = "featured") {
             Column(Modifier.padding(bottom = 16.dp)) {
                 Text("Free to download", style = MaterialTheme.typography.titleLargeEmphasized, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                HorizontalMultiBrowseCarousel(
+                // Uncontained: every card keeps its full width and only the last is cut at the
+                // edge, so the text on a card is never half hidden as it is in the multi-browse form.
+                HorizontalUncontainedCarousel(
                     state = rememberCarouselState { tiles.size },
-                    preferredItemWidth = 210.dp,
+                    itemWidth = 230.dp,
                     itemSpacing = 8.dp,
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     modifier = Modifier.fillMaxWidth().height(200.dp)
