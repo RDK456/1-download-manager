@@ -330,10 +330,14 @@ private fun TorrentPicks(onPick: (String) -> Unit) {
     val list = rememberLazyListState()
     var picks by remember { mutableStateOf(emptyList<SearchResult>()) }
     var loading by remember { mutableStateOf(false) }
+    // The last draw came back empty: the archive could not be reached. Stops asking by itself.
+    var failed by remember { mutableStateOf(false) }
     suspend fun more(reset: Boolean = false) {
         if (loading) return
         loading = true
+        failed = false
         val next = runCatching { ArchiveOrg.torrentPicks() }.getOrDefault(emptyList())
+        if (next.isEmpty()) failed = true
         picks = (if (reset) next else picks + next).distinctBy { it.infoHash }
         loading = false
     }
@@ -341,6 +345,20 @@ private fun TorrentPicks(onPick: (String) -> Unit) {
 
     if (picks.isEmpty()) {
         if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        else if (failed && com.downloadhub.app.ui.theme.UiGeneration.expressive) {
+            com.downloadhub.app.ui.expressive.component.EmptyState(
+                com.downloadhub.app.ui.expressive.model.StateShapeKind.PENTAGON,
+                Lucide.Search,
+                "Couldn't load the free picks",
+                "The Internet Archive could not be reached. You can still search the other sources.",
+                primary = com.downloadhub.app.ui.expressive.component.EmptyAction("Try again", { scope.launch { more(reset = true) } }, tonal = true)
+            )
+        } else if (failed) {
+            Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text("Couldn't load the free picks.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { scope.launch { more(reset = true) } }) { Text("Try again") }
+            }
+        }
         else if (com.downloadhub.app.ui.theme.UiGeneration.expressive) {
             com.downloadhub.app.ui.expressive.component.EmptyState(
                 com.downloadhub.app.ui.expressive.model.StateShapeKind.BURST,
@@ -353,7 +371,7 @@ private fun TorrentPicks(onPick: (String) -> Unit) {
         else Centre("Search the sources for something to download.")
         return
     }
-    LoadMoreAtEnd(list) { more() }
+    if (!failed) LoadMoreAtEnd(list) { more() }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Free picks from the Internet Archive", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -364,6 +382,12 @@ private fun TorrentPicks(onPick: (String) -> Unit) {
         LazyColumn(Modifier.fillMaxSize(), state = list) {
             itemsIndexed(picks, key = { _, it -> it.infoHash }) { index, pick ->
                 SearchResultCard(pick, "Internet Archive", index, picks.size) { onPick(pick.magnet) }
+            }
+            if (failed && !loading) item {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Couldn't load more.", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { scope.launch { more() } }) { Text("Try again") }
+                }
             }
             if (loading) item {
                 Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {

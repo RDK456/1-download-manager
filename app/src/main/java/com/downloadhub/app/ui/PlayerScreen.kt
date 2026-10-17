@@ -92,7 +92,7 @@ fun MiniPlayer(onOpen: () -> Unit) {
                 Column(Modifier.weight(1f)) {
                     Text(current.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        state.error ?: if (current.isLive) "Live" else if (state.buffering) "Loading..." else "Now playing",
+                        state.error ?: if (current.isLive) "Live" else if (state.buffering) "Loading..." else if (state.playing) "Now playing" else "Paused",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (state.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )

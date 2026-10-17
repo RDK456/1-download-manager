@@ -54,6 +54,10 @@ object AppPlayer {
     val state: StateFlow<State> = _state.asStateFlow()
 
     private var exo: ExoPlayer? = null
+    private var appContext: Context? = null
+
+    private const val PREFS = "player_state"
+    private const val KEY = "snapshot"
     private var liveRejoins = 0
 
     /**
@@ -70,9 +74,14 @@ object AppPlayer {
     @OptIn(UnstableApi::class)
     fun player(context: Context): ExoPlayer = exo ?: ExoPlayer.Builder(context.applicationContext, renderers(context.applicationContext)).build().also { player ->
         player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) = _state.update { it.copy(playing = isPlaying) }
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) =
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                _state.update { it.copy(playing = isPlaying) }
+                if (!isPlaying) persist()
+            }
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 _state.update { it.copy(index = player.currentMediaItemIndex, durationMillis = 0L, error = null) }
+                persist()
+            }
             override fun onPlaybackStateChanged(playbackState: Int) = _state.update {
                 it.copy(
                     buffering = playbackState == Player.STATE_BUFFERING,
@@ -91,6 +100,7 @@ object AppPlayer {
             }
         })
         exo = player
+        appContext = context.applicationContext
     }
 
     @OptIn(UnstableApi::class)
@@ -104,7 +114,53 @@ object AppPlayer {
         player.prepare()
         player.play()
         _state.value = State(queue = items, index = index, playing = true)
+        persist()
     }
+
+    /**
+     * Writes the queue and the place in it, so a process the system ended can pick up where it
+     * was. Called when playback pauses, moves on, and when the app leaves the screen.
+     */
+    fun persist() {
+        val context = appContext ?: return
+        val s = _state.value
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (s.queue.isEmpty()) { prefs.edit().remove(KEY).apply(); return }
+        val snap = com.downloadhub.app.ui.expressive.model.PlayerSnapshot(
+            s.queue.map { com.downloadhub.app.ui.expressive.model.SnapItem(it.uri, it.title, it.isVideo, it.isLive, it.userAgent, it.referrer) },
+            s.index, exo?.currentPosition ?: 0L
+        ).restorable()
+        if (snap == null) prefs.edit().remove(KEY).apply() else prefs.edit().putString(KEY, snap.encode()).apply()
+    }
+
+    /**
+     * Brings back the queue the last run left, paused and at the same place. Never starts sound
+     * by itself; the mini player shows it and a tap plays. Does nothing if something already plays,
+     * if the player was closed on purpose, or if the current file is gone.
+     */
+    @OptIn(UnstableApi::class)
+    fun restore(context: Context) {
+        if (exo != null || _state.value.queue.isNotEmpty()) return
+        val app = context.applicationContext
+        val snap = com.downloadhub.app.ui.expressive.model.PlayerSnapshot.decode(app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null))
+            ?.restorable() ?: return
+        if (!stillThere(app, snap.items[snap.index].uri)) return
+        val items = snap.items.map { Item(it.uri, it.title, it.isVideo, it.isLive, it.userAgent, it.referrer) }
+        val player = player(app)
+        player.setMediaSources(items.map { mediaSource(app, it) }, snap.index, snap.positionMs)
+        player.repeatMode = if (items.size > 1) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
+        player.playWhenReady = false
+        player.prepare()
+        _state.value = State(queue = items, index = snap.index, playing = false)
+    }
+
+    private fun stillThere(context: Context, uri: String): Boolean = runCatching {
+        if (uri.startsWith("content:")) {
+            context.contentResolver.openAssetFileDescriptor(android.net.Uri.parse(uri), "r")?.use { true } ?: false
+        } else {
+            java.io.File(uri.removePrefix("file://")).exists()
+        }
+    }.getOrDefault(false)
 
     /**
      * One item as something ExoPlayer can play. Streams are told apart by their address
@@ -165,6 +221,7 @@ object AppPlayer {
         exo?.stop()
         exo?.clearMediaItems()
         _state.value = State()
+        persist()
     }
 
     private val AUDIO = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "wma", "mka")

@@ -1487,6 +1487,28 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
 
     // Last in the class so everything it touches is built before it runs.
     init {
+        // The torrent sheet. What was open is read first, then the writer starts, so the empty
+        // value it begins with cannot overwrite what is about to be restored.
+        val previewLink = saved.get<String>(SAVED_PREVIEW_LINK)
+        val previewFile = saved.get<String>(SAVED_PREVIEW_FILE)
+        viewModelScope.launch {
+            _torrentPreview.collect { p ->
+                // A magnet that names a private tracker's passkey is not kept.
+                val keep = p != null && (p.torrentFile != null || com.downloadhub.app.ui.expressive.model.linkSafeToSave(p.link))
+                saved[SAVED_PREVIEW_LINK] = if (keep) p?.link else null
+                saved[SAVED_PREVIEW_FILE] = if (keep) p?.torrentFile else null
+            }
+        }
+        when (val plan = com.downloadhub.app.ui.expressive.model.previewRestorePlan(previewLink, previewFile, previewFile?.let { java.io.File(it).exists() } == true)) {
+            is com.downloadhub.app.ui.expressive.model.PreviewRestore.Magnet -> previewMagnet(plan.link)
+            is com.downloadhub.app.ui.expressive.model.PreviewRestore.TorrentFile -> viewModelScope.launch {
+                val meta = runCatching { withContext(Dispatchers.IO) { com.downloadhub.core.TorrentParser.parse(java.io.File(plan.path)) } }.getOrNull()
+                if (meta != null && _torrentPreview.value == null) {
+                    _torrentPreview.value = TorrentPreview(plan.path, plan.path, meta.name.ifBlank { "Torrent" }, meta, loading = false)
+                }
+            }
+            com.downloadhub.app.ui.expressive.model.PreviewRestore.None -> Unit
+        }
         // Only a process that died between "Delete" and the end of the undo window gets here with
         // anything. Nothing was removed, so what was running runs again.
         saved.get<ArrayList<String>>(SAVED_PAUSED_FOR_DELETE)?.takeIf { it.isNotEmpty() }?.let { ids ->
@@ -1601,6 +1623,8 @@ private fun android.content.ContentResolver.displayName(uri: Uri): String? {
 }
 
 private const val SAVED_PAUSED_FOR_DELETE = "paused_for_delete"
+private const val SAVED_PREVIEW_LINK = "preview_link"
+private const val SAVED_PREVIEW_FILE = "preview_file"
 private const val SAVED_QUERY = "query"
 private const val SAVED_FILTER = "filter"
 private const val SAVED_CATEGORY = "category"

@@ -112,11 +112,16 @@ fun BooksScreen(loader: ThumbnailCache, catalog: FreeCatalog, onDownload: (BookR
     // opens, and more of it as the grid is scrolled to the end.
     var picks by remember(catalog) { mutableStateOf<List<BookResult>>(emptyList()) }
     var picking by remember(catalog) { mutableStateOf(false) }
+    // True when the last draw came back empty (every source failed). Stops the scroll from asking
+    // again by itself and offers a Try again row instead.
+    var picksFailed by remember(catalog) { mutableStateOf(false) }
     val grid = rememberLazyGridState()
     suspend fun morePicks(reset: Boolean = false) {
         if (picking) return
         picking = true
+        picksFailed = false
         val next = BookSources.recommended(catalog)
+        if (next.isEmpty()) picksFailed = true
         picks = (if (reset) next else picks + next).distinctBy { it.source + "|" + it.pageUrl + "|" + it.title }
         picking = false
     }
@@ -187,7 +192,7 @@ fun BooksScreen(loader: ThumbnailCache, catalog: FreeCatalog, onDownload: (BookR
                 }
             }
         } else {
-            if (showingPicks) LoadMoreAtEnd(grid) { morePicks() }
+            if (showingPicks && !picksFailed) LoadMoreAtEnd(grid) { morePicks() }
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(150.dp),
                 state = grid,
@@ -197,6 +202,12 @@ fun BooksScreen(loader: ThumbnailCache, catalog: FreeCatalog, onDownload: (BookR
             ) {
                 items(shown, key = { it.source + "|" + it.pageUrl + "|" + it.title }) { book ->
                     BookCard(book, loader, onDownload)
+                }
+                if (showingPicks && picksFailed && !picking) item(span = { GridItemSpan(maxLineSpan) }) {
+                    Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Couldn't load more.", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        androidx.compose.material3.TextButton(onClick = { scope.launch { morePicks() } }) { Text("Try again") }
+                    }
                 }
                 if (showingPicks && picking) item(span = { GridItemSpan(maxLineSpan) }) {
                     Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {

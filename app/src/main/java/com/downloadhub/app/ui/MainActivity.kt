@@ -42,6 +42,8 @@ class MainActivity : ComponentActivity() {
         com.downloadhub.app.ui.theme.UiEffects.load(this)
         com.downloadhub.app.ui.theme.UiStyle.load(this)
         com.downloadhub.app.ui.theme.UiGeneration.load(this)
+        // After the system ended the app, the queue it was playing is back, paused.
+        AppPlayer.restore(this)
         setContent {
             DownloadHubApp(
                 viewModel = viewModel,
@@ -90,6 +92,12 @@ class MainActivity : ComponentActivity() {
         prefs.edit().putString("last", link).apply()
         if (!forced && viewModel.allDownloads.value.any { it.url == link }) return
         incomingLink = link
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // The system ends a backgrounded app without warning; this is the last safe moment to note the place.
+        AppPlayer.persist()
     }
 
     override fun onNewIntent(intent: Intent) {
