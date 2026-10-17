@@ -106,119 +106,11 @@ fun DetailsSheet(
     val finished = item.status == DownloadStatus.COMPLETED
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, modifier = Modifier.navigationBarsPadding()) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                StateShape(
-                    kind = model.shape,
-                    color = if (model.isError) scheme.errorContainer else scheme.primaryContainer,
-                    modifier = Modifier.size(56.dp),
-                    spin = false
-                ) {}
-                Column(Modifier.weight(1f)) {
-                    SelectionContainer { FileNameText(item.fileName, style = MaterialTheme.typography.titleLargeEmphasized) }
-                    Text(
-                        listOf(model.headline, model.detail).filter { it.isNotEmpty() }.joinToString(" · "),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (model.isError) scheme.error else scheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            if (model.bar != com.downloadhub.app.ui.expressive.model.BarStyle.NONE) RowBar(model.bar, model.progress)
-
-            if (item.status == DownloadStatus.FAILED) {
-                val error = friendlyError(item.errorMessage)
-                Surface(shape = MaterialTheme.shapes.extraLarge, color = scheme.errorContainer, contentColor = scheme.onErrorContainer) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(error.short, style = MaterialTheme.typography.titleMediumEmphasized)
-                        Text(error.detail, style = MaterialTheme.typography.bodyMedium)
-                        if (error.raw != null && error.raw != error.detail) {
-                            SelectionContainer { Text(error.raw, style = MaterialTheme.typography.labelSmall.copy(fontFamily = Mono)) }
-                        }
-                    }
-                }
-            }
-            if (model.isWaiting) {
-                Surface(shape = MaterialTheme.shapes.extraLarge, color = scheme.secondaryContainer, contentColor = scheme.onSecondaryContainer) {
-                    Text(
-                        if (conditions.lowStorage) "Held because there is not enough space." else "Held until the phone is back online. It carries on by itself.",
-                        Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            }
-
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                facts.forEach { fact ->
-                    Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = scheme.surfaceContainerHigh,
-                        modifier = if (fact.wide) Modifier.fillMaxWidth() else Modifier
-                    ) {
-                        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                            Text(fact.label, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
-                            SelectionContainer {
-                                Text(
-                                    fact.value,
-                                    style = MaterialTheme.typography.bodyMedium.let { if (fact.mono) it.copy(fontFamily = Mono) else it },
-                                    maxLines = if (fact.wide) 3 else 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (item.source == DownloadSource.TORRENT) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Download in order", style = MaterialTheme.typography.titleSmallEmphasized)
-                        Text(
-                            "Fetch from the start so videos play while downloading. Can be slower overall.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = scheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Switch(checked = item.torrentSequential, onCheckedChange = { on -> DownloadService.requestSequential(context, item.id, on) })
-                }
-                TorrentExtras(item.id, contentOf, trackersOf, peersOf, onFilesWanted, onForceRecheck, onForceReannounce)
-            }
-            if (!finished) QueueChips(item.queueId, queues, onMoveToQueue)
-            if (item.source == DownloadSource.HTTP && !finished) RequestSection(item, onSaveRequest)
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                when (primaryActionFor(item.status)) {
-                    PrimaryAction.PAUSE -> FilledTonalButton(onPause, Modifier.weight(1f)) {
-                        Icon(Lucide.Pause, null); Spacer(Modifier.width(8.dp)); Text("Pause")
-                    }
-                    PrimaryAction.RESUME -> Button(onResume, Modifier.weight(1f)) {
-                        Icon(Lucide.Play, null); Spacer(Modifier.width(8.dp)); Text("Resume")
-                    }
-                    PrimaryAction.RETRY -> Button(onRetry, Modifier.weight(1f)) {
-                        Icon(Lucide.RotateCw, null); Spacer(Modifier.width(8.dp)); Text("Retry")
-                    }
-                    PrimaryAction.OPEN -> Button(onOpen, Modifier.weight(1f)) {
-                        Icon(Lucide.FolderOpen, null); Spacer(Modifier.width(8.dp)); Text("Open")
-                    }
-                }
-                if (finished) {
-                    OutlinedButton(onShare, Modifier.weight(1f)) {
-                        Icon(Lucide.Share2, null); Spacer(Modifier.width(8.dp)); Text("Share")
-                    }
-                }
-            }
-            if (finished) TextButton(onOpenWith, Modifier.fillMaxWidth()) { Text("Open with another app") }
-            TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Lucide.Trash2, null, tint = scheme.error)
-                Spacer(Modifier.width(8.dp))
-                Text("Delete", color = scheme.error)
-            }
-        }
+        DetailsBody(
+            item, conditions, onPause, onResume, onRetry, onOpen, onOpenWith, onShare,
+            trackersOf, peersOf, contentOf, onFilesWanted, onForceRecheck, onForceReannounce,
+            queues, onMoveToQueue, onSaveRequest, onAskDelete = { confirmDelete = true }
+        )
     }
 
     if (confirmDelete) {
@@ -229,5 +121,153 @@ fun DetailsSheet(
             confirmButton = { TextButton({ confirmDelete = false; onDelete() }) { Text("Delete") } },
             dismissButton = { TextButton({ confirmDelete = false }) { Text("Keep") } }
         )
+    }
+}
+
+/**
+ * The content of the details view, shared by the bottom sheet (phones) and the side pane
+ * (wide windows). [onAskDelete] is called when Delete is tapped; the caller owns the
+ * confirmation so the sheet and the pane ask the same way.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DetailsBody(
+    item: DownloadEntity,
+    conditions: RowConditions,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onRetry: () -> Unit,
+    onOpen: () -> Unit,
+    onOpenWith: () -> Unit,
+    onShare: () -> Unit,
+    trackersOf: () -> List<TrackerRow>,
+    peersOf: () -> List<PeerRow>,
+    contentOf: () -> TorrentContentView?,
+    onFilesWanted: (List<Int>, Boolean) -> Unit,
+    onForceRecheck: () -> Unit,
+    onForceReannounce: () -> Unit,
+    queues: List<AppQueue>,
+    onMoveToQueue: (String) -> Unit,
+    onSaveRequest: (HttpRequestOptions) -> Unit,
+    onAskDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val scheme = MaterialTheme.colorScheme
+    val model = remember(item, conditions) { item.toRowModel(conditions) }
+    val facts = remember(item) { item.facts() }
+    val context = LocalContext.current
+    val finished = item.status == DownloadStatus.COMPLETED
+    Column(
+        modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            StateShape(
+                kind = model.shape,
+                color = if (model.isError) scheme.errorContainer else scheme.primaryContainer,
+                modifier = Modifier.size(56.dp),
+                spin = false
+            ) {}
+            Column(Modifier.weight(1f)) {
+                SelectionContainer { FileNameText(item.fileName, style = MaterialTheme.typography.titleLargeEmphasized) }
+                Text(
+                    listOf(model.headline, model.detail).filter { it.isNotEmpty() }.joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (model.isError) scheme.error else scheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (model.bar != com.downloadhub.app.ui.expressive.model.BarStyle.NONE) RowBar(model.bar, model.progress)
+
+        if (item.status == DownloadStatus.FAILED) {
+            val error = friendlyError(item.errorMessage)
+            Surface(shape = MaterialTheme.shapes.extraLarge, color = scheme.errorContainer, contentColor = scheme.onErrorContainer) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(error.short, style = MaterialTheme.typography.titleMediumEmphasized)
+                    Text(error.detail, style = MaterialTheme.typography.bodyMedium)
+                    if (error.raw != null && error.raw != error.detail) {
+                        SelectionContainer { Text(error.raw, style = MaterialTheme.typography.labelSmall.copy(fontFamily = Mono)) }
+                    }
+                }
+            }
+        }
+        if (model.isWaiting) {
+            Surface(shape = MaterialTheme.shapes.extraLarge, color = scheme.secondaryContainer, contentColor = scheme.onSecondaryContainer) {
+                Text(
+                    if (conditions.lowStorage) "Held because there is not enough space." else "Held until the phone is back online. It carries on by itself.",
+                    Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            facts.forEach { fact ->
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = scheme.surfaceContainerHigh,
+                    modifier = if (fact.wide) Modifier.fillMaxWidth() else Modifier
+                ) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Text(fact.label, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                        SelectionContainer {
+                            Text(
+                                fact.value,
+                                style = MaterialTheme.typography.bodyMedium.let { if (fact.mono) it.copy(fontFamily = Mono) else it },
+                                maxLines = if (fact.wide) 3 else 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (item.source == DownloadSource.TORRENT) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Download in order", style = MaterialTheme.typography.titleSmallEmphasized)
+                    Text(
+                        "Fetch from the start so videos play while downloading. Can be slower overall.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(checked = item.torrentSequential, onCheckedChange = { on -> DownloadService.requestSequential(context, item.id, on) })
+            }
+            TorrentExtras(item.id, contentOf, trackersOf, peersOf, onFilesWanted, onForceRecheck, onForceReannounce)
+        }
+        if (!finished) QueueChips(item.queueId, queues, onMoveToQueue)
+        if (item.source == DownloadSource.HTTP && !finished) RequestSection(item, onSaveRequest)
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            when (primaryActionFor(item.status)) {
+                PrimaryAction.PAUSE -> FilledTonalButton(onPause, Modifier.weight(1f)) {
+                    Icon(Lucide.Pause, null); Spacer(Modifier.width(8.dp)); Text("Pause")
+                }
+                PrimaryAction.RESUME -> Button(onResume, Modifier.weight(1f)) {
+                    Icon(Lucide.Play, null); Spacer(Modifier.width(8.dp)); Text("Resume")
+                }
+                PrimaryAction.RETRY -> Button(onRetry, Modifier.weight(1f)) {
+                    Icon(Lucide.RotateCw, null); Spacer(Modifier.width(8.dp)); Text("Retry")
+                }
+                PrimaryAction.OPEN -> Button(onOpen, Modifier.weight(1f)) {
+                    Icon(Lucide.FolderOpen, null); Spacer(Modifier.width(8.dp)); Text("Open")
+                }
+            }
+            if (finished) {
+                OutlinedButton(onShare, Modifier.weight(1f)) {
+                    Icon(Lucide.Share2, null); Spacer(Modifier.width(8.dp)); Text("Share")
+                }
+            }
+        }
+        if (finished) TextButton(onOpenWith, Modifier.fillMaxWidth()) { Text("Open with another app") }
+        TextButton(onClick = onAskDelete, modifier = Modifier.fillMaxWidth()) {
+            Icon(Lucide.Trash2, null, tint = scheme.error)
+            Spacer(Modifier.width(8.dp))
+            Text("Delete", color = scheme.error)
+        }
     }
 }

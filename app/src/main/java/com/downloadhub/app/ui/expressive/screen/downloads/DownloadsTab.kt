@@ -2,7 +2,10 @@ package com.downloadhub.app.ui.expressive.screen.downloads
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import com.downloadhub.app.ui.expressive.screen.details.DetailsHost
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -16,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.downloadhub.app.ui.AppUpdateViewModel
 import com.downloadhub.app.ui.DownloadViewModel
@@ -36,6 +40,7 @@ fun DownloadsTab(
     viewModel: DownloadViewModel,
     updateViewModel: AppUpdateViewModel,
     isTorrents: Boolean,
+    widePane: Boolean,
     onOpenAbout: () -> Unit,
     onOpenDownloadSettings: () -> Unit,
     modifier: Modifier = Modifier
@@ -77,6 +82,11 @@ fun DownloadsTab(
         }
     }
 
+    val selected by viewModel.selectedDownload.collectAsStateWithLifecycle()
+    val queues by viewModel.queues.collectAsStateWithLifecycle()
+    val showPane = widePane && selected != null
+
+    Row(modifier) {
     DownloadsScreen(
         items = items,
         loaded = loaded,
@@ -116,6 +126,20 @@ fun DownloadsTab(
         onResumeAll = viewModel::resumeAll,
         onAdd = { viewModel.openEditor() },
         isTorrents = isTorrents,
-        modifier = modifier
+        modifier = Modifier.weight(1f)
     )
+    // In a wide window the details sit beside the list instead of covering it.
+    selected?.let { item ->
+        if (showPane) {
+            DetailsHost(
+                item = item,
+                viewModel = viewModel,
+                queues = queues,
+                conditions = RowConditions(offline = !online),
+                asSheet = false,
+                modifier = Modifier.weight(1f).padding(end = 16.dp, bottom = 16.dp)
+            )
+        }
+    }
+    }
 }

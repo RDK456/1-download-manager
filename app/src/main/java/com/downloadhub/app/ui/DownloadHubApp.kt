@@ -4,6 +4,7 @@ import com.composables.icons.lucide.Play
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.graphics.graphicsLayer
 import com.downloadhub.app.ui.theme.Dot
 import com.composables.icons.lucide.List
 import com.composables.icons.lucide.LayoutGrid
@@ -223,6 +224,12 @@ fun DownloadHubApp(
                 com.downloadhub.core.TorrentMetadataReader.warmUp()
             }
         }
+        val widthClass = com.downloadhub.app.ui.expressive.model.widthClassFor(
+            androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+        )
+        // How far the system back gesture has pulled the page, 0 to 1. Drives the shrink and
+        // fade that previews where back is going.
+        var backProgress by remember { mutableStateOf(0f) }
         var dismissedRelease by rememberSaveable { mutableStateOf<String?>(null) }
         var confirmExit by rememberSaveable { mutableStateOf(false) }
         val snackbarHostState = remember { SnackbarHostState() }
@@ -233,7 +240,19 @@ fun DownloadHubApp(
 
         // Always enabled so back is never swallowed: on a sub-page it pops the
         // stack, and on a root tab it asks before leaving the app.
-        BackHandler {
+        if (BuildConfig.EXPRESSIVE_UI) {
+            androidx.activity.compose.PredictiveBackHandler { events ->
+                try {
+                    events.collect { backProgress = if (nav.canGoBack) it.progress else 0f }
+                    backProgress = 0f
+                    val parent = nav.back()
+                    if (parent == null) confirmExit = true else navKey = encodeNav(parent)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    backProgress = 0f
+                    throw cancelled
+                }
+            }
+        } else BackHandler {
             val parent = nav.back()
             if (parent == null) confirmExit = true else navKey = encodeNav(parent)
         }
@@ -402,7 +421,7 @@ fun DownloadHubApp(
                 )
             },
             bottomBar = {
-                if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
+                if (!(BuildConfig.EXPRESSIVE_UI && widthClass.usesRail) && destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS) {
                     Column {
                     // Above the tabs on every screen while something is playing.
                     if (destination != AppDestination.PLAYER) MiniPlayer(onOpen = { navigate(AppDestination.PLAYER) })
@@ -458,11 +477,30 @@ fun DownloadHubApp(
                     }
                 )
             }
+            Row(Modifier.fillMaxSize().padding(padding)) {
+            if (BuildConfig.EXPRESSIVE_UI && widthClass.usesRail && destination.isRoot) {
+                com.downloadhub.app.ui.expressive.shell.ExpressiveRail(
+                    items = listOf(
+                        com.downloadhub.app.ui.expressive.shell.NavItem("Downloads", Lucide.Download, destination == AppDestination.DOWNLOADS, mainSummary.active) { navigate(AppDestination.DOWNLOADS) },
+                        com.downloadhub.app.ui.expressive.shell.NavItem("Torrents", Lucide.Folder, destination == AppDestination.TORRENTS, torrentSummary.active) { navigate(AppDestination.TORRENTS) },
+                        com.downloadhub.app.ui.expressive.shell.NavItem("Search", Lucide.Search, destination == AppDestination.SEARCH) { navigate(AppDestination.SEARCH) },
+                        com.downloadhub.app.ui.expressive.shell.NavItem("YouTube", Lucide.Film, destination == AppDestination.YOUTUBE) { navigate(AppDestination.YOUTUBE) },
+                        com.downloadhub.app.ui.expressive.shell.NavItem("Discover", Lucide.Compass, destination.isDiscover) { navigate(AppDestination.DISCOVER) }
+                    ),
+                    expanded = widthClass.showsDetailPane
+                )
+            }
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
+                    .weight(1f)
+                    .fillMaxHeight()
                     .then(swipeTabs)
+                    .graphicsLayer {
+                        val p = backProgress
+                        scaleX = 1f - 0.08f * p
+                        scaleY = 1f - 0.08f * p
+                        alpha = 1f - 0.3f * p
+                    }
             ) {
                 // A short crossfade between tabs, so switching reads as a change of place
                 // rather than a flash.
@@ -476,6 +514,7 @@ fun DownloadHubApp(
                         viewModel = viewModel,
                         updateViewModel = updateViewModel,
                         isTorrents = false,
+                        widePane = widthClass.showsDetailPane,
                         onOpenAbout = { navigate(AppDestination.SETTINGS); navigate(AppDestination.ABOUT) },
                         onOpenDownloadSettings = { navigate(AppDestination.SETTINGS); navigate(AppDestination.DOWNLOAD_SETTINGS) }
                     ) else DownloadsScreen(
@@ -505,6 +544,7 @@ fun DownloadHubApp(
                         viewModel = viewModel,
                         updateViewModel = updateViewModel,
                         isTorrents = true,
+                        widePane = widthClass.showsDetailPane,
                         onOpenAbout = { navigate(AppDestination.SETTINGS); navigate(AppDestination.ABOUT) },
                         onOpenDownloadSettings = { navigate(AppDestination.SETTINGS); navigate(AppDestination.DOWNLOAD_SETTINGS) }
                     ) else DownloadsScreen(
@@ -689,6 +729,7 @@ fun DownloadHubApp(
                 }
                 }
             }
+            }
         }
 
         val scanState by viewModel.pageScan.collectAsStateWithLifecycle()
@@ -768,7 +809,7 @@ fun DownloadHubApp(
         }
         selectedItem?.let { item ->
           if (BuildConfig.EXPRESSIVE_UI) {
-            com.downloadhub.app.ui.expressive.screen.details.DetailsSheet(
+            if (!widthClass.showsDetailPane || !destination.isRoot || destination == AppDestination.SEARCH || destination == AppDestination.YOUTUBE || destination == AppDestination.DISCOVER) com.downloadhub.app.ui.expressive.screen.details.DetailsSheet(
                 item = item,
                 conditions = com.downloadhub.app.ui.expressive.model.RowConditions(offline = !online),
                 onDismiss = { viewModel.select(null) },

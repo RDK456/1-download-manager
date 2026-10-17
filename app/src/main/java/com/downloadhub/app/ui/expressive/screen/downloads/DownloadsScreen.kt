@@ -121,6 +121,14 @@ fun DownloadsScreen(
     var selected by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var confirmDelete by remember { mutableStateOf<List<String>?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
+    // Checked again every ten seconds, so a transfer that goes quiet is called stalled
+    // without anything else having to change.
+    val now by androidx.compose.runtime.produceState(System.currentTimeMillis()) {
+        while (true) {
+            kotlinx.coroutines.delay(10_000)
+            value = System.currentTimeMillis()
+        }
+    }
 
     val doneCount = items.count { it.status == DownloadStatus.COMPLETED }
     val shown = items.filter { (it.status == DownloadStatus.COMPLETED) == showDone }
@@ -257,7 +265,7 @@ fun DownloadsScreen(
                     )
                 }
                 else -> itemsIndexed(shown, key = { _, it -> it.id }) { index, item ->
-                    val model = remember(item, conditions) { item.toRowModel(conditions) }
+                    val model = remember(item, conditions, now / 10_000) { item.toRowModel(conditions, now) }
                     val pauseOrResume: (() -> Unit)? = when {
                         item.status.canPause -> ({ onPause(item.id) })
                         item.status.canResume -> ({ onResume(item.id) })

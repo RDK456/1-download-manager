@@ -211,4 +211,43 @@ class RowModelTest {
         assertEquals(29, entity(DownloadStatus.PAUSED, 29, 100).toRowModel().percent)
         assertEquals(99, entity(DownloadStatus.PAUSED, 999, 1000).toRowModel().percent)
     }
+
+    // ---- stalled, torrents, seeding -------------------------------------------------
+
+    private fun running(updated: Long, source: DownloadSource = DownloadSource.HTTP, speed: Long = 0) =
+        entity(DownloadStatus.RUNNING, 100, 1000, speed = speed).copy(updatedAt = updated, source = source)
+
+    @Test fun aQuietTransferIsCalledStalledAfterThirtySeconds() {
+        val m = running(updated = 1_000).toRowModel(now = 1_000 + 30_000)
+        assertEquals("Stalled · still trying", m.headline)
+        assertEquals(StateShapeKind.CIRCLE, m.shape)
+        assertNull(m.speed)
+        assertFalse(m.isError)
+    }
+
+    @Test fun aFreshTransferWithNoSpeedYetIsNotStalled() {
+        assertEquals("Downloading", running(updated = 1_000).toRowModel(now = 1_000 + 29_999).headline)
+    }
+
+    @Test fun aMovingTransferIsNeverStalled() {
+        assertEquals("Downloading", running(updated = 1, speed = 500).toRowModel(now = 10_000_000).headline)
+    }
+
+    @Test fun aStalledTorrentBlamesTheSwarm() {
+        val m = running(updated = 1, source = DownloadSource.TORRENT).toRowModel(now = 100_000)
+        assertEquals("Stalled · no one is sending", m.headline)
+    }
+
+    @Test fun aMagnetStillFindingItsFilesSaysSo() {
+        val m = entity(DownloadStatus.RESOLVING).copy(source = DownloadSource.TORRENT).toRowModel()
+        assertEquals("Fetching file list", m.headline)
+        assertEquals(BarStyle.WAVY_INDETERMINATE, m.bar)
+    }
+
+    @Test fun aFinishedTorrentStillSharingSaysSeeding() {
+        val seeding = entity(DownloadStatus.COMPLETED, 10, 10).copy(source = DownloadSource.TORRENT, seedingSinceEpochMillis = 5)
+        assertEquals("Finished · seeding", seeding.toRowModel().headline)
+        assertEquals("Finished", seeding.copy(seedingStoppedAtEpochMillis = 9).toRowModel().headline)
+        assertEquals("Finished", entity(DownloadStatus.COMPLETED, 10, 10).toRowModel().headline)
+    }
 }

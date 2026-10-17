@@ -54,7 +54,13 @@ data class DownloadRowModel(
 
 private const val DASH = "—"
 
-fun DownloadEntity.toRowModel(conditions: RowConditions = RowConditions()): DownloadRowModel {
+/** A transfer that has reported no progress for this long is called stalled. */
+const val STALLED_AFTER_MS = 30_000L
+
+fun DownloadEntity.toRowModel(
+    conditions: RowConditions = RowConditions(),
+    now: Long = System.currentTimeMillis()
+): DownloadRowModel {
     val moving = status == DownloadStatus.RUNNING || status == DownloadStatus.RESOLVING || status == DownloadStatus.QUEUED
     val waiting = moving && (conditions.lowStorage || conditions.offline)
     val progress = progressFor(this)
@@ -67,11 +73,20 @@ fun DownloadEntity.toRowModel(conditions: RowConditions = RowConditions()): Down
     }
     val ofTotal = if (hasSize) "$percent% of ${formatBytes(totalBytes)}" else "$percent%"
 
+    val isTorrent = source == com.downloadhub.app.data.model.DownloadSource.TORRENT
+    // Moving on paper, but nothing has arrived for a while: say so instead of showing a bar
+    // that looks alive. A torrent with no one sending is the usual cause.
+    val stalled = status == DownloadStatus.RUNNING && !waiting && speedBytesPerSecond <= 0 && updatedAt > 0 && now - updatedAt >= STALLED_AFTER_MS
+    val seeding = isTorrent && status == DownloadStatus.COMPLETED && seedingSinceEpochMillis > 0 && seedingStoppedAtEpochMillis == 0L
     val headline = when {
         waiting && conditions.lowStorage -> "Paused: not enough space"
         waiting -> "Waiting for network"
+        stalled && isTorrent -> "Stalled · no one is sending"
+        stalled -> "Stalled · still trying"
         status == DownloadStatus.RUNNING -> "Downloading"
+        status == DownloadStatus.RESOLVING && isTorrent -> "Fetching file list"
         status == DownloadStatus.RESOLVING -> "Resolving"
+        seeding -> "Finished · seeding"
         status == DownloadStatus.QUEUED -> "Queued"
         status == DownloadStatus.PAUSED -> "Paused"
         status == DownloadStatus.COMPLETED -> "Finished"
@@ -83,7 +98,7 @@ fun DownloadEntity.toRowModel(conditions: RowConditions = RowConditions()): Down
         DownloadStatus.RESOLVING -> ""
         else -> ofTotal
     }
-    val transferring = status == DownloadStatus.RUNNING && !waiting
+    val transferring = status == DownloadStatus.RUNNING && !waiting && !stalled
     val bar = when {
         status == DownloadStatus.COMPLETED -> BarStyle.NONE
         status == DownloadStatus.RESOLVING && !waiting -> BarStyle.WAVY_INDETERMINATE
@@ -96,7 +111,7 @@ fun DownloadEntity.toRowModel(conditions: RowConditions = RowConditions()): Down
         id = id,
         name = fileName,
         source = source,
-        shape = shapeKindFor(status, waiting = waiting),
+        shape = shapeKindFor(status, waiting = waiting || stalled),
         progress = progress,
         percent = percent,
         headline = headline,
@@ -105,7 +120,7 @@ fun DownloadEntity.toRowModel(conditions: RowConditions = RowConditions()): Down
         eta = if (transferring) (if (speedBytesPerSecond > 0 && etaSeconds >= 0) formatEta(etaSeconds) else DASH) else null,
         bar = bar,
         isError = status == DownloadStatus.FAILED,
-        isWaiting = waiting,
+        isWaiting = waiting || stalled,
         canPause = status.canPause,
         canResume = status.canResume
     )
