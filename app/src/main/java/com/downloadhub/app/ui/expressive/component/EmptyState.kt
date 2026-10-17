@@ -46,7 +46,7 @@ fun EmptyState(
             Icon(icon, contentDescription = null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(44.dp))
         }
         Text(title, style = MaterialTheme.typography.headlineSmallEmphasized, textAlign = TextAlign.Center)
-        Text(body, style = MaterialTheme.typography.bodyLarge, color = scheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        if (body.isNotEmpty()) Text(body, style = MaterialTheme.typography.bodyLarge, color = scheme.onSurfaceVariant, textAlign = TextAlign.Center)
         if (primary != null) {
             if (primary.tonal) FilledTonalButton(primary.onClick) { Text(primary.label) }
             else Button(primary.onClick) { Text(primary.label) }

@@ -29,7 +29,7 @@ import androidx.compose.material3.Card
 import com.downloadhub.app.ui.expressive.shape.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.downloadhub.app.ui.expressive.component.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -253,7 +253,7 @@ fun SearchScreen(
             header()
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
-                    results.isEmpty() && busy -> Centre("Asking every source...")
+                    results.isEmpty() && busy -> Centre("Asking every source...", busy = true)
                     results.isEmpty() && message == null && outcome == null -> TorrentPicks(onPick)
                     results.isEmpty() -> Centre("Nothing found for \"${query.trim()}\".")
                     else -> Centre("Nothing from the chosen sources. All ${results.size} results are hidden.")
@@ -368,7 +368,28 @@ private fun TorrentPicks(onPick: (String) -> Unit) {
 }
 
 @Composable
-private fun Centre(text: String) {
+private fun Centre(text: String, busy: Boolean = false) {
+    if (com.downloadhub.app.BuildConfig.EXPRESSIVE_UI) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            if (busy) {
+                androidx.compose.foundation.layout.Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+                ) {
+                    com.downloadhub.app.ui.expressive.shape.Loader(Modifier.size(56.dp))
+                    Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                com.downloadhub.app.ui.expressive.component.EmptyState(
+                    shape = com.downloadhub.app.ui.expressive.model.StateShapeKind.BURST,
+                    icon = Lucide.Search,
+                    title = text,
+                    body = ""
+                )
+            }
+        }
+        return
+    }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

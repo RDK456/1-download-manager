@@ -30,17 +30,23 @@ Branch: `redesign` (never merged into `main` until Phase 8 passes). Design refer
 | 0 Toolchain and base | Done. Builds, tests and lint pass on the new stack. |
 | 1 Theme, motion, type, shape | Done. 12 palettes x 3 modes contrast-tested. |
 | 2 Components | Done. Pure models unit tested; components compile. |
-| 3 Shell and Downloads/Torrents | In progress. New top bar, short nav bar, add menu and list are wired behind `EXPRESSIVE_UI`. Not yet run on a device or emulator (none on this machine). Still the old details sheet and filter sheet. |
-| 4-8 | Not started. |
+| 3 Shell and Downloads/Torrents | Done in code: top bar, short bar, add menu, list and grid, notices, multi-select, skeleton, undo. |
+| 4 Sheets | Add sheet and details sheet rebuilt. The torrent file list, peers, trackers, queue chips and per-link request fields are the existing ones, themed. |
+| 5 Other root tabs | Discover rebuilt (carousel plus list). Search and YouTube keep their layouts but take the new theme, tonal text fields, the loading indicator and expressive empty and busy states. |
+| 6 Sub-pages | Themes rebuilt. Settings, Download settings, Advanced, Queues, RSS and About keep their layouts on the new tonal section cards, fields and loader. Archive, TV, Books, Movies, Music and Player are themed only. |
+| 7 Adaptive, accessibility, performance | Rail and side details pane by window class, predictive back, row semantics with actions, large-text and right-to-left handling, stalled and seeding states. No benchmark has been run. |
+| 8 Cutover | **Not done on purpose.** The old UI and the `EXPRESSIVE_UI` flag stay until the new one has been checked on a device. |
 
-Known gaps in Phase 3, on purpose:
-- **Delete has a confirm, not Undo.** `repository.delete` removes the files at once; a real Undo needs a
-  soft-delete in the view model. Planned with the details sheet in Phase 4.
-- **No loading skeleton.** The view model exposes the list with an empty initial value, so "still loading"
-  and "empty" look the same. Needs a `loaded` flag from the repository.
-- **No low-storage banner.** Needs a free-space signal from the download layer.
-- **Grid view and category filter** from the old Downloads tab are not rebuilt yet (filter sheet still opens).
-- **Per-row speed cap (6 spinning)** and all motion are unverified by eye; check on a device.
+Gaps closed since the first status: Undo for delete (8 second window), loading skeleton, low-storage notice,
+grid layout, plain-language failure reasons, link checks and probe notes in the add sheet.
+
+Still open, with the reason:
+- **Add paused / choose queue (split button).** `addLink` has no queue or paused parameter; needs a view model change.
+- **Live seed and peer counts on a row.** They come from the torrent engine per item; rows say "Stalled" instead. Counts are in the details sheet.
+- **In-app reduce-motion switch.** The system animation setting is honoured (Compose scales to zero and the looping shapes stop); there is no separate in-app switch.
+- **Restoring an open details view after the process is killed.** The list, selection and filters survive; the open details selection lives in the view model and does not.
+- **Dark-mode check of every old screen by eye.** Not possible without a device.
+- **Delete the old UI.** See Phase 8 above.
 
 ## Package layout (new)
 
