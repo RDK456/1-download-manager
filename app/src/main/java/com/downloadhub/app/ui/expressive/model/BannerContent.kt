@@ -12,8 +12,8 @@ data class BannerAction(val label: String, val dismisses: Boolean = false)
 
 fun BannerKind.content(): BannerContent = when (this) {
     BannerKind.STORAGE -> BannerContent(
-        "Not enough space",
-        "The queue is paused so nothing is lost. Free up some space or pick another folder.",
+        "Storage is almost full",
+        "Downloads may fail until you free some space or pick another folder. Nothing already saved is touched.",
         listOf(BannerAction("Choose folder"))
     )
     BannerKind.NETWORK -> BannerContent(

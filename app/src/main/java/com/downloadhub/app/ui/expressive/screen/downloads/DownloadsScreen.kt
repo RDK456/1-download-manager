@@ -8,10 +8,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -20,7 +20,6 @@ import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -33,10 +32,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Download
+import com.composables.icons.lucide.LayoutGrid
+import com.composables.icons.lucide.List
 import com.composables.icons.lucide.ListChecks
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Magnet
@@ -51,11 +55,13 @@ import com.downloadhub.app.data.model.canPause
 import com.downloadhub.app.data.model.canResume
 import com.downloadhub.app.ui.TabSummary
 import com.downloadhub.app.ui.expressive.component.DownloadRow
+import com.downloadhub.app.ui.expressive.component.DownloadTile
 import com.downloadhub.app.ui.expressive.component.EmptyAction
 import com.downloadhub.app.ui.expressive.component.EmptyState
 import com.downloadhub.app.ui.expressive.component.FilterGroup
 import com.downloadhub.app.ui.expressive.component.FilterOption
 import com.downloadhub.app.ui.expressive.component.NoticeBanner
+import com.downloadhub.app.ui.expressive.component.SkeletonRow
 import com.downloadhub.app.ui.expressive.model.BannerKind
 import com.downloadhub.app.ui.expressive.model.RowConditions
 import com.downloadhub.app.ui.expressive.model.StateShapeKind
@@ -67,17 +73,23 @@ import com.downloadhub.core.LibraryKind
 /** At most this many rows turn at once, so a long queue stays calm and cheap to draw. */
 private const val MAX_SPINNING = 6
 
+/** Placeholder rows shown while the database has not answered yet. */
+private const val SKELETON_ROWS = 6
+
 /**
  * The Downloads and Torrents tabs.
  *
  * [items] arrive already narrowed by kind, search and filter by the view model, so what is
  * decided here is only the in-progress / finished split and how it looks. Holding a row
- * starts selection; the floating toolbar then acts on every selected row.
+ * starts selection; the floating toolbar then acts on every selected row. Everything lives
+ * in one lazy grid: one column for the list, several for the grid layout, with the header
+ * pieces spanning the full width.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun DownloadsScreen(
     items: List<DownloadEntity>,
+    loaded: Boolean,
     summary: TabSummary,
     conditions: RowConditions,
     activeBanners: Set<BannerKind>,
@@ -95,16 +107,19 @@ fun DownloadsScreen(
     onOpen: (String) -> Unit,
     onPause: (String) -> Unit,
     onResume: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    onDelete: (List<String>) -> Unit,
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit,
     onAdd: () -> Unit,
     isTorrents: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE) }
+    var grid by remember { mutableStateOf(prefs.getBoolean("downloads_grid", false)) }
     var showDone by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var confirmDelete by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf<List<String>?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
 
     val doneCount = items.count { it.status == DownloadStatus.COMPLETED }
@@ -124,13 +139,15 @@ fun DownloadsScreen(
             shown.filter { it.status == DownloadStatus.RUNNING }.take(MAX_SPINNING).map { it.id }.toSet()
         }
         val plan = planBanners(activeBanners, dismissedBanners, bannerExpanded)
-        LazyColumn(
-            Modifier.fillMaxSize(),
+        LazyVerticalGrid(
+            columns = if (grid) GridCells.Adaptive(168.dp) else GridCells.Fixed(1),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 160.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+            verticalArrangement = Arrangement.spacedBy(if (grid) 8.dp else 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (selecting) {
-                item(key = "selection") {
+                item(key = "selection", span = { GridItemSpan(maxLineSpan) }) {
                     Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton({ selected = emptyList() }) { Icon(Lucide.X, contentDescription = "Clear selection") }
                         Text("${liveSelection.size} selected", style = MaterialTheme.typography.titleLargeEmphasized, modifier = Modifier.weight(1f))
@@ -138,7 +155,7 @@ fun DownloadsScreen(
                     }
                 }
             } else {
-                item(key = "banners") {
+                item(key = "banners", span = { GridItemSpan(maxLineSpan) }) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = if (plan.shown.isEmpty()) 0.dp else 8.dp)) {
                         plan.shown.forEach { banner ->
                             NoticeBanner(banner, onAction = { onBannerAction(banner, it) }, onDismiss = { onBannerDismiss(banner) })
@@ -148,7 +165,7 @@ fun DownloadsScreen(
                         }
                     }
                 }
-                item(key = "summary") {
+                item(key = "summary", span = { GridItemSpan(maxLineSpan) }) {
                     if (summary.active > 0 || summary.paused > 0) {
                         Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(
@@ -162,22 +179,30 @@ fun DownloadsScreen(
                         }
                     }
                 }
-                item(key = "search") {
-                    TextField(
-                        value = query,
-                        onValueChange = onQueryChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = TextFieldDefaults.roundedShape,
-                        colors = TextFieldDefaults.tonalColors(),
-                        placeholder = { Text(if (isTorrents) "Search torrents" else "Search downloads") },
-                        leadingIcon = { Icon(Lucide.Search, contentDescription = null) },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() })
-                    )
+                item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextField(
+                            value = query,
+                            onValueChange = onQueryChange,
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            shape = TextFieldDefaults.roundedShape,
+                            colors = TextFieldDefaults.tonalColors(),
+                            placeholder = { Text(if (isTorrents) "Search torrents" else "Search downloads") },
+                            leadingIcon = { Icon(Lucide.Search, contentDescription = null) },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() })
+                        )
+                        IconButton({
+                            grid = !grid
+                            prefs.edit().putBoolean("downloads_grid", grid).apply()
+                        }) {
+                            Icon(if (grid) Lucide.List else Lucide.LayoutGrid, contentDescription = if (grid) "Show as list" else "Show as grid")
+                        }
+                    }
                 }
                 if (showKinds) {
-                    item(key = "kinds") {
+                    item(key = "kinds", span = { GridItemSpan(maxLineSpan) }) {
                         FilterGroup(
                             options = listOf(LibraryKind.ALL, LibraryKind.NORMAL, LibraryKind.YOUTUBE, LibraryKind.TORRENT).map {
                                 FilterOption(it, when (it) { LibraryKind.ALL -> "All"; LibraryKind.NORMAL -> "Files"; else -> it.label }, kindCounts[it])
@@ -188,7 +213,7 @@ fun DownloadsScreen(
                         )
                     }
                 }
-                item(key = "state") {
+                item(key = "state", span = { GridItemSpan(maxLineSpan) }) {
                     FilterGroup(
                         options = listOf(
                             FilterOption(false, "In progress", items.size - doneCount),
@@ -200,8 +225,15 @@ fun DownloadsScreen(
                     )
                 }
             }
-            if (shown.isEmpty()) {
-                item(key = "empty") {
+            when {
+                !loaded -> {
+                    item(key = "loading", span = { GridItemSpan(maxLineSpan) }) {
+                        Column(Modifier.semantics { contentDescription = "Loading your downloads" }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            repeat(SKELETON_ROWS) { SkeletonRow(it, SKELETON_ROWS) }
+                        }
+                    }
+                }
+                shown.isEmpty() -> item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
                     val noneAtAll = items.isEmpty()
                     EmptyState(
                         shape = if (noneAtAll) StateShapeKind.COOKIE else StateShapeKind.BURST,
@@ -224,25 +256,38 @@ fun DownloadsScreen(
                         secondary = if (noneAtAll && query.isNotBlank()) EmptyAction("Clear search", { onQueryChange("") }) else null
                     )
                 }
-            } else {
-                itemsIndexed(shown, key = { _, it -> it.id }) { index, item ->
+                else -> itemsIndexed(shown, key = { _, it -> it.id }) { index, item ->
                     val model = remember(item, conditions) { item.toRowModel(conditions) }
-                    DownloadRow(
-                        model = model,
-                        index = index,
-                        count = shown.size,
-                        selected = item.id in liveSelection,
-                        onClick = { if (selecting) toggle(item.id) else onOpen(item.id) },
-                        onLongClick = { toggle(item.id) },
-                        spin = item.id in spinning,
-                        onPauseOrResume = when {
-                            item.status.canPause -> ({ onPause(item.id) })
-                            item.status.canResume -> ({ onResume(item.id) })
-                            else -> null
-                        },
-                        onDelete = { selected = listOf(item.id); confirmDelete = true },
-                        modifier = Modifier.animateItem()
-                    )
+                    val pauseOrResume: (() -> Unit)? = when {
+                        item.status.canPause -> ({ onPause(item.id) })
+                        item.status.canResume -> ({ onResume(item.id) })
+                        else -> null
+                    }
+                    if (grid) {
+                        DownloadTile(
+                            model = model,
+                            selected = item.id in liveSelection,
+                            onClick = { if (selecting) toggle(item.id) else onOpen(item.id) },
+                            onLongClick = { toggle(item.id) },
+                            spin = item.id in spinning,
+                            onPauseOrResume = pauseOrResume,
+                            onDelete = { confirmDelete = listOf(item.id) },
+                            modifier = Modifier.animateItem()
+                        )
+                    } else {
+                        DownloadRow(
+                            model = model,
+                            index = index,
+                            count = shown.size,
+                            selected = item.id in liveSelection,
+                            onClick = { if (selecting) toggle(item.id) else onOpen(item.id) },
+                            onLongClick = { toggle(item.id) },
+                            spin = item.id in spinning,
+                            onPauseOrResume = pauseOrResume,
+                            onDelete = { confirmDelete = listOf(item.id) },
+                            modifier = Modifier.animateItem()
+                        )
+                    }
                 }
             }
         }
@@ -259,24 +304,29 @@ fun DownloadsScreen(
                     selectedItems.filter { it.status.canResume }.forEach { onResume(it.id) }
                     selected = emptyList()
                 }) { Icon(Lucide.Play, contentDescription = "Resume selected") }
-                IconButton({ confirmDelete = true }) { Icon(Lucide.Trash2, contentDescription = "Delete selected") }
+                IconButton({ confirmDelete = liveSelection }) { Icon(Lucide.Trash2, contentDescription = "Delete selected") }
             }
         }
     }
 
-    if (confirmDelete && selectedItems.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text(if (selectedItems.size == 1) "Delete this download?" else "Delete ${selectedItems.size} downloads?") },
-            text = { Text("The files are removed from this phone too. This cannot be undone.") },
-            confirmButton = {
-                TextButton({
-                    selectedItems.forEach { onDelete(it.id) }
-                    selected = emptyList()
-                    confirmDelete = false
-                }) { Text("Delete") }
-            },
-            dismissButton = { TextButton({ confirmDelete = false }) { Text("Keep") } }
-        )
+    confirmDelete?.let { ids ->
+        val count = ids.count { id -> items.any { it.id == id } }
+        if (count == 0) {
+            confirmDelete = null
+        } else {
+            AlertDialog(
+                onDismissRequest = { confirmDelete = null },
+                title = { Text(if (count == 1) "Delete this download?" else "Delete $count downloads?") },
+                text = { Text("The files are removed from this phone too. You can undo for a few seconds.") },
+                confirmButton = {
+                    TextButton({
+                        onDelete(ids)
+                        selected = emptyList()
+                        confirmDelete = null
+                    }) { Text("Delete") }
+                },
+                dismissButton = { TextButton({ confirmDelete = null }) { Text("Keep") } }
+            )
+        }
     }
 }

@@ -75,7 +75,7 @@ fun DownloadEntity.toRowModel(conditions: RowConditions = RowConditions()): Down
         status == DownloadStatus.QUEUED -> "Queued"
         status == DownloadStatus.PAUSED -> "Paused"
         status == DownloadStatus.COMPLETED -> "Finished"
-        else -> errorMessage?.takeIf { it.isNotBlank() } ?: "Needs attention"
+        else -> friendlyError(errorMessage).short
     }
     val detail = when (status) {
         DownloadStatus.COMPLETED -> if (hasSize) formatBytes(totalBytes) else ""

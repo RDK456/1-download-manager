@@ -5,6 +5,12 @@ import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import com.downloadhub.app.ui.expressive.model.remainingBytes
+import com.downloadhub.app.ui.expressive.model.storageIsLow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -31,6 +37,7 @@ fun DownloadsTab(
     updateViewModel: AppUpdateViewModel,
     isTorrents: Boolean,
     onOpenAbout: () -> Unit,
+    onOpenDownloadSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -40,6 +47,18 @@ fun DownloadsTab(
     val kindCounts by viewModel.kindCounts.collectAsStateWithLifecycle()
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val update by updateViewModel.snapshot.collectAsStateWithLifecycle()
+    val loaded by viewModel.loaded.collectAsStateWithLifecycle()
+    val everything by viewModel.allDownloads.collectAsStateWithLifecycle()
+
+    // Free space is read again every half minute while the list is on screen, and
+    // whenever what is queued changes. A failed read is -1, which is never "low".
+    val needed = remember(everything) { remainingBytes(everything) }
+    val freeBytes by produceState(-1L, needed) {
+        while (true) {
+            value = withContext(Dispatchers.IO) { viewModel.freeStorageBytes() }
+            delay(30_000)
+        }
+    }
 
     val online by rememberOnline()
     val notificationsOn by rememberNotificationsEnabled()
@@ -48,8 +67,9 @@ fun DownloadsTab(
     var dismissed by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var expanded by rememberSaveable { mutableStateOf(false) }
 
-    val active = remember(online, notificationsOn, batteryExempt, update.status) {
+    val active = remember(online, notificationsOn, batteryExempt, update.status, freeBytes, needed) {
         buildSet {
+            if (storageIsLow(freeBytes, needed)) add(BannerKind.STORAGE)
             if (!online) add(BannerKind.NETWORK)
             if (!notificationsOn) add(BannerKind.NOTIFICATIONS)
             if (!batteryExempt) add(BannerKind.BATTERY)
@@ -59,6 +79,7 @@ fun DownloadsTab(
 
     DownloadsScreen(
         items = items,
+        loaded = loaded,
         summary = summary,
         conditions = RowConditions(offline = !online),
         activeBanners = active,
@@ -75,6 +96,7 @@ fun DownloadsTab(
                 }
                 BannerKind.BATTERY -> viewModel.requestBatteryExemption()
                 BannerKind.UPDATE -> onOpenAbout()
+                BannerKind.STORAGE -> onOpenDownloadSettings()
                 else -> Unit
             }
         },
@@ -89,7 +111,7 @@ fun DownloadsTab(
         onOpen = viewModel::select,
         onPause = viewModel::pause,
         onResume = viewModel::resume,
-        onDelete = viewModel::delete,
+        onDelete = viewModel::deleteWithUndo,
         onPauseAll = viewModel::pauseAll,
         onResumeAll = viewModel::resumeAll,
         onAdd = { viewModel.openEditor() },

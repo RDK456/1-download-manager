@@ -38,6 +38,13 @@ class DownloadStorage(private val context: Context) {
         fallbackRoot
     }
 
+    /** Free bytes on the volume downloads are saved to, or -1 if it cannot be read. */
+    fun freeBytes(): Long = runCatching {
+        var dir: File? = root
+        while (dir != null && !dir.exists()) dir = dir.parentFile
+        if (dir == null) -1L else android.os.StatFs(dir.path).availableBytes
+    }.getOrDefault(-1L)
+
     /**
      * All engines write here first. Keeping partial data outside the selected
      * destination means a folder permission change cannot corrupt an in-flight

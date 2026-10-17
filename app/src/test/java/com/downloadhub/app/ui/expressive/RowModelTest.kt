@@ -95,8 +95,8 @@ class RowModelTest {
 
     @Test
     fun failedRowCarriesItsReason() {
-        val m = entity(DownloadStatus.FAILED, 40, 100, error = "Server said 403").toRowModel()
-        assertEquals("Server said 403", m.headline)
+        val m = entity(DownloadStatus.FAILED, 40, 100, error = "Server returned HTTP 403").toRowModel()
+        assertEquals("Link refused (403)", m.headline)
         assertTrue(m.isError)
         assertEquals(StateShapeKind.PENTAGON, m.shape)
         assertTrue(m.canResume)

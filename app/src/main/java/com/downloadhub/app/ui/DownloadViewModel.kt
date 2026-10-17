@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -81,6 +82,9 @@ data class EditorSeed(
 
 sealed interface DownloadEvent {
     data class Message(val text: String) : DownloadEvent
+
+    /** Rows were hidden for a delete that can still be undone; [ids] go back with undoDelete. */
+    data class Deleted(val ids: List<String>, val text: String) : DownloadEvent
 }
 
 class DownloadViewModel(application: Application) : AndroidViewModel(application) {
@@ -106,7 +110,20 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     // the last real list is held for as long as the screen exists. It costs nothing
     // to keep alive: Room's flow is an invalidation tracker that only re-queries
     // when the table actually changes.
-    val allDownloads: StateFlow<List<DownloadEntity>> = repository.observeAll()
+    // Deletes waiting out their undo window. Their rows are hidden here, at the source of
+    // every list, so nothing downstream shows a row that is about to go.
+    private val pendingDeletes = com.downloadhub.app.ui.expressive.model.PendingDeletes()
+    private val _pendingIds = MutableStateFlow<Set<String>>(emptySet())
+
+    // False until the database has answered once, so a list that is still loading can be
+    // told apart from one that is empty.
+    private val _loaded = MutableStateFlow(false)
+    val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
+
+    val allDownloads: StateFlow<List<DownloadEntity>> = kotlinx.coroutines.flow.combine(
+        repository.observeAll().onEach { _loaded.value = true },
+        _pendingIds
+    ) { list, pending -> if (pending.isEmpty()) list else list.filter { it.id !in pending } }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val themeMode: StateFlow<ThemeMode> = settings.themeMode
         .stateIn(viewModelScope, SharingStarted.Lazily, ThemeMode.SYSTEM)
@@ -792,6 +809,44 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
+
+    /**
+     * Hides the rows now and removes their files when the undo window runs out. Anything
+     * still moving is paused straight away so it stops using the network while it waits.
+     */
+    fun deleteWithUndo(ids: List<String>) {
+        val items = allDownloads.value.filter { it.id in ids }
+        if (items.isEmpty()) return
+        items.filter { it.status.isActiveCompat }.forEach { sendAction(DownloadService.ACTION_PAUSE, it.id) }
+        pendingDeletes.add(items.map { it.id })
+        _pendingIds.value = pendingDeletes.ids()
+        if (_selectedId.value in ids) _selectedId.value = null
+        val text = if (items.size == 1) "Deleted ${items.first().fileName}" else "Deleted ${items.size} downloads"
+        viewModelScope.launch { _events.emit(DownloadEvent.Deleted(items.map { it.id }, text)) }
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(com.downloadhub.app.ui.expressive.model.PendingDeletes.WINDOW_MS + 100)
+            commitPendingDeletes()
+        }
+    }
+
+    fun undoDelete(ids: List<String>) {
+        pendingDeletes.undo(ids)
+        _pendingIds.value = pendingDeletes.ids()
+    }
+
+    private suspend fun commitPendingDeletes() {
+        val due = pendingDeletes.takeDue()
+        _pendingIds.value = pendingDeletes.ids()
+        due.forEach { id ->
+            repository.get(id)?.let { item ->
+                if (item.status.isActiveCompat) DownloadService.action(getApplication(), DownloadService.ACTION_CANCEL, id)
+                repository.delete(item)
+            }
+        }
+    }
+
+    /** Free bytes where downloads are saved, or -1 when it cannot be read. */
+    fun freeStorageBytes(): Long = app.container.storage.freeBytes()
 
     fun notify(text: String) {
         viewModelScope.launch { _events.emit(DownloadEvent.Message(text)) }

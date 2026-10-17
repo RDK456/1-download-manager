@@ -279,6 +279,14 @@ fun DownloadHubApp(
             viewModel.events.collectLatest { event ->
                 when (event) {
                     is DownloadEvent.Message -> snackbarHostState.showSnackbar(event.text)
+                    is DownloadEvent.Deleted -> {
+                        val result = snackbarHostState.showSnackbar(
+                            message = event.text,
+                            actionLabel = "Undo",
+                            duration = androidx.compose.material3.SnackbarDuration.Long
+                        )
+                        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) viewModel.undoDelete(event.ids)
+                    }
                 }
             }
         }
@@ -468,7 +476,8 @@ fun DownloadHubApp(
                         viewModel = viewModel,
                         updateViewModel = updateViewModel,
                         isTorrents = false,
-                        onOpenAbout = { navigate(AppDestination.SETTINGS); navigate(AppDestination.ABOUT) }
+                        onOpenAbout = { navigate(AppDestination.SETTINGS); navigate(AppDestination.ABOUT) },
+                        onOpenDownloadSettings = { navigate(AppDestination.SETTINGS); navigate(AppDestination.DOWNLOAD_SETTINGS) }
                     ) else DownloadsScreen(
                         items = visibleItems,
                         summary = mainSummary,
@@ -496,7 +505,8 @@ fun DownloadHubApp(
                         viewModel = viewModel,
                         updateViewModel = updateViewModel,
                         isTorrents = true,
-                        onOpenAbout = { navigate(AppDestination.SETTINGS); navigate(AppDestination.ABOUT) }
+                        onOpenAbout = { navigate(AppDestination.SETTINGS); navigate(AppDestination.ABOUT) },
+                        onOpenDownloadSettings = { navigate(AppDestination.SETTINGS); navigate(AppDestination.DOWNLOAD_SETTINGS) }
                     ) else DownloadsScreen(
                         items = visibleTorrents,
                         summary = torrentSummary,
@@ -724,7 +734,31 @@ fun DownloadHubApp(
                 onDismiss = { filterSheetOpen = false }
             )
         }
+        val online by com.downloadhub.app.ui.expressive.shell.rememberOnline()
         selectedItem?.let { item ->
+          if (BuildConfig.EXPRESSIVE_UI) {
+            com.downloadhub.app.ui.expressive.screen.details.DetailsSheet(
+                item = item,
+                conditions = com.downloadhub.app.ui.expressive.model.RowConditions(offline = !online),
+                onDismiss = { viewModel.select(null) },
+                onPause = { viewModel.pause(item.id) },
+                onResume = { viewModel.resume(item.id) },
+                onRetry = { viewModel.retry(item.id) },
+                onDelete = { viewModel.deleteWithUndo(listOf(item.id)) },
+                onOpen = { viewModel.launchOpen(item, open = true) },
+                onOpenWith = { viewModel.launchOpen(item, open = false) },
+                onShare = { viewModel.launchShare(item) },
+                trackersOf = { viewModel.torrentTrackers(item) },
+                peersOf = { viewModel.torrentPeers(item) },
+                contentOf = { viewModel.torrentContent(item) },
+                onFilesWanted = { indices, wanted -> viewModel.setTorrentFilesWanted(item.id, indices, wanted) },
+                onForceRecheck = { viewModel.forceRecheck(item) },
+                onForceReannounce = { viewModel.forceReannounce(item) },
+                queues = queues,
+                onMoveToQueue = { viewModel.moveToQueue(item.id, it) },
+                onSaveRequest = { viewModel.setItemRequest(item.id, it) }
+            )
+          } else
             DownloadDetailsSheet(
                 item = item,
                 onDismiss = { viewModel.select(null) },
