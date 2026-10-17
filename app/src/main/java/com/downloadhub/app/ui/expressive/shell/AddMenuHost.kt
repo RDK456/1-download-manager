@@ -4,10 +4,6 @@ import android.content.ClipboardManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.composables.icons.lucide.ClipboardPaste
 import com.composables.icons.lucide.Link
@@ -21,15 +17,16 @@ import com.downloadhub.app.ui.DownloadViewModel
  * still handles ranges, page scans and options; the other two skip straight to what they name.
  */
 @Composable
-fun AddMenuHost(viewModel: DownloadViewModel) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+fun AddMenuHost(viewModel: DownloadViewModel, expanded: Boolean, onExpandedChange: (Boolean) -> Unit) {
+    // Back closes the menu before it does anything else.
+    androidx.activity.compose.BackHandler(enabled = expanded) { onExpandedChange(false) }
     val context = LocalContext.current
     val torrentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::addTorrentFile)
     }
     AddMenu(
         expanded = expanded,
-        onExpandedChange = { expanded = it },
+        onExpandedChange = onExpandedChange,
         actions = listOf(
             AddAction("Add a link", Lucide.Link) { viewModel.openEditor() },
             AddAction("Paste from clipboard", Lucide.ClipboardPaste) {

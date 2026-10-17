@@ -29,6 +29,7 @@ import androidx.graphics.shapes.RoundedPolygon
 import kotlinx.coroutines.isActive
 import com.downloadhub.app.ui.expressive.model.StateShapeKind
 import com.downloadhub.app.ui.expressive.model.spins
+import com.downloadhub.app.ui.expressive.model.tone
 
 /**
  * The only file that touches `MaterialShapes`, which is still experimental in
@@ -41,6 +42,19 @@ private fun StateShapeKind.polygon(): RoundedPolygon = when (this) {
     StateShapeKind.SQUIRCLE -> MaterialShapes.Square
     StateShapeKind.BURST -> MaterialShapes.SoftBurst
     StateShapeKind.PENTAGON -> MaterialShapes.Pentagon
+}
+
+/** The badge's fill and the icon colour that sits on it, from the theme, for a state. */
+@Composable
+fun badgeColors(kind: StateShapeKind, selected: Boolean = false): Pair<Color, Color> {
+    val s = MaterialTheme.colorScheme
+    if (selected) return s.primary to s.onPrimary
+    return when (kind.tone) {
+        com.downloadhub.app.ui.expressive.model.BadgeTone.ACTIVE -> s.primary to s.onPrimary
+        com.downloadhub.app.ui.expressive.model.BadgeTone.REST -> s.secondaryContainer to s.onSecondaryContainer
+        com.downloadhub.app.ui.expressive.model.BadgeTone.DONE -> s.tertiaryContainer to s.onTertiaryContainer
+        com.downloadhub.app.ui.expressive.model.BadgeTone.ERROR -> s.errorContainer to s.onErrorContainer
+    }
 }
 
 private class MorphPair(val from: StateShapeKind, val to: StateShapeKind)

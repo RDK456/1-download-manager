@@ -105,7 +105,7 @@ fun DetailsSheet(
     val context = LocalContext.current
     val finished = item.status == DownloadStatus.COMPLETED
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, modifier = Modifier.navigationBarsPadding()) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, modifier = Modifier.navigationBarsPadding(), dragHandle = { com.downloadhub.app.ui.expressive.component.SheetHandle() }) {
         DetailsBody(
             item, conditions, onPause, onResume, onRetry, onOpen, onOpenWith, onShare,
             trackersOf, peersOf, contentOf, onFilesWanted, onForceRecheck, onForceReannounce,
@@ -164,7 +164,7 @@ fun DetailsBody(
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
             StateShape(
                 kind = model.shape,
-                color = if (model.isError) scheme.errorContainer else scheme.primaryContainer,
+                color = com.downloadhub.app.ui.expressive.shape.badgeColors(model.shape).first,
                 modifier = Modifier.size(56.dp),
                 spin = false
             ) {}

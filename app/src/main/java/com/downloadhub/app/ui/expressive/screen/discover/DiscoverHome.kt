@@ -70,11 +70,11 @@ fun DiscoverHome(tiles: List<DiscoverTile>, onOpen: (AppDestination) -> Unit, mo
                             .background(container)
                             .clickable(role = Role.Button, onClickLabel = tile.title) { onOpen(tile.destination) }
                     ) {
-                        StateShape(SHAPES[index % SHAPES.size], content.copy(alpha = 0.12f), Modifier.size(150.dp).align(Alignment.TopEnd).padding(8.dp), spin = false) {}
+                        StateShape(SHAPES[index % SHAPES.size], content.copy(alpha = 0.12f), Modifier.size(104.dp).align(Alignment.TopEnd).padding(12.dp), spin = false) {}
                         Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
                             Icon(tile.icon, contentDescription = null, tint = content, modifier = Modifier.size(32.dp))
                             Text(tile.title, style = MaterialTheme.typography.titleLargeEmphasized, color = content, maxLines = 1)
-                            Text(tile.subtitle, style = MaterialTheme.typography.bodySmall, color = content, maxLines = 2)
+                            Text(tile.subtitle, style = MaterialTheme.typography.bodySmall, color = content, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                     }
                 }

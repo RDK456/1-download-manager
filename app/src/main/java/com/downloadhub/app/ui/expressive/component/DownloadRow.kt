@@ -60,7 +60,8 @@ fun DownloadRow(
     modifier: Modifier = Modifier,
     spin: Boolean = true,
     onPauseOrResume: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    onRetry: (() -> Unit)? = null
 ) {
     val scheme = MaterialTheme.colorScheme
     val big = LocalDensity.current.fontScale >= STACK_FROM_FONT_SCALE
@@ -71,6 +72,7 @@ fun DownloadRow(
         if (onDelete != null) add(CustomAccessibilityAction("Delete") { onDelete(); true })
     }
     val spoken = model.spoken()
+    val (badge, onBadge) = com.downloadhub.app.ui.expressive.shape.badgeColors(model.shape, selected)
     SegmentedListItem(
         selected = selected,
         onClick = onClick,
@@ -84,14 +86,14 @@ fun DownloadRow(
         leadingContent = {
             StateShape(
                 kind = model.shape,
-                color = if (selected) scheme.primary else if (model.isError) scheme.errorContainer else scheme.primaryContainer,
+                color = badge,
                 modifier = Modifier.size(48.dp),
                 spin = spin && model.shape == com.downloadhub.app.ui.expressive.model.StateShapeKind.COOKIE
             ) {
                 Icon(
                     imageVector = if (selected) Lucide.Check else if (model.isError) Lucide.CircleAlert else iconFor(model.source),
                     contentDescription = null,
-                    tint = if (selected) scheme.onPrimary else if (model.isError) scheme.onErrorContainer else scheme.onPrimaryContainer,
+                    tint = onBadge,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -117,7 +119,9 @@ fun DownloadRow(
                 }
             }
         },
-        trailingContent = if (!big && model.speed != null) {
+        trailingContent = if (model.isError && onRetry != null) {
+            { androidx.compose.material3.TextButton(onRetry) { Text("Retry") } }
+        } else if (!big && model.speed != null) {
             {
                 Column {
                     Text(model.speed, style = MaterialTheme.typography.labelMedium.copy(fontFamily = Mono), textAlign = TextAlign.End)

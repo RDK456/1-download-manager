@@ -122,6 +122,7 @@ fun DownloadsTab(
         onPause = viewModel::pause,
         onResume = viewModel::resume,
         onDelete = viewModel::deleteWithUndo,
+        onRetry = viewModel::retry,
         onPauseAll = viewModel::pauseAll,
         onResumeAll = viewModel::resumeAll,
         onAdd = { viewModel.openEditor() },

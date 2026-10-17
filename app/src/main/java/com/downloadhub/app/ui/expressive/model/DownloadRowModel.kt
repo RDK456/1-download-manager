@@ -104,7 +104,7 @@ fun DownloadEntity.toRowModel(
         status == DownloadStatus.RESOLVING && !waiting -> BarStyle.WAVY_INDETERMINATE
         transferring && !hasSize && progressPercent <= 0 -> BarStyle.WAVY_INDETERMINATE
         transferring -> BarStyle.WAVY
-        progress > 0f -> BarStyle.FLAT
+        percent > 0 -> BarStyle.FLAT
         else -> BarStyle.NONE
     }
     return DownloadRowModel(

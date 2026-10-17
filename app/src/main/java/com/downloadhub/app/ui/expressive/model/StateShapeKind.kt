@@ -41,5 +41,16 @@ fun shapeKindFor(status: DownloadStatus, waiting: Boolean = false, needsAttentio
     else -> StateShapeKind.CIRCLE
 }
 
+/** Which colour family a badge uses, so a state also reads from the colour, not the outline alone. */
+enum class BadgeTone { ACTIVE, REST, DONE, ERROR }
+
+val StateShapeKind.tone: BadgeTone
+    get() = when (this) {
+        StateShapeKind.COOKIE -> BadgeTone.ACTIVE
+        StateShapeKind.CIRCLE, StateShapeKind.SQUIRCLE -> BadgeTone.REST
+        StateShapeKind.BURST -> BadgeTone.DONE
+        StateShapeKind.PENTAGON -> BadgeTone.ERROR
+    }
+
 /** Only a transferring row turns. Capped by the list so a long queue stays calm. */
 val StateShapeKind.spins: Boolean get() = this == StateShapeKind.COOKIE

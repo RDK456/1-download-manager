@@ -62,6 +62,7 @@ fun DownloadTile(
         if (onDelete != null) add(CustomAccessibilityAction("Delete") { onDelete(); true })
     }
     val spoken = model.spoken()
+    val (badge, onBadge) = com.downloadhub.app.ui.expressive.shape.badgeColors(model.shape, selected)
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = if (selected) scheme.secondaryContainer else scheme.surfaceContainer,
@@ -76,7 +77,7 @@ fun DownloadTile(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             StateShape(
                 kind = model.shape,
-                color = if (selected) scheme.primary else if (model.isError) scheme.errorContainer else scheme.primaryContainer,
+                color = badge,
                 modifier = Modifier.size(44.dp),
                 spin = spin && model.shape == StateShapeKind.COOKIE
             ) {
@@ -87,7 +88,7 @@ fun DownloadTile(
                         DownloadSource.TORRENT -> Lucide.Magnet
                     },
                     contentDescription = null,
-                    tint = if (selected) scheme.onPrimary else if (model.isError) scheme.onErrorContainer else scheme.onPrimaryContainer,
+                    tint = onBadge,
                     modifier = Modifier.size(20.dp)
                 )
             }

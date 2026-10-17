@@ -230,6 +230,7 @@ fun DownloadHubApp(
         // How far the system back gesture has pulled the page, 0 to 1. Drives the shrink and
         // fade that previews where back is going.
         var backProgress by remember { mutableStateOf(0f) }
+        var addMenuOpen by rememberSaveable { mutableStateOf(false) }
         var dismissedRelease by rememberSaveable { mutableStateOf<String?>(null) }
         var confirmExit by rememberSaveable { mutableStateOf(false) }
         val snackbarHostState = remember { SnackbarHostState() }
@@ -440,7 +441,10 @@ fun DownloadHubApp(
             floatingActionButton = {
                 if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS && !destination.isDiscover) {
                     if (BuildConfig.EXPRESSIVE_UI) {
-                        com.downloadhub.app.ui.expressive.shell.AddMenuHost(viewModel)
+                        // Only where there is a list to add to.
+                        if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) {
+                            com.downloadhub.app.ui.expressive.shell.AddMenuHost(viewModel, addMenuOpen) { addMenuOpen = it }
+                        }
                     } else {
                         // The add button is the big key on the panel.
                         Box(
@@ -728,6 +732,7 @@ fun DownloadHubApp(
                     )
                 }
                 }
+                if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.component.AddMenuScrim(addMenuOpen && (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS)) { addMenuOpen = false }
             }
             }
         }

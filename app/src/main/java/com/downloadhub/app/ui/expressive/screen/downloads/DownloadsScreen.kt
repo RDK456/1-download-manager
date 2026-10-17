@@ -108,6 +108,7 @@ fun DownloadsScreen(
     onPause: (String) -> Unit,
     onResume: (String) -> Unit,
     onDelete: (List<String>) -> Unit,
+    onRetry: (String) -> Unit,
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit,
     onAdd: () -> Unit,
@@ -293,6 +294,7 @@ fun DownloadsScreen(
                             spin = item.id in spinning,
                             onPauseOrResume = pauseOrResume,
                             onDelete = { confirmDelete = listOf(item.id) },
+                            onRetry = { onRetry(item.id) },
                             modifier = Modifier.animateItem()
                         )
                     }
