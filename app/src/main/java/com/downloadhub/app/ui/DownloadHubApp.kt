@@ -160,7 +160,7 @@ fun DownloadHubApp(
     androidx.compose.runtime.CompositionLocalProvider(
         androidx.compose.ui.platform.LocalDensity provides scaledDensity
     ) {
-    DownloadHubTheme(themeMode, appTheme) {
+    AppThemeSwitch(themeMode, appTheme) {
         val context = LocalContext.current
         val visibleItems by viewModel.visibleDownloads.collectAsStateWithLifecycle()
         val visibleTorrents by viewModel.visibleTorrents.collectAsStateWithLifecycle()
@@ -317,7 +317,13 @@ fun DownloadHubApp(
 
         Scaffold(
             topBar = {
-                TopAppBar(
+                if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.shell.ExpressiveTopBar(
+                    title = destinationTitle(destination),
+                    onBack = if (destination.isRoot) null else ({ nav.back()?.let { navKey = encodeNav(it) } }),
+                    onFilter = if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) ({ filterSheetOpen = true }) else null,
+                    filterActive = hasActiveFilter,
+                    onSettings = if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT) ({ navigate(AppDestination.SETTINGS) }) else null
+                ) else TopAppBar(
                     title = {
                         // Downloads wears the "1DM" plate in either layout, as the desktop does.
                         if (destination == AppDestination.DOWNLOADS) {
@@ -392,7 +398,7 @@ fun DownloadHubApp(
                     Column {
                     // Above the tabs on every screen while something is playing.
                     if (destination != AppDestination.PLAYER) MiniPlayer(onOpen = { navigate(AppDestination.PLAYER) })
-                    HardwareNavBar(
+                    NavBarSwitch(
                         listOf(
                             NavTab("Downloads", Lucide.Download, destination == AppDestination.DOWNLOADS, mainSummary.active) { navigate(AppDestination.DOWNLOADS) },
                             NavTab("Torrents", Lucide.Folder, destination == AppDestination.TORRENTS, torrentSummary.active) { navigate(AppDestination.TORRENTS) },
@@ -406,12 +412,16 @@ fun DownloadHubApp(
             },
             floatingActionButton = {
                 if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT && destination != AppDestination.DOWNLOAD_SETTINGS && destination != AppDestination.THEMES && destination != AppDestination.QUEUES && destination != AppDestination.ADVANCED && destination != AppDestination.RSS && !destination.isDiscover) {
-                    // The add button is the big key on the panel.
-                    Box(
-                        Modifier.keycap(onClick = { viewModel.openEditor() }).size(60.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Lucide.Plus, contentDescription = "Add download", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(26.dp))
+                    if (BuildConfig.EXPRESSIVE_UI) {
+                        com.downloadhub.app.ui.expressive.shell.AddMenuHost(viewModel)
+                    } else {
+                        // The add button is the big key on the panel.
+                        Box(
+                            Modifier.keycap(onClick = { viewModel.openEditor() }).size(60.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Lucide.Plus, contentDescription = "Add download", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(26.dp))
+                        }
                     }
                 }
             },            snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -454,7 +464,12 @@ fun DownloadHubApp(
                     label = "tab"
                 ) { destination ->
                 when (destination) {
-                    AppDestination.DOWNLOADS -> DownloadsScreen(
+                    AppDestination.DOWNLOADS -> if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.screen.downloads.DownloadsTab(
+                        viewModel = viewModel,
+                        updateViewModel = updateViewModel,
+                        isTorrents = false,
+                        onOpenAbout = { navigate(AppDestination.SETTINGS); navigate(AppDestination.ABOUT) }
+                    ) else DownloadsScreen(
                         items = visibleItems,
                         summary = mainSummary,
                         categoryCounts = categoryCounts,
@@ -477,7 +492,12 @@ fun DownloadHubApp(
                         onDelete = viewModel::delete,
                         onPickTorrent = viewModel::addTorrentFile
                     )
-                    AppDestination.TORRENTS -> DownloadsScreen(
+                    AppDestination.TORRENTS -> if (BuildConfig.EXPRESSIVE_UI) com.downloadhub.app.ui.expressive.screen.downloads.DownloadsTab(
+                        viewModel = viewModel,
+                        updateViewModel = updateViewModel,
+                        isTorrents = true,
+                        onOpenAbout = { navigate(AppDestination.SETTINGS); navigate(AppDestination.ABOUT) }
+                    ) else DownloadsScreen(
                         items = visibleTorrents,
                         summary = torrentSummary,
                         categoryCounts = torrentCategoryCounts,
@@ -1510,6 +1530,16 @@ private class NavTab(
     val active: Int = 0,
     val onClick: () -> Unit
 )
+
+/** The short navigation bar of the redesign, or the old rail when the flag is off. */
+@Composable
+private fun NavBarSwitch(tabs: List<NavTab>) {
+    if (BuildConfig.EXPRESSIVE_UI) {
+        com.downloadhub.app.ui.expressive.shell.ExpressiveNavBar(
+            tabs.map { com.downloadhub.app.ui.expressive.shell.NavItem(it.label, it.icon, it.selected, it.active, it.onClick) }
+        )
+    } else HardwareNavBar(tabs)
+}
 
 /**
  * The bottom rail as the front of a device rather than a Material bar: a hairline across

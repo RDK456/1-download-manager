@@ -23,6 +23,25 @@ Branch: `redesign` (never merged into `main` until Phase 8 passes). Design refer
    device pass.
 6. **Commit per task**, message says what and why, `Co-Authored-By` trailer.
 
+## Status (updated as work lands)
+
+| Phase | State |
+|---|---|
+| 0 Toolchain and base | Done. Builds, tests and lint pass on the new stack. |
+| 1 Theme, motion, type, shape | Done. 12 palettes x 3 modes contrast-tested. |
+| 2 Components | Done. Pure models unit tested; components compile. |
+| 3 Shell and Downloads/Torrents | In progress. New top bar, short nav bar, add menu and list are wired behind `EXPRESSIVE_UI`. Not yet run on a device or emulator (none on this machine). Still the old details sheet and filter sheet. |
+| 4-8 | Not started. |
+
+Known gaps in Phase 3, on purpose:
+- **Delete has a confirm, not Undo.** `repository.delete` removes the files at once; a real Undo needs a
+  soft-delete in the view model. Planned with the details sheet in Phase 4.
+- **No loading skeleton.** The view model exposes the list with an empty initial value, so "still loading"
+  and "empty" look the same. Needs a `loaded` flag from the repository.
+- **No low-storage banner.** Needs a free-space signal from the download layer.
+- **Grid view and category filter** from the old Downloads tab are not rebuilt yet (filter sheet still opens).
+- **Per-row speed cap (6 spinning)** and all motion are unverified by eye; check on a device.
+
 ## Package layout (new)
 
 ```
