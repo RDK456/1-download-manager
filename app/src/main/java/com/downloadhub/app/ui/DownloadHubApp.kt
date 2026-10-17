@@ -767,6 +767,7 @@ fun DownloadHubApp(
                 onScanPage = viewModel::scanPageForMedia,
                 onRequestOptions = viewModel::setPendingRequest,
                 onAddBatch = viewModel::addBatch,
+                queues = queues,
                 onOpenExisting = { id -> viewModel.closeEditor(); viewModel.select(id) }
             )
           } else

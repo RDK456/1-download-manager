@@ -57,6 +57,7 @@ fun DownloadsTab(
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val update by updateViewModel.snapshot.collectAsStateWithLifecycle()
     val loaded by viewModel.loaded.collectAsStateWithLifecycle()
+    val swarm by viewModel.torrentSwarm.collectAsStateWithLifecycle()
     val everything by viewModel.allDownloads.collectAsStateWithLifecycle()
 
     // Free space is read again every half minute while the list is on screen, and
@@ -99,6 +100,7 @@ fun DownloadsTab(
     Row(modifier) {
     DownloadsScreen(
         items = items,
+        swarm = swarm,
         loaded = loaded,
         summary = summary,
         conditions = RowConditions(offline = !online),

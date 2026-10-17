@@ -51,7 +51,11 @@ import com.composables.icons.lucide.ClipboardPaste
 import com.composables.icons.lucide.FolderOpen
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.ScanSearch
+import com.downloadhub.app.data.AppQueue
 import com.downloadhub.app.data.local.DownloadEntity
+import com.downloadhub.app.ui.expressive.model.AddOptions
+import com.downloadhub.app.ui.expressive.model.addChoices
+import com.downloadhub.app.ui.expressive.model.primaryAddLabel
 import com.downloadhub.app.data.model.AudioFormat
 import com.downloadhub.app.data.model.DownloadCategory
 import com.downloadhub.app.data.model.DownloadSource
@@ -106,13 +110,16 @@ fun AddSheet(
         quality: MediaQuality,
         audioFormat: AudioFormat,
         streamFormatId: String?,
-        streamAudioFormatId: String?
+        streamAudioFormatId: String?,
+        startPaused: Boolean,
+        queueId: String?
     ) -> Unit,
     onOpenYouTubeTab: (String) -> Unit,
     onPickTorrent: (Uri) -> Unit,
     onScanPage: (String) -> Unit,
     onRequestOptions: (HttpRequestOptions) -> Unit,
-    onAddBatch: (List<String>) -> Unit,
+    onAddBatch: (List<String>, Boolean, String?) -> Unit,
+    queues: List<AppQueue>,
     onOpenExisting: (String) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -159,13 +166,13 @@ fun AddSheet(
         probing = false
     }
 
-    fun submit() {
+    fun submit(options: AddOptions = AddOptions()) {
         if (!check.canSubmit) return
         when {
-            batch != null -> onAddBatch(batch)
+            batch != null -> onAddBatch(batch, options.startPaused, options.queueId)
             else -> {
                 if (!request.isEmpty) onRequestOptions(request)
-                onAdd(link, fileName.takeIf { it.isNotBlank() }, category, source, seed.userAgent, seed.contentDisposition, seed.quality, seed.audioFormat, null, null)
+                onAdd(link, fileName.takeIf { it.isNotBlank() }, category, source, seed.userAgent, seed.contentDisposition, seed.quality, seed.audioFormat, null, null, options.startPaused, options.queueId)
             }
         }
     }
@@ -279,14 +286,23 @@ fun AddSheet(
                 }
             }
 
-            Button({ submit() }, Modifier.fillMaxWidth(), enabled = check.canSubmit) {
-                Text(
-                    when {
-                        batch != null -> "Add ${batch.size} to queue"
+            // Plain links and batches can be added paused or to another queue. A torrent goes
+            // through its own preview first, which has its own choices, so it keeps one button.
+            if (check is LinkCheck.Http || check is LinkCheck.Duplicate || check is LinkCheck.Batch) {
+                AddSplitButton(
+                    label = when {
                         check is LinkCheck.Duplicate -> "Download again"
-                        else -> "Add to queue"
-                    }
+                        else -> primaryAddLabel(batch?.size ?: 1, AddOptions(), queues)
+                    },
+                    enabled = check.canSubmit,
+                    choices = addChoices(queues),
+                    onAdd = { submit() },
+                    onChoose = { submit(it.options) }
                 )
+            } else {
+                Button({ submit() }, Modifier.fillMaxWidth(), enabled = check.canSubmit) {
+                    Text(if (check is LinkCheck.Torrent) "Add torrent" else "Add to queue")
+                }
             }
         }
     }

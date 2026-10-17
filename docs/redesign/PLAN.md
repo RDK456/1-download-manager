@@ -40,13 +40,13 @@ Branch: `redesign` (never merged into `main` until Phase 8 passes). Design refer
 Gaps closed since the first status: Undo for delete (12 second window, longer than the message it sits in), loading skeleton, low-storage notice,
 grid layout, plain-language failure reasons, link checks and probe notes in the add sheet.
 
+Closed in the last pass: **Add paused and Add to a queue** (split button in the add sheet; the view model's add functions take a paused flag and a queue), and **seed and peer counts on torrent rows** (read-only from the engine every three seconds while a list is showing, and used to say why a torrent is stuck).
+
 Still open, with the reason:
-- **Add paused / choose queue (split button).** `addLink` has no queue or paused parameter; needs a view model change.
-- **Live seed and peer counts on a row.** They come from the torrent engine per item; rows say "Stalled" instead. Counts are in the details sheet.
-- **In-app reduce-motion switch.** The system animation setting is honoured (Compose scales to zero and the looping shapes stop); there is no separate in-app switch.
+- **Magnets and .torrent files cannot be added paused or to a queue from the sheet.** They go through their own preview, which has its own choices; the split button shows only for links and batches.
+- **In-app reduce-motion switch.** The system animation setting is honoured; there is no separate in-app switch.
 - **Restoring an open details view after the process is killed.** The list, selection and filters survive; the open details selection lives in the view model and does not.
-- **Dark-mode check of every old screen by eye.** Not possible without a device.
-- **Delete the old UI.** See Phase 8 above.
+- **Search, YouTube, Archive, TV, Player, Queues, RSS, Advanced and About** keep their layouts, on the new theme, tonal cards, fields and loader.
 
 ## Package layout (new)
 

@@ -363,6 +363,15 @@ class TorrentEngine(
         }.getOrDefault(emptyList())
     }
 
+    /**
+     * Connected seeds and peers right now, or null when the torrent is not in the session.
+     * Only reads: unlike [poll] it applies nothing, so a screen may call it as often as it likes.
+     */
+    fun swarm(item: DownloadItem): Pair<Int, Int>? {
+        val handle = handleFor(item) ?: return null
+        return runCatching { handle.status().let { it.numSeeds() to it.numPeers() } }.getOrNull()
+    }
+
     fun peers(item: DownloadItem): List<PeerRow> {
         val handle = handleFor(item) ?: return emptyList()
         return runCatching {

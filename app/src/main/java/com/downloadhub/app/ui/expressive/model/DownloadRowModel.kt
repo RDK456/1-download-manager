@@ -44,6 +44,8 @@ data class DownloadRowModel(
     /** Speed and time left, only while transferring. Dashes when unknown, never "infinity". */
     val speed: String?,
     val eta: String?,
+    /** For a torrent: who it is connected to ("84 seeds · 12 peers"), when that is known. */
+    val swarm: String?,
     val bar: BarStyle,
     val isError: Boolean,
     /** Held by the network or by space, not by the user and not by an error. */
@@ -59,7 +61,8 @@ const val STALLED_AFTER_MS = 30_000L
 
 fun DownloadEntity.toRowModel(
     conditions: RowConditions = RowConditions(),
-    now: Long = System.currentTimeMillis()
+    now: Long = System.currentTimeMillis(),
+    swarm: Swarm? = null
 ): DownloadRowModel {
     val moving = status == DownloadStatus.RUNNING || status == DownloadStatus.RESOLVING || status == DownloadStatus.QUEUED
     val waiting = moving && (conditions.lowStorage || conditions.offline)
@@ -76,11 +79,16 @@ fun DownloadEntity.toRowModel(
     val isTorrent = source == com.downloadhub.app.data.model.DownloadSource.TORRENT
     // Moving on paper, but nothing has arrived for a while: say so instead of showing a bar
     // that looks alive. A torrent with no one sending is the usual cause.
-    val stalled = status == DownloadStatus.RUNNING && !waiting && speedBytesPerSecond <= 0 && updatedAt > 0 && now - updatedAt >= STALLED_AFTER_MS
+    // A torrent that has received nothing yet keeps having its row touched while it looks for
+    // peers, so for it the quiet time counts from when it was added, not from the last touch.
+    val quietSince = if (isTorrent && bytesDownloaded == 0L) createdAt else updatedAt
+    val stalled = status == DownloadStatus.RUNNING && !waiting && speedBytesPerSecond <= 0 && quietSince > 0 && now - quietSince >= STALLED_AFTER_MS
     val seeding = isTorrent && status == DownloadStatus.COMPLETED && seedingSinceEpochMillis > 0 && seedingStoppedAtEpochMillis == 0L
     val headline = when {
         waiting && conditions.lowStorage -> "Paused: not enough space"
         waiting -> "Waiting for network"
+        stalled && isTorrent && swarm != null && swarm.isEmpty -> "No seeds or peers found"
+        stalled && isTorrent && swarm != null && swarm.seeds <= 0 -> "No seeds · waiting for a peer"
         stalled && isTorrent -> "Stalled · no one is sending"
         stalled -> "Stalled · still trying"
         status == DownloadStatus.RUNNING -> "Downloading"
@@ -120,6 +128,7 @@ fun DownloadEntity.toRowModel(
         eta = if (transferring) (if (speedBytesPerSecond > 0 && etaSeconds >= 0) formatEta(etaSeconds) else DASH) else null,
         bar = bar,
         isError = status == DownloadStatus.FAILED,
+        swarm = if (isTorrent && !waiting) swarmText(swarm, finished = status == DownloadStatus.COMPLETED) else null,
         isWaiting = waiting || stalled,
         canPause = status.canPause,
         canResume = status.canResume
@@ -135,4 +144,5 @@ fun DownloadRowModel.spoken(): String = buildString {
     if (bar == BarStyle.WAVY || bar == BarStyle.FLAT) append(", ").append(percent).append(" percent")
     if (speed != null && speed != DASH) append(", ").append(speed.replace("/s", " per second"))
     if (eta != null && eta != DASH) append(", ").append(eta).append(" left")
+    if (swarm != null) append(", ").append(swarm)
 }

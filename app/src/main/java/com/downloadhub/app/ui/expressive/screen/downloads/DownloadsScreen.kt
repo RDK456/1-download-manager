@@ -89,6 +89,7 @@ private const val SKELETON_ROWS = 6
 @Composable
 fun DownloadsScreen(
     items: List<DownloadEntity>,
+    swarm: Map<String, com.downloadhub.app.ui.expressive.model.Swarm>,
     loaded: Boolean,
     summary: TabSummary,
     conditions: RowConditions,
@@ -279,7 +280,8 @@ fun DownloadsScreen(
                     )
                 }
                 else -> itemsIndexed(shown, key = { _, it -> it.id }) { index, item ->
-                    val model = remember(item, conditions, now / 10_000) { item.toRowModel(conditions, now) }
+                    val itemSwarm = swarm[item.id]
+                    val model = remember(item, conditions, now / 10_000, itemSwarm) { item.toRowModel(conditions, now, itemSwarm) }
                     val pauseOrResume: (() -> Unit)? = when {
                         item.status.canPause -> ({ onPause(item.id) })
                         item.status.canResume -> ({ onResume(item.id) })

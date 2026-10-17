@@ -481,7 +481,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
      * Queues every link of a batch paste at once, each under the name its link gives.
      * YouTube links take the defaults a single add uses: best quality, M4A for audio.
      */
-    fun addBatch(links: List<String>) {
+    fun addBatch(links: List<String>, startPaused: Boolean = false, queueId: String? = null) {
         if (links.isEmpty()) return
         viewModelScope.launch {
             val ids = links.mapNotNull { link ->
@@ -502,8 +502,17 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             }
             closeEditor()
             if (ids.isNotEmpty()) {
-                DownloadService.start(getApplication(), ids)
-                _events.emit(DownloadEvent.Message("Added ${ids.size} of ${links.size} links to the queue"))
+                val now = System.currentTimeMillis()
+                if (queueId != null && queueId != com.downloadhub.app.ui.expressive.model.MAIN_QUEUE_ID) {
+                    ids.forEach { app.container.database.downloadDao().updateQueue(it, queueId, now) }
+                }
+                if (startPaused) {
+                    ids.forEach { repository.setStatus(it, DownloadStatus.PAUSED) }
+                    _events.emit(DownloadEvent.Message("Added ${ids.size} of ${links.size} links, paused"))
+                } else {
+                    DownloadService.start(getApplication(), ids)
+                    _events.emit(DownloadEvent.Message("Added ${ids.size} of ${links.size} links to the queue"))
+                }
             } else {
                 _events.emit(DownloadEvent.Message("Could not add the links"))
             }
@@ -654,7 +663,11 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
          * picker existed - and what a row added without it still uses.
          */
         streamFormatId: String? = null,
-        streamAudioFormatId: String? = null
+        streamAudioFormatId: String? = null,
+        /** Add it but do not start it: it waits in the list, paused, until resumed. */
+        startPaused: Boolean = false,
+        /** Which queue it joins; null is the main one. */
+        queueId: String? = null
     ) {
         viewModelScope.launch {
             val link = LinkParser.extractFirstLink(rawLink) ?: rawLink.trim()
@@ -721,8 +734,17 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                         )
                     }
                     pendingRequest = null
-                    DownloadService.start(getApplication(), listOf(it.id))
-                    _events.emit(DownloadEvent.Message("Added to the download queue"))
+                    // The queue is set before anything starts, so the first run already obeys it.
+                    if (queueId != null && queueId != com.downloadhub.app.ui.expressive.model.MAIN_QUEUE_ID) {
+                        app.container.database.downloadDao().updateQueue(it.id, queueId, System.currentTimeMillis())
+                    }
+                    if (startPaused) {
+                        repository.setStatus(it.id, DownloadStatus.PAUSED)
+                        _events.emit(DownloadEvent.Message("Added, paused"))
+                    } else {
+                        DownloadService.start(getApplication(), listOf(it.id))
+                        _events.emit(DownloadEvent.Message("Added to the download queue"))
+                    }
                 }
                 .onFailure { _events.emit(DownloadEvent.Message(it.message ?: "Could not add download")) }
         }
@@ -890,6 +912,30 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     // torrent is not in the running session.
     fun torrentTrackers(item: com.downloadhub.app.data.local.DownloadEntity): List<com.downloadhub.core.TrackerRow> =
         runCatching { app.container.torrentEngine.trackers(item.toCoreItem()) }.getOrDefault(emptyList())
+
+    /**
+     * Seeds and peers for the torrents that are moving or sharing, refreshed every few seconds
+     * while a list is on screen. The torrent engine is only touched when there is such a
+     * torrent, so a phone with none never starts one.
+     */
+    val torrentSwarm: StateFlow<Map<String, com.downloadhub.app.ui.expressive.model.Swarm>> = kotlinx.coroutines.flow.flow {
+        while (true) {
+            val live = allDownloads.value.filter {
+                it.source == DownloadSource.TORRENT &&
+                    (it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.RESOLVING ||
+                        (it.status == DownloadStatus.COMPLETED && it.seedingSinceEpochMillis > 0 && it.seedingStoppedAtEpochMillis == 0L))
+            }
+            emit(
+                if (live.isEmpty()) emptyMap() else withContext(Dispatchers.IO) {
+                    live.mapNotNull { item ->
+                        runCatching { app.container.torrentEngine.swarm(item.toCoreItem()) }.getOrNull()
+                            ?.let { (seeds, peers) -> item.id to com.downloadhub.app.ui.expressive.model.Swarm(seeds, peers) }
+                    }.toMap()
+                }
+            )
+            kotlinx.coroutines.delay(3_000)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     fun torrentPeers(item: com.downloadhub.app.data.local.DownloadEntity): List<com.downloadhub.core.PeerRow> =
         runCatching { app.container.torrentEngine.peers(item.toCoreItem()) }.getOrDefault(emptyList())

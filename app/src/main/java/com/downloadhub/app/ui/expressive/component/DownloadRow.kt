@@ -120,6 +120,9 @@ fun DownloadRow(
                     if (model.detail.isNotEmpty()) {
                         Text(model.detail, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Mono), color = scheme.onSurfaceVariant)
                     }
+                    if (model.swarm != null) {
+                        Text(model.swarm, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                    }
                     if (big && model.speed != null) {
                         Text("${model.speed}  ${model.eta}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Mono), color = scheme.onSurfaceVariant)
                     }

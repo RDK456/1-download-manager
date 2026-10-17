@@ -103,6 +103,9 @@ fun DownloadTile(
             if (model.detail.isNotEmpty()) {
                 Text(model.detail, style = MaterialTheme.typography.labelSmall.copy(fontFamily = Mono), color = scheme.onSurfaceVariant, maxLines = 1)
             }
+            if (model.swarm != null) {
+                Text(model.swarm, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1)
+            }
             if (model.bar != BarStyle.NONE) RowBar(model.bar, model.progress)
             if (model.speed != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

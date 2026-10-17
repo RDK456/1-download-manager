@@ -44,7 +44,8 @@ fun interpretProbe(probe: Probe?, originalUrl: String, freeBytes: Long, removabl
     // A page where the address promised a file (setup.exe answered with HTML) is almost always
     // a redirect to a sign-in or consent page. A bare address answered with HTML is just a page.
     val promisedAFile = extension.isNotEmpty() && extension !in PAGE_EXTENSIONS
-    if (isHtml && (promisedAFile || extension.isEmpty())) {
+    // A missing file answers with an HTML error page; that is the 404 note already, not a second finding.
+    if (isHtml && probe.code in 200..399 && (promisedAFile || extension.isEmpty())) {
         val toLogin = probe.finalUrl?.lowercase()?.let { u -> LOGIN_WORDS.any { it in u } } == true
         notes += if (toLogin) {
             AddNote(NoteLevel.WARN, "This link needs you to sign in", "It leads to a sign-in page, not a file. Open it in your browser first, or add your cookies below.")

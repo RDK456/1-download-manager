@@ -140,4 +140,9 @@ class AddModelTest {
         assertTrue("Cannot be resumed" in notes(probe(length = 500_000_000, ranges = false)).titles())
         assertFalse("Cannot be resumed" in notes(probe(length = 5_000_000, ranges = false)).titles())
     }
+
+    @Test fun aMissingFileIsNotAlsoCalledAWebPage() {
+        val n = notes(probe(404, length = -1, type = "text/html"), "https://e.org/file.dat")
+        assertEquals(listOf("File not found (404)"), n.titles())
+    }
 }
