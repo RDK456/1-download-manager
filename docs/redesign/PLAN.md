@@ -52,6 +52,13 @@ Each phase has an exit check. Do not start the next until it passes.
   pin compose-ui explicitly. Re-run baseline.
 - Remove `androidx.compose.material:material-icons-extended` if unused (grep first).
 - Add `expressive` BuildConfig flag.
+- **Done (toolchain forced by Compose 1.12):** material3 1.5.0-beta01 pulls Compose 1.12.1, which needs
+  AGP 9.1+ and compileSdk 37. So the build moved to Gradle 9.3.1, AGP 9.1.1, Kotlin 2.2.20, KSP 2.2.20-2.0.4,
+  Room 2.8.1, Compose Multiplatform 1.9.3 (desktop), BOM 2026.09.00, compileSdk 37 (targetSdk stays 35).
+  `android.builtInKotlin=false` and `android.newDsl=false` are set temporarily; moving to AGP's built-in Kotlin is a
+  follow-up. Desktop needed `compose.materialIconsExtended` added. No baseline was taken on the old stack
+  (it would have meant downloading it just to throw it away); core tests, app unit tests and the desktop compile
+  all pass on the new one.
 - **Exit:** baseline green with the new versions; app launches unchanged.
 
 ### Phase 1 - Theme, motion, type, shape

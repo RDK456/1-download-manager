@@ -21,7 +21,7 @@ val hasReleaseKeystore = !releaseStorePath.isNullOrBlank() && rootProject.file(r
 
 android {
     namespace = "com.downloadhub.app"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.downloadhub.app"
@@ -94,10 +94,6 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -128,6 +124,12 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
@@ -147,7 +149,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons)
     implementation(libs.lucide.icons)
     // The built-in player: music, video and the free TV channels (HLS streams).
     implementation(libs.androidx.media3.exoplayer)
