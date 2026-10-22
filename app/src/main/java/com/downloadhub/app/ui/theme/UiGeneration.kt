@@ -17,12 +17,19 @@ object UiGeneration {
     var expressive by mutableStateOf(true)
         private set
 
+    /** False until the user has picked a look once (new install or first run after update). */
+    var chosen by mutableStateOf(true)
+        private set
+
     fun load(context: Context) {
-        expressive = context.getSharedPreferences("ui", Context.MODE_PRIVATE).getBoolean(KEY, true)
+        val prefs = context.getSharedPreferences("ui", Context.MODE_PRIVATE)
+        expressive = prefs.getBoolean(KEY, true)
+        chosen = prefs.contains(KEY)
     }
 
     fun set(context: Context, on: Boolean) {
         expressive = on
+        chosen = true
         context.getSharedPreferences("ui", Context.MODE_PRIVATE).edit().putBoolean(KEY, on).apply()
     }
 }

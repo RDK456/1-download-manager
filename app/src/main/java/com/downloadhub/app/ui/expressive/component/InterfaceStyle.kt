@@ -43,3 +43,20 @@ fun InterfaceStyleSection() {
         }
     }
 }
+
+/**
+ * One-time chooser shown on a fresh install or the first launch after updating, so the user
+ * picks the new or the classic look. Either choice can be changed later in Settings.
+ */
+@Composable
+fun InterfaceChooserDialog() {
+    if (UiGeneration.chosen) return
+    val context = LocalContext.current
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Choose your look") },
+        text = { Text("New: shapes that morph, springy motion, tonal colour.\nClassic: the original hardware-style panels.\n\nYou can change this any time in Settings > Interface.") },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { UiGeneration.set(context, true) }) { Text("New") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { UiGeneration.set(context, false) }) { Text("Classic") } }
+    )
+}

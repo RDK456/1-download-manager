@@ -234,6 +234,7 @@ fun DownloadHubApp(
         var dismissedRelease by rememberSaveable { mutableStateOf<String?>(null) }
         var confirmExit by rememberSaveable { mutableStateOf(false) }
         val snackbarHostState = remember { SnackbarHostState() }
+        com.downloadhub.app.ui.expressive.component.InterfaceChooserDialog()
 
         fun navigate(target: AppDestination) {
             // The details pane belongs to the list it was opened from.
