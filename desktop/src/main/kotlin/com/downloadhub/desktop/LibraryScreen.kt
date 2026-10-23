@@ -638,7 +638,13 @@ fun LibraryScreen(
                                         onRetry = { actions.retry(item.id) },
                                         onOpen = { actions.revealDownload(item.location) },
                                         onOptions = { optionsFor = item.id },
-                                        onRemove = { deleting = setOf(item.id) }
+                                        onRemove = { deleting = setOf(item.id) },
+                                        onOpenFile = { openWithSystem(item.location) },
+                                        onContext = { x, y ->
+                                            contextAt = IntOffset(x, y)
+                                            contextFor = item.id
+                                            selected = setOf(item.id)
+                                        }
                                     )
                                    } else {
                                     DownloadRow(
@@ -823,7 +829,10 @@ fun LibraryScreen(
                         ContextAction.Options -> optionsFor = item.id
                         ContextAction.SetLocation -> relocating = item.id
                         ContextAction.Rename -> renaming = item.id
+                        ContextAction.Open -> openWithSystem(item.location)
                         ContextAction.OpenFolder -> actions.revealDownload(item.location)
+                        ContextAction.CopyPath -> item.location?.let(actions.copyToClipboard)
+                        ContextAction.CopyLink -> actions.copyToClipboard(item.url)
                         // The clipboard is the one part of this that can fail silently,
                         // and a menu item that does nothing is worse than a message.
                         ContextAction.CopyMagnet -> actions.copyToClipboard(magnetLinkFor(item))

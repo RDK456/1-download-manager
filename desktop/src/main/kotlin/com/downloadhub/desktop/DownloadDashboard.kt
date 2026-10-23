@@ -34,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,6 +49,7 @@ import com.downloadhub.core.DownloadStatus
  * One download as a card: name, kind and state at the top, a slim progress bar, and one
  * line of numbers - size, speed each way, time left, peers - with its actions at the end.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun DownloadCardRow(
     item: DownloadItem,
@@ -57,7 +60,11 @@ fun DownloadCardRow(
     onRetry: () -> Unit,
     onOpen: () -> Unit,
     onOptions: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    /** Double-click on a finished download. */
+    onOpenFile: () -> Unit = {},
+    /** Right-click, at the pointer's position. */
+    onContext: (Int, Int) -> Unit = { _, _ -> }
 ) {
     val shape = RoundedCornerShape(8.dp)
     val stateColor = when (item.status) {
@@ -74,6 +81,18 @@ fun DownloadCardRow(
             .background(if (checked) AppTheme.Palette.selection else AppTheme.Palette.surface, shape)
             .border(1.dp, AppTheme.Palette.outline.copy(alpha = 0.6f), shape)
             .clickable(onClick = onToggle)
+            // Same raw-event reading as the table row: see DownloadRow for why not combinedClickable.
+            .onPointerEvent(PointerEventType.Press) { event ->
+                val mouse = event.nativeEvent as? java.awt.event.MouseEvent ?: return@onPointerEvent
+                if (mouse.button == java.awt.event.MouseEvent.BUTTON3) {
+                    onContext(mouse.x, mouse.y)
+                    event.changes.forEach { it.consume() }
+                } else if (mouse.button == java.awt.event.MouseEvent.BUTTON1 && mouse.clickCount == 2 &&
+                    item.status == DownloadStatus.COMPLETED
+                ) {
+                    onOpenFile()
+                }
+            }
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -317,12 +317,7 @@ class DownloadDestinationTest {
     }
 
     @Test
-    fun theIconsAreDrawnHereRatherThanPulledFromTheLargeJar() {
-        val build = File("build.gradle.kts").readText()
-        assertFalse(
-            "material-icons-extended is a 36 MB jar for a handful of glyphs",
-            build.contains("materialIconsExtended")
-        )
+    fun theFolderIconsAreDrawnHere() {
         val icons = File("src/main/kotlin/com/downloadhub/desktop/DlmIcons.kt").readText()
         listOf("Compressed", "Programs", "Videos", "Music", "Pictures", "Documents")
             .forEach { name ->

@@ -116,6 +116,20 @@ class ContextMenuAndCacheTest {
     }
 
     @Test
+    fun openIsFirstAndOnlyForAFinishedFile() {
+        val done = contextActions(item(status = DownloadStatus.COMPLETED), hasContentFiles = true)
+        assertEquals(ContextAction.Open, done.first())
+        assertFalse(
+            ContextAction.Open in
+                contextActions(item(status = DownloadStatus.RUNNING), hasContentFiles = true)
+        )
+        assertFalse(
+            ContextAction.Open in
+                contextActions(item(status = DownloadStatus.COMPLETED), hasContentFiles = false)
+        )
+    }
+
+    @Test
     fun removeIsAlwaysLast() {
         // Last because it is the only destructive item, and a menu lists what is safe
         // before what is not.
@@ -140,7 +154,8 @@ class ContextMenuAndCacheTest {
             ContextAction.Pause, ContextAction.Resume, ContextAction.ForceStart,
             ContextAction.Remove, ContextAction.Options, ContextAction.SetLocation,
             ContextAction.Rename, ContextAction.OpenFolder, ContextAction.CopyMagnet,
-            ContextAction.ExportTorrent, ContextAction.AutomaticManagement
+            ContextAction.ExportTorrent, ContextAction.AutomaticManagement,
+            ContextAction.Open, ContextAction.CopyPath, ContextAction.CopyLink
         ).forEach { action ->
             assertTrue("action $action has no label", contextActionLabel(action).isNotBlank())
         }

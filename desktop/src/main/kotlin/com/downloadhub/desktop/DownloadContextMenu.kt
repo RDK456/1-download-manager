@@ -77,8 +77,17 @@ sealed interface ContextAction {
     /** Renames the finished file, on disk and in the list. */
     data object Rename : ContextAction
 
+    /** Opens the finished file in its default app. Same as double-clicking the row. */
+    data object Open : ContextAction
+
     /** Opens the folder it sits in, with it selected. */
     data object OpenFolder : ContextAction
+
+    /** Copies the finished file's full path. */
+    data object CopyPath : ContextAction
+
+    /** Copies the address this download came from. */
+    data object CopyLink : ContextAction
 
     /** Copies the magnet link to the clipboard. */
     data object CopyMagnet : ContextAction
@@ -113,6 +122,8 @@ sealed interface ContextAction {
  * download says exactly what can be done to it.
  */
 fun contextActions(item: DownloadItem, hasContentFiles: Boolean): List<ContextAction> = buildList {
+    // First, because it is what double-click does and what a finished file is for.
+    if (item.status == DownloadStatus.COMPLETED && hasContentFiles) add(ContextAction.Open)
     when (item.status) {
         DownloadStatus.RUNNING, DownloadStatus.RESOLVING, DownloadStatus.QUEUED ->
             add(ContextAction.Pause)
@@ -134,6 +145,8 @@ fun contextActions(item: DownloadItem, hasContentFiles: Boolean): List<ContextAc
         add(ContextAction.Rename)
     }
     if (hasContentFiles) add(ContextAction.OpenFolder)
+    if (item.status == DownloadStatus.COMPLETED && hasContentFiles) add(ContextAction.CopyPath)
+    if (!item.isTorrent) add(ContextAction.CopyLink)
     if (item.isTorrent) {
         add(ContextAction.ForceRecheck)
         add(ContextAction.ForceReannounce)
@@ -155,7 +168,10 @@ fun contextActionLabel(action: ContextAction): String = when (action) {
     ContextAction.Options -> "Options..."
     ContextAction.SetLocation -> "Set location..."
     ContextAction.Rename -> "Rename..."
+    ContextAction.Open -> "Open"
     ContextAction.OpenFolder -> "Open destination folder"
+    ContextAction.CopyPath -> "Copy file path"
+    ContextAction.CopyLink -> "Copy download link"
     ContextAction.CopyMagnet -> "Copy magnet link"
     ContextAction.ExportTorrent -> "Export .torrent..."
     ContextAction.AutomaticManagement -> "Automatic Torrent Management"

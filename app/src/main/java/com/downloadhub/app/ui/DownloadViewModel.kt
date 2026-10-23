@@ -978,7 +978,7 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
             )
             kotlinx.coroutines.delay(3_000)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
 
     fun torrentPeers(item: com.downloadhub.app.data.local.DownloadEntity): List<com.downloadhub.core.PeerRow> =
         runCatching { app.container.torrentEngine.peers(item.toCoreItem()) }.getOrDefault(emptyList())
