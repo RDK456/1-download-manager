@@ -317,7 +317,7 @@ menuApi.runtime.onInstalled.addListener(async () => {
   });
   menus.create({
     id: "dlm-download-selection",
-    title: "Download link with 1DM",
+    title: "Download selected links with 1DM",
     contexts: ["selection"],
   });
 });
@@ -328,18 +328,29 @@ function firstLinkIn(text) {
 }
 
 menus.onClicked.addListener(async (info, tab) => {
-  const url =
-    info.menuItemId === "dlm-download-selection"
-      ? firstLinkIn(info.selectionText)
-      : info.linkUrl || info.srcUrl || "";
-  if (!url) return;
-  const result = await sendToApp(url, {
-    referer: info.pageUrl || "",
-    review: true, // chosen from the menu: show the Add Download window
-    cookies: /^https?:/i.test(url) ? await cookieHeaderFor(url) : "",
-  });
+  let urls = [];
+  if (info.menuItemId === "dlm-download-selection") {
+    // Every link in the selection, read from the page; the selected text alone has none.
+    try {
+      urls = (await menuApi.tabs.sendMessage(tab.id, { type: "selected-links" }, { frameId: info.frameId || 0 })) || [];
+    } catch (error) {}
+    if (!urls.length) urls = [firstLinkIn(info.selectionText)].filter(Boolean);
+  } else {
+    urls = [info.linkUrl || info.srcUrl || ""].filter(Boolean);
+  }
+  if (!urls.length) return;
+  // Several arrive at the app one after another and gather in its link grabber.
+  let result = { ok: true };
+  for (const url of urls) {
+    const sent = await sendToApp(url, {
+      referer: info.pageUrl || "",
+      review: true, // chosen from the menu: show the Add Download window
+      cookies: /^https?:/i.test(url) ? await cookieHeaderFor(url) : "",
+    });
+    if (!sent.ok) { result = sent; break; }
+  }
   const text = result.ok
-    ? "Sent to 1 download manager"
+    ? urls.length > 1 ? `Sent ${urls.length} links to 1 download manager` : "Sent to 1 download manager"
     : "1 download manager: " + (result.reason || "not connected");
   if (tab && tab.id !== undefined) {
     menuApi.tabs.sendMessage(tab.id, { type: "dlm-toast", text }).catch(() => {});

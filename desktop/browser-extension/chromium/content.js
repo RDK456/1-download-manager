@@ -273,7 +273,30 @@ probeApp();
 setInterval(probeApp, 4000);
 
 // A short confirmation for the right-click "Download with 1DM".
-chrome.runtime.onMessage.addListener((message) => {
+// Every link inside the current selection: the menu only receives the selected *text*,
+// which for a list of link names has no addresses in it.
+function selectedLinks() {
+  const selection = window.getSelection();
+  const found = new Set();
+  for (let i = 0; selection && i < selection.rangeCount; i++) {
+    const range = selection.getRangeAt(i);
+    const node = range.commonAncestorContainer;
+    const root = node.nodeType === 1 ? node : node.parentElement;
+    if (!root) continue;
+    const own = root.closest("a[href]");
+    if (own) found.add(own.href);
+    root.querySelectorAll("a[href]").forEach((a) => {
+      if (range.intersectsNode(a)) found.add(a.href);
+    });
+  }
+  return [...found].filter((href) => /^(https?:|magnet:)/i.test(href));
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message && message.type === "selected-links") {
+    sendResponse(selectedLinks());
+    return false;
+  }
   if (message && message.type === "dlm-toast") notify(message.text);
 });
 

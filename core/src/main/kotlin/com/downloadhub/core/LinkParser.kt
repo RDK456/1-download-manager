@@ -245,6 +245,11 @@ object LinkParser {
             if (id != null) return "youtube-$id"
         }
 
+        // Some file hosts (fuckingfast.co) put the real name in the #fragment and an opaque
+        // id in the path, so a fragment that ends in a file extension wins.
+        val fragment = runCatching { URI(url).fragment }.getOrNull().orEmpty()
+        if (Regex(""".+\.[A-Za-z0-9]{1,5}""").matches(fragment)) return sanitizeFileName(fragment)
+
         val path = runCatching { URI(url).path }.getOrNull().orEmpty()
         val pathName = path.substringAfterLast('/')
         if (pathName.isNotBlank()) {

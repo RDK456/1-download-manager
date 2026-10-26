@@ -325,6 +325,8 @@ fun LibraryScreen(
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when {
                     event.isCtrlPressed && event.key == Key.N -> { onOpenAdd(); true }
+                    // Ctrl+V with links on the clipboard opens the add dialog already filled.
+                    event.isCtrlPressed && event.key == Key.V && clipboardLink() != null -> { onOpenAdd(); true }
                     event.isCtrlPressed && event.key == Key.A -> { selected = visible.map { it.id }.toSet(); true }
                     event.key == Key.Delete && selected.isNotEmpty() -> { deleting = selected; selected = emptySet(); true }
                     event.key == Key.Escape && selected.isNotEmpty() -> { selected = emptySet(); true }

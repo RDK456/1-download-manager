@@ -39,8 +39,11 @@ enum class BrowserTarget(
     val usesFirefoxBuild: Boolean,
     val storeUrl: String
 ) {
-    FIREFOX("Mozilla Firefox", true, "https://addons.mozilla.org/firefox/"),
-    CHROME("Google Chrome", false, "https://chromewebstore.google.com/"),
+    FIREFOX("Mozilla Firefox", true, "https://addons.mozilla.org/en-US/firefox/addon/1dm/"),
+    CHROME(
+        "Google Chrome", false,
+        "https://chromewebstore.google.com/detail/1-download-manager/cfdljjkhmcojmojpbofehddmjjappgpn"
+    ),
     EDGE("Microsoft Edge", false, "https://microsoftedge.microsoft.com/addons"),
     OPERA("Opera", false, "https://addons.opera.com/");
 }
@@ -174,17 +177,18 @@ private fun BrowserHelpDialog(
     onOpenFolder: (File) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val steps = if (browser.usesFirefoxBuild) {
+    // Firefox and Chrome have published listings; the others still load the folder by hand.
+    val fromStore = browser == BrowserTarget.FIREFOX || browser == BrowserTarget.CHROME
+    val steps = if (fromStore) {
         listOf(
-            "Open the folder shown below.",
-            "In Firefox, go to about:addons and choose Tools, then Developer, then Load Temporary Add-on.",
-            "Select manifest.json from the Firefox folder.",
+            "Click Open store page below.",
+            "Add the extension to ${browser.label}.",
             "Click the extension's icon and paste the pairing code."
         )
     } else {
         listOf(
             "Open the folder shown below.",
-            "Go to $browser.label's extension page and turn on Developer mode.",
+            "Go to ${browser.label}'s extension page and turn on Developer mode.",
             "Choose Load unpacked and select that folder.",
             "Click the extension's icon and paste the pairing code."
         )
@@ -216,21 +220,31 @@ private fun BrowserHelpDialog(
                         Text(step, fontSize = 12.sp, color = AppTheme.Palette.onSurface)
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                Text("Folder to load", fontSize = 11.sp, color = AppTheme.Palette.muted)
-                Text(
-                    folder.absolutePath,
-                    fontSize = 11.sp,
-                    color = AppTheme.Palette.accent
-                )
+                if (!fromStore) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Folder to load", fontSize = 11.sp, color = AppTheme.Palette.muted)
+                    Text(
+                        folder.absolutePath,
+                        fontSize = 11.sp,
+                        color = AppTheme.Palette.accent
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Text("Pairing code", fontSize = 11.sp, color = AppTheme.Palette.muted)
                 Text(token, fontSize = 12.sp, color = AppTheme.Palette.accent)
             }
         },
         confirmButton = {
-            androidx.compose.material3.TextButton(onClick = { onOpenFolder(folder) }) {
-                Text("Open folder", color = AppTheme.Palette.accent)
+            if (fromStore) {
+                androidx.compose.material3.TextButton(onClick = {
+                    runCatching { Desktop.getDesktop().browse(java.net.URI(browser.storeUrl)) }
+                }) {
+                    Text("Open store page", color = AppTheme.Palette.accent)
+                }
+            } else {
+                androidx.compose.material3.TextButton(onClick = { onOpenFolder(folder) }) {
+                    Text("Open folder", color = AppTheme.Palette.accent)
+                }
             }
         },
         dismissButton = {

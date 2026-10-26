@@ -196,7 +196,9 @@ class HttpDownloader(
 
     /** One request, with [range] and its If-Range validator when resuming. */
     private fun open(item: DownloadItem, range: String?): HttpURLConnection {
-        val url = URL(item.url)
+        // A file-host page link becomes its direct URL here, so every connection of a
+        // download (and a resume later) starts from the real file.
+        val url = URL(HostResolver.resolve(item.url, proxy))
         val raw = proxy?.let { url.openConnection(it) } ?: url.openConnection()
         return (raw as HttpURLConnection).apply {
             connectTimeout = 20_000

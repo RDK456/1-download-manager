@@ -12,6 +12,21 @@ object BatchLinks {
     /** More than this from one paste is almost certainly a typo in a range. */
     const val MAX = 1000
 
+    /**
+     * A folder name for a set of files that belong together: the part of their names they
+     * share, without the `.partNN.rar` tail or a repack site's tag. `CoD_MW4_-_fitgirl-
+     * repacks.site_-_.part01.rar` and its 29 siblings give `CoD_MW4`. Blank when they share nothing.
+     */
+    fun commonFolderName(names: List<String>): String {
+        val stems = names.map { it.substringBeforeLast('.').replace(Regex("""\.part\d+$""", RegexOption.IGNORE_CASE), "") }
+        val first = stems.firstOrNull() ?: return ""
+        var length = first.length
+        for (stem in stems) length = minOf(length, first.commonPrefixWith(stem).length)
+        return first.take(length)
+            .replace(Regex("""[\s_.\-]*fitgirl-repacks\.site.*$""", RegexOption.IGNORE_CASE), "")
+            .trim(' ', '_', '.', '-')
+    }
+
     private val range = Regex("""\[(\d+)-(\d+)]|\[([a-zA-Z])-([a-zA-Z])]""")
 
     fun expand(text: String): List<String> =

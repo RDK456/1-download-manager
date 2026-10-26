@@ -848,7 +848,12 @@ internal fun HttpRequestFields(
 internal fun clipboardLink(): String? = runCatching {
     val text = java.awt.Toolkit.getDefaultToolkit().systemClipboard
         .getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
-    text?.trim()?.takeIf { it.length < 4096 && !it.contains('\n') && LinkParser.isFetchable(it, null) }
+    text?.trim()?.takeIf {
+        // Several links pasted together (one per line) count too: the dialog turns them
+        // into a batch.
+        if (it.contains('\n')) com.downloadhub.core.BatchLinks.expand(it).size > 1
+        else it.length < 4096 && LinkParser.isFetchable(it, null)
+    }
 }.getOrNull()
 
 // ---- the look: cards, a header with a type icon, and the few helpers they need ----------

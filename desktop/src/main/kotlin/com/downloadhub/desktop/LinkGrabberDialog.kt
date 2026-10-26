@@ -89,9 +89,22 @@ fun LinkGrabberDialog(
 
     fun nameOf(link: String) = info[link]?.name ?: LinkParser.fileNameFrom(link)
     val chosen = links.filter { it !in skipped }
+
+    // A set of files that belong together (the parts of one release) goes in a folder of its
+    // own, named after what they share, as a torrent's content folder is. The name follows the
+    // list until the user types one.
+    var ownFolder by remember { mutableStateOf(true) }
+    var subfolder by remember { mutableStateOf("") }
+    var subfolderEdited by remember { mutableStateOf(false) }
+    val suggested = BatchLinks.commonFolderName(chosen.map { nameOf(it) }).takeIf { chosen.size > 1 }.orEmpty()
+    LaunchedEffect(suggested) { if (!subfolderEdited) subfolder = suggested }
+    val totalBytes = chosen.sumOf { info[it]?.size ?: 0L }
+
     fun queue(startNow: Boolean) {
+        val sub = LinkParser.sanitizeFileName(subfolder, fallback = "").takeIf { ownFolder && chosen.size > 1 }
         chosen.forEach { link ->
-            onQueue(makeRequest(LinkParser.sanitizeFileName(nameOf(link)), link, startNow, folder))
+            val request = makeRequest(LinkParser.sanitizeFileName(nameOf(link)), link, startNow, folder)
+            onQueue(if (sub.isNullOrBlank()) request else request.copy(saveDirectory = File(request.saveDirectory, sub)))
         }
         onDone()
     }
@@ -110,6 +123,26 @@ fun LinkGrabberDialog(
                     links.addAll(BatchLinks.expand(text).filter { it !in links })
                 }
             }) { Text("Paste links") }
+        }
+        if (chosen.size > 1) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = ownFolder, onCheckedChange = { ownFolder = it })
+                Text("Save all in a folder", fontSize = 13.sp)
+                Spacer(Modifier.width(10.dp))
+                androidx.compose.material3.OutlinedTextField(
+                    value = subfolder,
+                    onValueChange = { subfolder = it; subfolderEdited = true },
+                    enabled = ownFolder,
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "${chosen.size} files" + if (totalBytes > 0) " · ${DisplayFormat.bytes(totalBytes)}" else "",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(links.toList(), key = { it }) { link ->

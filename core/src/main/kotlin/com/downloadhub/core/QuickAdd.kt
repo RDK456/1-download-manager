@@ -49,7 +49,8 @@ data class LinkProbe(val totalBytes: Long?, val fileName: String?)
  */
 object HttpProbe {
     fun probe(url: String, headers: Map<String, String> = emptyMap(), proxy: Proxy? = null): Result<LinkProbe> = runCatching {
-        val connection = (proxy?.let { URL(url).openConnection(it) } ?: URL(url).openConnection()) as HttpURLConnection
+        val target = URL(HostResolver.resolve(url, proxy))
+        val connection = (proxy?.let { target.openConnection(it) } ?: target.openConnection()) as HttpURLConnection
         try {
             connection.instanceFollowRedirects = true
             connection.connectTimeout = 15_000
