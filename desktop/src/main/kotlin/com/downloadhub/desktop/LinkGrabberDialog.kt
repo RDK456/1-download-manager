@@ -39,12 +39,14 @@ import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.X
 import com.downloadhub.core.BatchLinks
 import com.downloadhub.core.DisplayFormat
+import com.downloadhub.core.HostResolver
 import com.downloadhub.core.HttpProbe
 import com.downloadhub.core.LinkParser
 import com.downloadhub.core.TorrentAddRequest
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -74,11 +76,19 @@ fun LinkGrabberDialog(
     // Checked four at a time: a hundred links must not open a hundred connections to one host.
     LaunchedEffect(links.toList()) {
         val gate = Semaphore(4)
+        // File-host page links each cost a page load and a POST to the host, which throttles
+        // parallel ones, so they go one at a time and a refusal is tried again.
+        val hostGate = Semaphore(1)
         coroutineScope {
             links.filter { it !in info }.forEach { link ->
                 launch {
-                    gate.withPermit {
-                        val result = withContext(Dispatchers.IO) { HttpProbe.probe(link) }
+                    (if (HostResolver.needsResolving(link)) hostGate else gate).withPermit {
+                        var result = withContext(Dispatchers.IO) { HttpProbe.probe(link) }
+                        var attempt = 1
+                        while (result.isFailure && HostResolver.needsResolving(link) && attempt < 3) {
+                            delay(1_000L * attempt++)
+                            result = withContext(Dispatchers.IO) { HttpProbe.probe(link) }
+                        }
                         val probe = result.getOrNull()
                         info[link] = GrabInfo(probe?.fileName, probe?.totalBytes, result.isFailure)
                     }
@@ -102,8 +112,9 @@ fun LinkGrabberDialog(
 
     fun queue(startNow: Boolean) {
         val sub = LinkParser.sanitizeFileName(subfolder, fallback = "").takeIf { ownFolder && chosen.size > 1 }
+        val group = if (chosen.size > 1) java.util.UUID.randomUUID().toString() else ""
         chosen.forEach { link ->
-            val request = makeRequest(LinkParser.sanitizeFileName(nameOf(link)), link, startNow, folder)
+            val request = makeRequest(LinkParser.sanitizeFileName(nameOf(link)), link, startNow, folder).copy(groupId = group)
             onQueue(if (sub.isNullOrBlank()) request else request.copy(saveDirectory = File(request.saveDirectory, sub)))
         }
         onDone()

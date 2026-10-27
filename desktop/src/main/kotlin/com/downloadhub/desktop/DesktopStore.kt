@@ -407,6 +407,8 @@ data class QueuedDownload(
     val torrentFirstLastPiecesFirst: Boolean = false,
     /** Folder under the save directory that the torrent's files go in. */
     val torrentContentFolder: String = "",
+    /** See [DownloadItem.groupId]. */
+    val groupId: String = "",
     // --- torrent readings, mirrored from the engine for the detail pane ------------
 
     /** Bytes per second being uploaded. */

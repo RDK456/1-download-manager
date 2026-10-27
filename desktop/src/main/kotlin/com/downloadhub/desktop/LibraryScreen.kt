@@ -103,6 +103,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DisplayFormat
 import com.downloadhub.core.DownloadColumn
+import com.downloadhub.core.DownloadGroups
 import com.downloadhub.core.DownloadItem
 import com.downloadhub.core.DownloadLibrary
 import java.awt.event.MouseEvent
@@ -296,6 +297,8 @@ fun LibraryScreen(
         queueId = queueFilter
     )
     val visible = remember(all, query) { DownloadLibrary.visible(all, query) }
+    // A batch of links is one row; its files are what a click on it selects.
+    val rows = remember(visible) { DownloadGroups.collapse(visible) }
 
     // A message answers one action, so it goes away: after a few seconds, or as soon as
     // the selection it was about changes. It used to stay in the status bar for good,
@@ -625,27 +628,29 @@ fun LibraryScreen(
                           val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                           Box(Modifier.weight(1f).fillMaxWidth()) {
                             LazyColumn(Modifier.fillMaxSize(), state = listState) {
-                                items(visible, key = { it.id }) { item ->
+                                items(rows, key = { it.id }) { row ->
+                                  val ids = DownloadGroups.membersOf(visible, row.id).map { it.id }
+                                  val item = row
                                   // Slides into place on add, remove and re-sort instead of jumping.
                                   Column(Modifier.animateItem()) {
                                    if (cardView) {
                                     DownloadCardRow(
                                         item = item,
-                                        checked = item.id in selected,
+                                        checked = ids.all { it in selected },
                                         onToggle = {
-                                            selected = if (item.id in selected) selected - item.id else selected + item.id
+                                            selected = if (ids.all { it in selected }) selected - ids.toSet() else selected + ids
                                         },
-                                        onPause = { actions.pause(item.id) },
-                                        onResume = { actions.resume(item.id) },
-                                        onRetry = { actions.retry(item.id) },
+                                        onPause = { ids.forEach(actions.pause) },
+                                        onResume = { ids.forEach(actions.resume) },
+                                        onRetry = { ids.forEach(actions.retry) },
                                         onOpen = { actions.revealDownload(item.location) },
-                                        onOptions = { optionsFor = item.id },
-                                        onRemove = { deleting = setOf(item.id) },
+                                        onOptions = { optionsFor = ids.first() },
+                                        onRemove = { deleting = ids.toSet() },
                                         onOpenFile = { openWithSystem(item.location) },
                                         onContext = { x, y ->
                                             contextAt = IntOffset(x, y)
-                                            contextFor = item.id
-                                            selected = setOf(item.id)
+                                            contextFor = ids.first()
+                                            selected = ids.toSet()
                                         }
                                     )
                                    } else {
@@ -655,27 +660,27 @@ fun LibraryScreen(
                                         layout = table,
                                         widths = columnWidths,
                                         tableDp = contentDp,
-                                        checked = item.id in selected,
+                                        checked = ids.all { it in selected },
                                         onToggle = {
                                             // Selecting a row is what the bottom pane
                                             // follows, so it shows the download that was
                                             // last touched rather than an arbitrary one.
-                                            selected = if (item.id in selected) {
-                                                selected - item.id
+                                            selected = if (ids.all { it in selected }) {
+                                                selected - ids.toSet()
                                             } else {
-                                                selected + item.id
+                                                selected + ids
                                             }
                                         },
-                                        onPause = { actions.pause(item.id) },
-                                        onResume = { actions.resume(item.id) },
-                                        onRetry = { actions.retry(item.id) },
+                                        onPause = { ids.forEach(actions.pause) },
+                                        onResume = { ids.forEach(actions.resume) },
+                                        onRetry = { ids.forEach(actions.retry) },
                                         onOpen = { actions.revealDownload(item.location) },
                                         onOpenFile = { openWithSystem(item.location) },
-                                        onOptions = { optionsFor = item.id },
+                                        onOptions = { optionsFor = ids.first() },
                                         onContext = { x, y ->
                                             contextAt = IntOffset(x, y)
-                                            contextFor = item.id
-                                            selected = setOf(item.id)
+                                            contextFor = ids.first()
+                                            selected = ids.toSet()
                                         }
                                     )
                                     HorizontalDivider(
@@ -706,7 +711,10 @@ fun LibraryScreen(
                     // Falling back to "the first torrent", as it once did, was worse
                     // still: on the main list it described a download that might not be
                     // on screen at all.
-                    val detailItem = all.firstOrNull { it.id in selected }
+                    val picked = all.firstOrNull { it.id in selected }
+                    val batchFiles = picked?.groupId?.takeIf { it.isNotBlank() }
+                        ?.let { id -> all.filter { it.groupId == id } }?.takeIf { it.size > 1 }
+                    val detailItem = batchFiles?.let { DownloadGroups.collapse(it).first() } ?: picked
                     if (detailItem != null) {
                         // The store item rather than the core model, because the file
                         // list's per-file progress and the id both actions need are on
@@ -714,7 +722,8 @@ fun LibraryScreen(
                         val detailRow = state.items.firstOrNull { it.id == detailItem.id }
                         TorrentDetailPanel(
                             item = detailItem,
-                            tab = TorrentTab.forDownload(detailItem.isTorrent, detailTab),
+                            batchFiles = batchFiles,
+                            tab = TorrentTab.forDownload(detailItem.isTorrent || batchFiles != null, detailTab, batchFiles != null),
                             onTab = { detailTab = it },
                             expanded = detailOpen,
                             onExpandedChange = { detailOpen = it },
@@ -2467,6 +2476,7 @@ internal fun QueuedDownload.toCoreItem() = DownloadItem(
     torrentSequential = torrentSequential,
     torrentFirstLastPiecesFirst = torrentFirstLastPiecesFirst,
     torrentContentFolder = torrentContentFolder,
+    groupId = groupId,
     uploadRate = uploadRate,
     seeds = seeds,
     peerCount = peerCount,

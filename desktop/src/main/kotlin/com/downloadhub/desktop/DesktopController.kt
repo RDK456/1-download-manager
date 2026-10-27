@@ -1607,6 +1607,7 @@ class DesktopController(
                 torrentSequential = torrentRequest?.sequentialDownload ?: false,
                 torrentFirstLastPiecesFirst = torrentRequest?.downloadFirstAndLastPiecesFirst ?: false,
                 torrentContentFolder = torrentRequest?.contentFolder.orEmpty(),
+                groupId = torrentRequest?.groupId.orEmpty(),
                 requestHeaders = withCapturedReferer(link, torrentRequest?.http?.headers.orEmpty()),
                 cookies = torrentRequest?.http?.cookies.orEmpty(),
                 username = torrentRequest?.http?.username.orEmpty(),

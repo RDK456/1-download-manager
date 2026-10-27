@@ -42,6 +42,8 @@ data class TorrentAddRequest(
     val stopCondition: TorrentStopCondition = TorrentStopCondition.Never,
     /** Folder name under the save directory. Blank for a single-file torrent. */
     val contentFolder: String = "",
+    /** Marks the files of one batch so the library can show them as a single download. */
+    val groupId: String = "",
     /** The link to queue. A magnet, an http link, or a path to a `.torrent`. */
     val link: String = "",
     /** Headers, cookies and login for a plain link. Ignored for a torrent. */

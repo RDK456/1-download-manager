@@ -75,8 +75,12 @@ enum class TorrentTab(val label: String) {
          * download and a YouTube video are one file - or, for a playlist, one queue row
          * per video, which the list above already shows - so Details is the whole of it.
          */
-        fun forDownload(isTorrent: Boolean): List<TorrentTab> =
-            if (isTorrent) values().toList() else listOf(GENERAL)
+        fun forDownload(isTorrent: Boolean, hasFiles: Boolean = false): List<TorrentTab> = when {
+            isTorrent -> values().toList()
+            // A batch of links has a file list but no trackers or peers.
+            hasFiles -> listOf(GENERAL, CONTENT)
+            else -> listOf(GENERAL)
+        }
 
         /**
          * The tab to actually show, never one this download has no tab for.
@@ -85,8 +89,8 @@ enum class TorrentTab(val label: String) {
          * showing a file list with no file list tab to highlight - a pane displaying
          * something with no way back out of it.
          */
-        fun forDownload(isTorrent: Boolean, wanted: TorrentTab): TorrentTab =
-            if (wanted in forDownload(isTorrent)) wanted else GENERAL
+        fun forDownload(isTorrent: Boolean, wanted: TorrentTab, hasFiles: Boolean = false): TorrentTab =
+            if (wanted in forDownload(isTorrent, hasFiles)) wanted else GENERAL
     }
 }
 
@@ -140,6 +144,8 @@ fun TorrentDetailPanel(
     item: DownloadItem?,
     tab: TorrentTab,
     onTab: (TorrentTab) -> Unit,
+    /** The files of a batch of links shown as one download; its Content tab lists them. */
+    batchFiles: List<DownloadItem>? = null,
     paneHeight: Float,
     onPaneHeightChange: (Float) -> Unit,
     /**
@@ -171,7 +177,7 @@ fun TorrentDetailPanel(
         // They used to all five be drawn and greyed out for anything that was not a
         // torrent. A greyed tab is still a tab: it says there is something here, it takes
         // up the width, and four of the five could only ever answer "nothing yet".
-        TorrentTab.forDownload(item?.isTorrent == true).forEach { entry ->
+        TorrentTab.forDownload(item?.isTorrent == true, batchFiles != null).forEach { entry ->
             TorrentTabButton(
                 label = entry.label,
                 selected = expanded && entry == tab,
@@ -220,7 +226,7 @@ fun TorrentDetailPanel(
                 item == null -> PanelNote("Select a download to see its details.")
                 tab == TorrentTab.TRACKERS -> TrackersTab(item.id, trackersOf, onAddTrackers)
                 tab == TorrentTab.PEERS -> PeersTab(item.id, peersOf)
-                else -> TorrentTabContent(item, tab, onFilePriority, fileProgress)
+                else -> TorrentTabContent(item, tab, onFilePriority, if (batchFiles != null) batchFiles.mapIndexed { i, f -> i to f.bytesDownloaded }.toMap() else fileProgress, batchFiles)
             }
         }
     }
@@ -321,7 +327,8 @@ private fun TorrentTabContent(
     item: DownloadItem,
     tab: TorrentTab,
     onFilePriority: ((Int, com.downloadhub.core.FilePriority) -> Unit)?,
-    fileProgress: Map<Int, Long>
+    fileProgress: Map<Int, Long>,
+    batchFiles: List<DownloadItem>? = null
 ) {
     // The pane's own filter, so a twelve-file list can be narrowed to the one file being
     // looked for. It was a fixed empty string, which is why the filter box beside it did
@@ -482,7 +489,14 @@ private fun TorrentTabContent(
             // torrent found by searching - had no file list here at all even though
             // the pre-download dialog had just drawn one from the same metadata. The
             // list is saved as it arrives and read back here.
-            val meta = item.torrentFilePath?.let(::File)
+            val meta = batchFiles?.let { files ->
+                com.downloadhub.core.TorrentMetainfo(
+                    name = item.fileName,
+                    files = files.mapIndexed { i, f -> com.downloadhub.core.TorrentFile(i, f.fileName, f.totalBytes) },
+                    comment = "", createdAtEpochMillis = 0L, createdBy = "",
+                    infoHashV1 = "", infoHashV2 = "", isSingleFile = false
+                )
+            } ?: item.torrentFilePath?.let(::File)
                 ?.takeIf { it.isFile }
                 ?.let { runCatching { com.downloadhub.core.TorrentParser.parse(it) }.getOrNull() }
                 ?: com.downloadhub.core.TorrentMetainfoStore.read(AppPaths.home, item.id)

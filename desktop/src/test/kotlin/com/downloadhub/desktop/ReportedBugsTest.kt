@@ -109,7 +109,7 @@ class ReportedBugsTest {
         )
         assertTrue(
             "its subject is the selection",
-            screen.contains("val detailItem = all.firstOrNull { it.id in selected }")
+            screen.contains("val picked = all.firstOrNull { it.id in selected }")
         )
         assertTrue(
             "and it is drawn only when the selection found something",

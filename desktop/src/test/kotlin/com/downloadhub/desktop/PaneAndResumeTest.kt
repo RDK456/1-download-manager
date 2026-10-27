@@ -97,7 +97,7 @@ class PaneAndResumeTest {
         val screen = File("src/main/kotlin/com/downloadhub/desktop/LibraryScreen.kt").readText()
         assertTrue(
             "the tab handed to the pane must be the clamped one",
-            screen.contains("tab = TorrentTab.forDownload(detailItem.isTorrent, detailTab)")
+            screen.contains("tab = TorrentTab.forDownload(detailItem.isTorrent || batchFiles != null, detailTab, batchFiles != null)")
         )
         assertFalse(
             "and the tab row must be built from the same rule",

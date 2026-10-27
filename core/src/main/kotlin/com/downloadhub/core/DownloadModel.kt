@@ -116,6 +116,8 @@ data class DownloadItem(
     val torrentFirstLastPiecesFirst: Boolean = false,
     /** Folder under the save directory that the torrent's files go in. */
     val torrentContentFolder: String = "",
+    /** Shared by the files queued together from one batch; blank for a download on its own. The library shows them as one row. */
+    val groupId: String = "",
     // --- torrent readings, for the detail pane ------------------------------------
     // Zero for an HTTP download: it has no peers and uploads nothing, and counting it
     // in a torrent client's peer and upload figures is what makes those figures
