@@ -717,6 +717,9 @@ compose.desktop {
             targetFormats(TargetFormat.Msi, TargetFormat.Deb)
             packageName = "1DownloadManager"
             packageVersion = appVersion
+            // The trimmed runtime lacks java.net.http, java.naming, jdk.unsupported and others
+            // that the embedded Chromium (KCEF) and its HTTP client load, which crashed the app.
+            includeAllModules = true
             description = "All-in-one download manager for HTTP, YouTube and torrents"
             vendor = "1 download manager"
             windows {
