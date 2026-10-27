@@ -29,11 +29,20 @@ object HostResolver {
 
     private val cache = ConcurrentHashMap<String, Pair<Long, String>>()
 
+    /** Direct URLs the user obtained in a real browser after passing the host's check; kept until the app exits. */
+    private val provided = ConcurrentHashMap<String, String>()
+
     fun needsResolving(url: String): Boolean = fileId(url) != null
+
+    /** Records the direct URL a browser got for the page link [url]. */
+    fun provide(url: String, direct: String) {
+        fileId(url)?.let { provided[it] = direct }
+    }
 
     /** The direct URL for [url], or [url] itself when it is not a page this knows. Throws [IOException] when the host will not give one. */
     fun resolve(url: String, proxy: Proxy? = null): String {
         val id = fileId(url) ?: return url
+        provided[id]?.let { return it }
         cache[id]?.takeIf { System.currentTimeMillis() - it.first < CACHE_MILLIS }?.let { return it.second }
         val direct = fetchFastFile(id, proxy)
         cache[id] = System.currentTimeMillis() to direct

@@ -72,9 +72,20 @@ fun LinkGrabberDialog(
     val skipped = remember { mutableStateListOf<String>() }
     var folder by remember { mutableStateOf<File?>(null) }
     val clipboard = LocalClipboardManager.current
+    // File-host links the host's own check blocked; the user passes that check in a browser window.
+    var verifying by remember { mutableStateOf<List<String>?>(null) }
+    var recheck by remember { mutableStateOf(0) }
+    val blocked = links.filter { HostResolver.needsResolving(it) && info[it]?.failed == true }
+    verifying?.let { batch ->
+        HostCheckWindow(
+            links = batch,
+            onResolved = { link -> info.remove(link); recheck++ },
+            onClose = { verifying = null }
+        )
+    }
 
     // Checked four at a time: a hundred links must not open a hundred connections to one host.
-    LaunchedEffect(links.toList()) {
+    LaunchedEffect(links.toList(), recheck) {
         val gate = Semaphore(4)
         // File-host page links each cost a page load and a POST to the host, which throttles
         // parallel ones, so they go one at a time and a refusal is tried again.
@@ -126,6 +137,7 @@ fun LinkGrabberDialog(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("${chosen.size} of ${links.size} selected", fontSize = 13.sp, modifier = Modifier.weight(1f))
+            if (blocked.isNotEmpty()) TextButton(onClick = { verifying = blocked }) { Text("Verify ${blocked.size} in browser") }
             TextButton(onClick = { skipped.clear() }) { Text("All") }
             TextButton(onClick = { skipped.addAll(links.filter { it !in skipped }) }) { Text("None") }
             TextButton(onClick = { skipped.addAll(links.filter { info[it]?.failed == true && it !in skipped }) }) { Text("Untick unreachable") }

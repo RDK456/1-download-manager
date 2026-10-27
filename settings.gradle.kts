@@ -12,6 +12,8 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven("https://jitpack.io")
+        // Chromium (KCEF) needs jogamp's gluegen and jogl.
+        maven("https://jogamp.org/deployment/maven")
     }
 }
 

@@ -41,6 +41,9 @@ dependencies {
     implementation("org.libtorrent4j:libtorrent4j-windows:2.1.0-39")
     // Colours the native title bar to match the theme (DwmSetWindowAttribute).
     implementation("net.java.dev.jna:jna:5.6.0")
+    // Embedded Chromium for file hosts that put a Cloudflare check in front of the download:
+    // the user passes the check in a real browser view and the app takes the file URL from it.
+    implementation("dev.datlag:kcef:2025.03.23")
 
     testImplementation(libs.junit)
 }
@@ -701,6 +704,12 @@ val packageZip by tasks.registering(Zip::class) {
 compose.desktop {
     application {
         mainClass = "com.downloadhub.desktop.MainKt"
+        // Chromium (KCEF) reaches into AWT internals to host its native window.
+        jvmArgs += listOf(
+            "--add-opens", "java.desktop/sun.awt=ALL-UNNAMED",
+            "--add-opens", "java.desktop/java.awt.peer=ALL-UNNAMED",
+            "--add-opens", "java.desktop/sun.awt.windows=ALL-UNNAMED"
+        )
 
         nativeDistributions {
             // Msi is the installer; the portable zip above is the fallback for
