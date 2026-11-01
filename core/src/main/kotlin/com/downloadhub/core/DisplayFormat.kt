@@ -5,11 +5,15 @@ package com.downloadhub.core
  * looks identical on a phone and on Windows.
  */
 object DisplayFormat {
+    private const val KB = 1024L
+    private const val MB = KB * 1024
+    private const val GB = MB * 1024
 
     fun bytes(value: Long): String = when {
-        value >= 1_000_000_000 -> String.format("%.2f GB", value / 1_000_000_000.0)
-        value >= 1_000_000 -> String.format("%.2f MB", value / 1_000_000.0)
-        value >= 1_000 -> String.format("%.1f KB", value / 1_000.0)
+        // Binary units under the usual GB/MB/KB labels, matching Windows Explorer and Android's file manager.
+        value >= GB -> String.format("%.2f GB", value / GB.toDouble())
+        value >= MB -> String.format("%.2f MB", value / MB.toDouble())
+        value >= KB -> String.format("%.1f KB", value / KB.toDouble())
         else -> "$value B"
     }
 

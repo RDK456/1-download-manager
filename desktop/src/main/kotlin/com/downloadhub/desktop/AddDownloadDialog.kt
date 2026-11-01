@@ -795,9 +795,12 @@ internal fun HttpRequestFields(
     username: String,
     onUsername: (String) -> Unit,
     password: String,
-    onPassword: (String) -> Unit
+    onPassword: (String) -> Unit,
+    /** False when the caller already scrolls: nesting two scrolls gives infinite height. */
+    scrollable: Boolean = true
 ) {
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+    val scroll = rememberScrollState()
+    Column(Modifier.fillMaxWidth().then(if (scrollable) Modifier.verticalScroll(scroll) else Modifier)) {
         SectionLabel("Request")
         Text(
             "Only needed when a site refuses the link on its own. Leave these empty otherwise.",

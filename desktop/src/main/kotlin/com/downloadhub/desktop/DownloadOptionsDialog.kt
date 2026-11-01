@@ -1,6 +1,8 @@
-package com.downloadhub.desktop
+﻿package com.downloadhub.desktop
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +31,10 @@ import androidx.compose.ui.unit.sp
 import com.downloadhub.core.DisplayFormat
 import com.downloadhub.core.DownloadItem
 import com.downloadhub.core.DownloadPriority
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * One download's own settings.
@@ -50,190 +56,221 @@ fun DownloadOptionsDialog(
     onSave: (priorityRank: Int, speedLimit: Long, startAfter: Long, ratio: Double, minutes: Int) -> Unit,
     onDismiss: () -> Unit,
     /** Headers, cookies and login for an ordinary download; not asked for otherwise. */
-    onSaveRequest: (com.downloadhub.core.HttpRequestOptions) -> Unit = {}
+    onSaveRequest: (com.downloadhub.core.HttpRequestOptions) -> Unit = {},
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
+    onOpenFolder: () -> Unit = {},
+    onOpenFile: () -> Unit = {}
 ) {
-    val isPlainLink = item.source == com.downloadhub.core.DownloadSource.HTTP
-    var headersText by remember(item.id) {
-        mutableStateOf(com.downloadhub.core.HttpRequestOptions.formatHeaders(item.request.headers))
+    // Closes itself when the download finishes while it is open; one opened on a finished
+    // download stays.
+    val openedAs = remember(item.id) { item.status }
+    androidx.compose.runtime.LaunchedEffect(item.status) {
+        if (openedAs != com.downloadhub.core.DownloadStatus.COMPLETED &&
+            item.status == com.downloadhub.core.DownloadStatus.COMPLETED
+        ) {
+            kotlinx.coroutines.delay(1_500)
+            onDismiss()
+        }
     }
-    var cookies by remember(item.id) { mutableStateOf(item.request.cookies) }
-    var username by remember(item.id) { mutableStateOf(item.request.username) }
-    var password by remember(item.id) { mutableStateOf(item.request.password) }
-    var priority by remember(item.id) { mutableStateOf(item.priority) }
-    var speedLimitText by remember(item.id) {
-        mutableStateOf(
-            if (item.speedLimitBytesPerSecond > 0) {
-                (item.speedLimitBytesPerSecond / 1024).toString()
-            } else {
-                ""
-            }
-        )
-    }
-    var startAfter by remember(item.id) {
-        mutableStateOf(startAfterPresetFor(item.startAfterEpochMillis))
-    }
-    var ratioText by remember(item.id) {
-        mutableStateOf(if (item.shareRatioLimit > 0) trimDouble(item.shareRatioLimit) else "")
-    }
-    var minutesText by remember(item.id) {
-        mutableStateOf(if (item.seedTimeLimitMinutes > 0) item.seedTimeLimitMinutes.toString() else "")
-    }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        properties = APP_DIALOG_PROPERTIES,
-        title = {
-            Column {
-                Text("Download options", fontWeight = FontWeight.SemiBold)
-                Text(
-                    item.fileName,
-                    fontSize = 11.sp,
-                    color = AppTheme.Palette.muted,
-                    maxLines = 1
-                )
-            }
-        },
-        text = {
+    // Its own window, as IDM and AB Download Manager show a download, rather than a popup
+    // inside the main one.
+    val percent = if (item.totalBytes > 0) "${(item.bytesDownloaded * 100 / item.totalBytes).toInt()}% " else ""
+    androidx.compose.ui.window.DialogWindow(
+        onCloseRequest = onDismiss,
+        title = "$percent${item.fileName}",
+        state = androidx.compose.ui.window.rememberDialogState(size = androidx.compose.ui.unit.DpSize(560.dp, 460.dp)),
+        resizable = true
+    ) {
+        androidx.compose.runtime.LaunchedEffect(window) {
+            window.iconImages = AppArtwork.windowIcons()
+            window.minimumSize = java.awt.Dimension(460, 420)
+            ForegroundWindow.raise(window)
+        }
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(androidx.compose.material3.MaterialTheme.colorScheme.surface)
+                .padding(16.dp)
+        ) {
+            Text(item.fileName, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Spacer(Modifier.height(10.dp))
             Column(
                 Modifier
-                    .heightIn(max = 460.dp)
+                    .weight(1f)
                     .verticalScroll(rememberScrollState())
             ) {
-                Section("Priority")
-                Text(
-                    "Higher priority downloads are started first when a slot frees up.",
-                    fontSize = 11.sp,
-                    color = AppTheme.Palette.muted
-                )
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DownloadPriority.entries.forEach { level ->
-                        FilterChip(
-                            selected = priority == level,
-                            onClick = { priority = level },
-                            label = { Text(shortLabel(level), fontSize = 11.sp) }
-                        )
-                    }
+                DownloadInfo(item)
+            }
+            Spacer(Modifier.height(10.dp))
+            val status = item.status
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(item.url)) }) {
+                    Text("Copy link")
                 }
-
-                Spacer(Modifier.height(16.dp))
-                Section("Speed limit")
-                OutlinedTextField(
-                    value = speedLimitText,
-                    onValueChange = { speedLimitText = it.filter(Char::isDigit).take(7) },
-                    singleLine = true,
-                    label = { Text("This download only, in KB/s") },
-                    placeholder = {
-                        Text(
-                            if (globalSpeedLimitBytesPerSecond > 0) {
-                                "App-wide: ${DisplayFormat.bytes(globalSpeedLimitBytesPerSecond)}/s"
-                            } else {
-                                "No limit"
-                            },
-                            fontSize = 11.sp
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Leave empty to use the app-wide limit. It can lower that limit, never " +
-                        "raise past it.",
-                    fontSize = 11.sp,
-                    color = AppTheme.Palette.muted
-                )
-
-                Spacer(Modifier.height(16.dp))
-                Section("Start")
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StartPreset.entries.forEach { preset ->
-                        FilterChip(
-                            selected = startAfter == preset,
-                            onClick = { startAfter = preset },
-                            label = { Text(preset.label, fontSize = 11.sp) }
-                        )
-                    }
+                if (item.location != null || item.outputPath != null) {
+                    TextButton(onClick = onOpenFolder) { Text("Open folder") }
                 }
-                if (startAfter != StartPreset.ASAP) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Starts at ${describeStart(startAfter)}.",
-                        fontSize = 11.sp,
-                        color = AppTheme.Palette.muted
-                    )
+                when (status) {
+                    com.downloadhub.core.DownloadStatus.PAUSED, com.downloadhub.core.DownloadStatus.FAILED ->
+                        androidx.compose.material3.OutlinedButton(onClick = onResume) { Text("Resume") }
+                    com.downloadhub.core.DownloadStatus.COMPLETED ->
+                        androidx.compose.material3.OutlinedButton(onClick = onOpenFile) { Text("Open file") }
+                    else -> androidx.compose.material3.OutlinedButton(onClick = onPause) { Text("Pause") }
                 }
+                androidx.compose.material3.Button(onClick = onDismiss) { Text("Close") }
+            }
+        }
+    }
+}
 
-                if (item.isTorrent) {
-                    Spacer(Modifier.height(16.dp))
-                    Section("Seeding")
-                    Text(
-                        "A finished torrent keeps uploading to peers. These are the two ways " +
-                            "qBittorrent offers to stop it. Leave both empty to seed for ever.",
-                        fontSize = 11.sp,
-                        color = AppTheme.Palette.muted
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = ratioText,
-                            onValueChange = { ratioText = it.filter { c -> c.isDigit() || c == '.' }.take(5) },
-                            singleLine = true,
-                            label = { Text("Stop at ratio") },
-                            placeholder = { Text("2.0", fontSize = 11.sp) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = minutesText,
-                            onValueChange = { minutesText = it.filter(Char::isDigit).take(5) },
-                            singleLine = true,
-                            label = { Text("Stop after minutes") },
-                            placeholder = { Text("60", fontSize = 11.sp) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                if (isPlainLink) {
-                    Spacer(Modifier.height(16.dp))
-                    HttpRequestFields(
-                        headers = headersText,
-                        onHeaders = { headersText = it },
-                        cookies = cookies,
-                        onCookies = { cookies = it },
-                        username = username,
-                        onUsername = { username = it },
-                        password = password,
-                        onPassword = { password = it }
-                    )
+/** Live status block, the way IDM and AB Download Manager show a download in progress. */
+@Composable
+private fun DownloadInfo(item: DownloadItem) {
+    val total = item.totalBytes
+    val fraction = if (total > 0) (item.bytesDownloaded.toDouble() / total).coerceIn(0.0, 1.0) else 0.0
+    val left = if (item.speedBytesPerSecond > 0 && total > item.bytesDownloaded) {
+        (total - item.bytesDownloaded) / item.speedBytesPerSecond
+    } else {
+        null
+    }
+    if (total > 0) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { fraction.toFloat() },
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(10.dp))
+            Text("${(fraction * 100).toInt()}%", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+    SpeedGraph(item)
+    SegmentMap(item)
+    val lines = listOfNotNull(
+        "Status" to DisplayFormat.status(item),
+        "Size" to if (total > 0) DisplayFormat.bytes(total) else "Unknown",
+        "Downloaded" to DisplayFormat.bytes(item.bytesDownloaded),
+        (if (item.speedBytesPerSecond > 0) "Speed" to DisplayFormat.speed(item.speedBytesPerSecond) else null),
+        (if (item.status == com.downloadhub.core.DownloadStatus.RUNNING) "Time left" to DisplayFormat.timeLeft(left) else null),
+        (if (item.etag != null || item.lastModified != null) "Resumable" to "Yes" else null),
+        "Save to" to (item.location ?: item.outputPath ?: "Default folder"),
+        "Link" to item.url
+    )
+    Spacer(Modifier.height(8.dp))
+    // Selectable, so the link can be copied out of the window.
+    androidx.compose.foundation.text.selection.SelectionContainer {
+        Column {
+            lines.forEach { (label, value) ->
+                Row(Modifier.padding(vertical = 3.dp)) {
+                    Text(label, fontSize = 12.sp, color = AppTheme.Palette.muted, modifier = Modifier.width(92.dp))
+                    Text(value, fontSize = 12.sp, maxLines = 3, modifier = Modifier.weight(1f))
                 }
             }
-        },
-        confirmButton = {
-            androidx.compose.material3.Button(
-                onClick = {
-                    if (isPlainLink) {
-                        onSaveRequest(
-                            com.downloadhub.core.HttpRequestOptions(
-                                headers = com.downloadhub.core.HttpRequestOptions.parseHeaders(headersText),
-                                cookies = cookies.trim(),
-                                username = username.trim(),
-                                password = password
-                            )
-                        )
-                    }
-                    onSave(
-                        priority.rank,
-                        // KB/s in the field, bytes per second stored.
-                        (speedLimitText.toLongOrNull() ?: 0L).coerceAtLeast(0L) * 1024L,
-                        startAfter.epochMillisFrom(now()),
-                        ratioText.toDoubleOrNull() ?: 0.0,
-                        minutesText.toIntOrNull() ?: 0
-                    )
-                }
-            ) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        }
+    }
+    ChecksumCheck(item)
+}
+
+/** The last minute of transfer rate, sampled each second while the download runs. */
+@Composable
+private fun SpeedGraph(item: DownloadItem) {
+    if (item.status != com.downloadhub.core.DownloadStatus.RUNNING) return
+    val samples = remember(item.id) { androidx.compose.runtime.mutableStateListOf<Long>() }
+    val latest by androidx.compose.runtime.rememberUpdatedState(item.speedBytesPerSecond)
+    androidx.compose.runtime.LaunchedEffect(item.id) {
+        while (true) {
+            samples.add(latest)
+            if (samples.size > 60) samples.removeAt(0)
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
+    if (samples.size < 2) return
+    val line = androidx.compose.material3.MaterialTheme.colorScheme.primary
+    val peak = (samples.maxOrNull() ?: 1L).coerceAtLeast(1L).toFloat()
+    androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(48.dp)) {
+        val step = size.width / 59f
+        val path = androidx.compose.ui.graphics.Path()
+        samples.forEachIndexed { i, v ->
+            val x = size.width - (samples.size - 1 - i) * step
+            val y = size.height - (v / peak) * size.height * 0.9f
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, line, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f))
+    }
+    Spacer(Modifier.height(6.dp))
+}
+
+/** One bar per connection of a split download, filled as its range arrives. */
+@Composable
+private fun SegmentMap(item: DownloadItem) {
+    if (item.source != com.downloadhub.core.DownloadSource.HTTP ||
+        item.status != com.downloadhub.core.DownloadStatus.RUNNING
+    ) return
+    val state by androidx.compose.runtime.produceState<com.downloadhub.core.SegmentState?>(null, item.id) {
+        val file = com.downloadhub.core.SegmentState.fileFor(AppPaths.workDir.resolve("part-${item.id}"))
+        while (true) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.downloadhub.core.SegmentState.read(file)
+            }
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
+    val segments = state?.segments ?: return
+    Text("Connections: ${segments.size}", fontSize = 11.sp, color = AppTheme.Palette.muted)
+    Spacer(Modifier.height(3.dp))
+    Row(Modifier.fillMaxWidth().height(10.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        segments.forEach { segment ->
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { (segment.done.toFloat() / segment.length).coerceIn(0f, 1f) },
+                modifier = Modifier.weight(segment.length.toFloat()).height(10.dp)
+            )
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+}
+
+/** Compares a finished file with a hash the site published (MD5, SHA-1, SHA-256 or SHA-512). */
+@Composable
+private fun ChecksumCheck(item: DownloadItem) {
+    val file = item.location?.let(::File)?.takeIf {
+        item.status == com.downloadhub.core.DownloadStatus.COMPLETED && it.isFile
+    } ?: return
+    var expected by remember(item.id) { mutableStateOf("") }
+    var result by remember(item.id) { mutableStateOf("") }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = expected,
+        onValueChange = { expected = it; result = "" },
+        singleLine = true,
+        label = { Text("Verify checksum (paste MD5 / SHA hash)") },
+        modifier = Modifier.fillMaxWidth()
     )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton(
+            enabled = expected.isNotBlank(),
+            onClick = {
+                result = "Checking..."
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) { runCatching { com.downloadhub.core.Checksum.matches(file, expected) } }
+                    result = when {
+                        ok.isFailure -> "Could not read the file"
+                        ok.getOrNull() == null -> "Not a valid hash"
+                        ok.getOrNull() == true -> "Match - the file is intact"
+                        else -> "Mismatch - the file differs"
+                    }
+                }
+            }
+        ) { Text("Verify") }
+        Text(result, fontSize = 11.sp)
+    }
 }
 
 @Composable

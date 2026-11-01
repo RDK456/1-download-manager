@@ -224,9 +224,9 @@ class DownloadLibraryTest {
     @Test
     fun sizesAreFormattedForPeople() {
         assertEquals("0 B", DisplayFormat.bytes(0))
-        assertEquals("1.5 KB", DisplayFormat.bytes(1_500))
-        assertEquals("1.00 MB", DisplayFormat.bytes(1_000_000))
-        assertEquals("2.00 GB", DisplayFormat.bytes(2_000_000_000))
+        assertEquals("1.5 KB", DisplayFormat.bytes(1_536))
+        assertEquals("1.00 MB", DisplayFormat.bytes(1024L * 1024))
+        assertEquals("64.00 GB", DisplayFormat.bytes(64L * 1024 * 1024 * 1024))
     }
 
     @Test

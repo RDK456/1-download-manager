@@ -22,3 +22,6 @@
 -dontwarn org.openjsse.**
 -dontwarn java.beans.**
 -dontwarn org.w3c.dom.bootstrap.**
+
+# Windows-only host resolver in core uses java.net.http; Android never loads it except for that one host.
+-dontwarn java.net.http.**

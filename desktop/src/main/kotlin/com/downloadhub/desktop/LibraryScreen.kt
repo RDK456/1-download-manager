@@ -626,6 +626,14 @@ fun LibraryScreen(
                             )
                         } else {
                           val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+                          // A new download scrolls into view instead of waiting off-screen.
+                          var seenIds by remember { mutableStateOf<Set<String>?>(null) }
+                          LaunchedEffect(rows) {
+                              val ids = rows.map { it.id }.toSet()
+                              val fresh = seenIds?.let { before -> rows.indexOfFirst { it.id !in before } } ?: -1
+                              seenIds = ids
+                              if (fresh >= 0) listState.animateScrollToItem(fresh)
+                          }
                           Box(Modifier.weight(1f).fillMaxWidth()) {
                             LazyColumn(Modifier.fillMaxSize(), state = listState) {
                                 items(rows, key = { it.id }) { row ->
@@ -786,7 +794,11 @@ fun LibraryScreen(
                     optionsFor = null
                 },
                 onDismiss = { optionsFor = null },
-                onSaveRequest = { request -> actions.setItemRequest(optionsItem.id, request) }
+                onSaveRequest = { request -> actions.setItemRequest(optionsItem.id, request) },
+                onPause = { actions.pause(optionsItem.id) },
+                onResume = { actions.resume(optionsItem.id) },
+                onOpenFolder = { actions.revealDownload(optionsItem.location) },
+                onOpenFile = { openWithSystem(optionsItem.location) }
             )
         }
 
@@ -2107,6 +2119,12 @@ private fun DownloadRow(
     onContext: (Int, Int) -> Unit = { _, _ -> }
 ) {
     val running = item.status == DownloadStatus.RUNNING
+    // The press handler is installed once; reading these through State is what keeps it
+    // from acting on the status the row had when it first appeared (a download that has
+    // since finished would never open on double-click).
+    val currentStatus by rememberUpdatedState(item.status)
+    val currentOpenFile by rememberUpdatedState(onOpenFile)
+    val currentOptions by rememberUpdatedState(onOptions)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2130,10 +2148,11 @@ private fun DownloadRow(
                     event.changes.forEach { it.consume() }
                 }
                 // Double-click opens a finished file, as every file manager does.
+                // Anything still in progress opens its own download window instead.
                 if (mouse != null && mouse.button == java.awt.event.MouseEvent.BUTTON1 &&
-                    mouse.clickCount == 2 && item.status == DownloadStatus.COMPLETED
+                    mouse.clickCount == 2
                 ) {
-                    onOpenFile()
+                    if (currentStatus == DownloadStatus.COMPLETED) currentOpenFile() else currentOptions()
                 }
             }
             .padding(horizontal = 8.dp, vertical = 7.dp),

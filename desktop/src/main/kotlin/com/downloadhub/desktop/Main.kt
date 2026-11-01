@@ -327,6 +327,18 @@ fun main(args: Array<String>) {
                     //
                     // The minimum size goes with it, because the layout's give-up order
                     // eventually runs out.
+                    // A download added after start-up brings the app forward; the list scrolls
+                    // to it in LibraryScreen. The grace period keeps the initial load quiet.
+                    val shownAt = remember { System.currentTimeMillis() }
+                    var knownIds by remember { mutableStateOf<Set<String>?>(null) }
+                    LaunchedEffect(state.items) {
+                        val ids = state.items.map { it.id }.toSet()
+                        val before = knownIds
+                        knownIds = ids
+                        if (before != null && (ids - before).isNotEmpty() &&
+                            System.currentTimeMillis() - shownAt > 5_000
+                        ) ForegroundWindow.raise(window)
+                    }
                     LaunchedEffect(window) {
                         window.iconImages = AppArtwork.windowIcons()
                         window.minimumSize = MINIMUM_WINDOW_SIZE
