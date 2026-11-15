@@ -1,5 +1,11 @@
 package com.downloadhub.desktop
 
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.text.style.TextDecoration
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+
 import androidx.compose.runtime.rememberUpdatedState
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.LayoutGrid
@@ -328,6 +334,7 @@ fun LibraryScreen(
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when {
                     event.isCtrlPressed && event.key == Key.N -> { onOpenAdd(); true }
+                    event.isCtrlPressed && UiZoom.onKey(event.key) -> true
                     // Ctrl+V with links on the clipboard opens the add dialog already filled.
                     event.isCtrlPressed && event.key == Key.V && clipboardLink() != null -> { onOpenAdd(); true }
                     event.isCtrlPressed && event.key == Key.A -> { selected = visible.map { it.id }.toSet(); true }
@@ -863,6 +870,10 @@ fun LibraryScreen(
                         // Always offered, never enabled: see ContextAction.
                         ContextAction.AutomaticManagement -> Unit
                         ContextAction.MoveToQueue -> moving = setOf(item.id)
+                        ContextAction.ReplaceLink -> actions.replaceLink(item.id)
+                        ContextAction.Stream -> actions.streamTorrent(item.id)
+                        ContextAction.MoveUp -> actions.moveInQueue(item.id, true)
+                        ContextAction.MoveDown -> actions.moveInQueue(item.id, false)
                         ContextAction.ForceRecheck -> actions.forceRecheck(item.id)
                         ContextAction.ForceReannounce -> actions.forceReannounce(item.id)
                         ContextAction.Remove -> {
@@ -2206,15 +2217,26 @@ private fun DownloadRow(
                 )
                 Spacer(Modifier.width(8.dp))
                 Column {
+                    // A finished file deleted outside the app stays listed, struck through.
+                    val removed by produceState(false, item.location, item.status) {
+                        val path = item.location
+                        if (item.status != DownloadStatus.COMPLETED || path == null) { value = false; return@produceState }
+                        while (true) {
+                            value = withContext(Dispatchers.IO) { !java.io.File(path).exists() }
+                            delay(5_000)
+                        }
+                    }
                     Text(
                         item.fileName,
                         fontSize = 12.sp,
                         color = palette.onSurface,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        textDecoration = if (removed) TextDecoration.LineThrough else null
                     )
                     Text(
-                        if (item.totalBytes > 0 && item.status != DownloadStatus.COMPLETED) {
+                        if (removed) "Removed from folder"
+                        else if (item.totalBytes > 0 && item.status != DownloadStatus.COMPLETED) {
                             DisplayFormat.bytes(item.bytesDownloaded) + " of " + DisplayFormat.bytes(item.totalBytes)
                         } else {
                             item.category.name.lowercase().replaceFirstChar { it.uppercase() }

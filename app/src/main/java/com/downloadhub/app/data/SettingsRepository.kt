@@ -36,7 +36,7 @@ data class DownloadSettings(
         const val MAX_MAX_CONCURRENT = 8
         const val DEFAULT_MAX_RETRIES = 2
         const val MAX_RETRIES_LIMIT = 5
-        const val DEFAULT_CONNECTIONS = 4
+        const val DEFAULT_CONNECTIONS = 8
         const val MAX_CONNECTIONS = 16
 
         /** Speed limit presets in bytes per second; 0 means unlimited. */

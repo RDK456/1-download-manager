@@ -79,6 +79,7 @@ fun SettingsDialog(
     onChooseFolder: () -> File?,
     onChooseCacheFolder: () -> File? = onChooseFolder,
     onToggleCapture: (Boolean) -> Unit,
+    onToggleRemote: (Boolean) -> Unit = {},
     extensionReady: Boolean,
     extensionPath: String,
     onOpenExtensionFolder: () -> Unit,
@@ -94,6 +95,9 @@ fun SettingsDialog(
     var retries by remember { mutableStateOf(settings.maxRetries.toString()) }
     var closeToTray by remember { mutableStateOf(settings.closeToTray) }
     var startMinimised by remember { mutableStateOf(settings.startMinimised) }
+    var slowMode by remember { mutableStateOf(settings.slowMode) }
+    var autoExtract by remember { mutableStateOf(settings.autoExtract) }
+    var scanFinished by remember { mutableStateOf(settings.scanFinished) }
     // Read from the registry, which is the only record of it (see AutoStart).
     val autoStartAvailable = remember { AutoStart.available() }
     val autoStartWas = remember { AutoStart.isEnabled() }
@@ -199,6 +203,10 @@ fun SettingsDialog(
                                 onBrowse = { onChooseCacheFolder()?.let { cache = it.absolutePath } }
                             )
                             TickRow("Delete the cache when an unfinished download is removed", deleteCache) { deleteCache = it }
+                            TickRow("Slow mode", slowMode, detail = "Caps downloads at 1 MB/s so calls and streaming keep working.") { slowMode = it }
+                            SectionHeading("When a download finishes")
+                            TickRow("Unzip .zip files into a folder beside them", autoExtract) { autoExtract = it }
+                            TickRow("Scan with Windows Defender", scanFinished, detail = "A threat is reported in a message.") { scanFinished = it }
                             SectionHeading("Window")
                             TickRow("Close to the system tray", closeToTray) { closeToTray = it }
                             TickRow(
@@ -381,6 +389,28 @@ fun SettingsDialog(
                                 )
                                 SelectionContainerCompat(settings.captureToken)
                             }
+                            SectionHeading("Control from your phone")
+                            TickRow(
+                                "Allow phones on this Wi-Fi to watch and control downloads",
+                                settings.remoteEnabled,
+                                detail = if (settings.remoteEnabled) {
+                                    val host = RemoteServer.lanAddress() ?: "this PC's address"
+                                    "On your phone open http://$host:${RemoteServer.activePort.takeIf { it > 0 } ?: RemoteServer.PORT} " +
+                                        "and enter the PIN below. It can pause, resume and add; it cannot delete."
+                                } else {
+                                    "Off. Only devices on your local network can connect, and only with the PIN."
+                                },
+                                onChange = onToggleRemote
+                            )
+                            if (settings.remoteEnabled && settings.remotePin.isNotBlank()) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "PIN",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                SelectionContainerCompat(settings.remotePin)
+                            }
                             SectionHeading("Add to your browser")
                             // Every browser Windows has registered, read off the main thread.
                             var browsers by remember { mutableStateOf<List<InstalledBrowser>?>(null) }
@@ -439,6 +469,9 @@ fun SettingsDialog(
                         maxRetries = retries.toIntOrNull()?.coerceIn(0, 5) ?: 2,
                         closeToTray = closeToTray,
                         startMinimised = startMinimised,
+                        slowMode = slowMode,
+                        autoExtract = autoExtract,
+                        scanFinished = scanFinished,
                         // Trimmed: a trailing space in a path is a folder that does not exist.
                         cacheDir = cache.trim(),
                         deleteCacheWhenRemoved = deleteCache,

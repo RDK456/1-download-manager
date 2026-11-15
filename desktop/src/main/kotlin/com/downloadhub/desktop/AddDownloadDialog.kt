@@ -245,6 +245,8 @@ fun AddDownloadDialog(
     onPickDirectory: () -> File?,
     onConfirm: (TorrentAddRequest) -> Unit,
     onDismiss: () -> Unit,
+    /** When set, a torrent gets a "Play now" button that adds it in playing order and opens the video. */
+    onPlay: ((TorrentAddRequest) -> Unit)? = null,
     /**
      *
      * Without it a dialog opened by a `.torrent` double-clicked in Explorer can open
@@ -343,16 +345,16 @@ fun AddDownloadDialog(
 
     val canConfirm = pending.link.isNotBlank() &&
         (metainfo.files.isEmpty() || selected.value.isNotEmpty())
-    fun confirm() {
+    fun confirm(play: Boolean = false) {
         val request = TorrentSelection.validated(
             meta = metainfo,
             link = pending.link,
             saveDirectory = File(directory),
             selected = selected.value,
             metainfoFile = pending.file,
-            sequential = sequential,
-            firstLastPiecesFirst = firstLastPieces,
-            startImmediately = startNow,
+            sequential = sequential || play,
+            firstLastPiecesFirst = firstLastPieces || play,
+            startImmediately = startNow || play,
             stopCondition = stopConditionFrom(stopWhen, stopValue),
             chosenFolder = folder
         )?.copy(
@@ -363,7 +365,7 @@ fun AddDownloadDialog(
                 password = password
             )
         )
-        if (request != null) onConfirm(request)
+        if (request != null) { if (play && onPlay != null) onPlay(request) else onConfirm(request) }
     }
     // Enter is OK from anywhere in the window, except the request fields, where the
     // headers box needs it for new lines. The root takes focus on open so Enter works
@@ -679,6 +681,15 @@ fun AddDownloadDialog(
             // Disabled rather than silently doing nothing when nothing is selected:
             // a button that looks live and then adds nothing is the bug this dialog
             // was built to avoid.
+            if (pending.isTorrent && onPlay != null) {
+                // Starts in playing order and opens the video once it appears; it stays in the list to finish later.
+                OutlinedButton(
+                    onClick = { confirm(play = true) },
+                    enabled = canConfirm,
+                    modifier = Modifier.height(38.dp)
+                ) { Text("Play now") }
+                Spacer(Modifier.width(8.dp))
+            }
             Button(
                 onClick = { confirm() },
                 enabled = canConfirm,

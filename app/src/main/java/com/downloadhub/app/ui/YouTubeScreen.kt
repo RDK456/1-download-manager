@@ -171,7 +171,9 @@ fun YouTubeScreen(
         // No heading: the top bar already says YouTube.
         val intro = "A video, playlist, album or channel - the section lists what the " +
             "link holds, and downloads the rows you tick."
-        if (com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.component.HintCard(intro) else Text(
+        // Dropped once a list is showing: on a short landscape screen the fixed header is
+        // what crowds the rows, and the hint has done its job by then.
+        if (entries.isEmpty() && com.downloadhub.app.ui.theme.UiGeneration.expressive) com.downloadhub.app.ui.expressive.component.HintCard(intro) else if (entries.isEmpty()) Text(
             intro,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant

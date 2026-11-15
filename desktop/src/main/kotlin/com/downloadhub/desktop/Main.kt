@@ -86,10 +86,15 @@ fun main(args: Array<String>) {
     // click on either lands here in the first place. Skipped when the running program
     // is not the packaged launcher - a Gradle run must never take over the machine's
     // handlers.
-    val launcher = FileAssociations.launcherExe()
-    if (launcher != null && !FileAssociations.isRegistered(launcher)) {
-        FileAssociations.register(launcher)
-    }
+    // Off the main thread: it shells out to reg.exe, which delayed the first window every launch.
+    Thread {
+        runCatching {
+            val launcher = FileAssociations.launcherExe()
+            if (launcher != null && !FileAssociations.isRegistered(launcher)) {
+                FileAssociations.register(launcher)
+            }
+        }
+    }.apply { isDaemon = true }.start()
 
     // Anything handed over by a copy that started while this one was already running,
     // plus whatever was on the command line.
@@ -275,7 +280,7 @@ fun main(args: Array<String>) {
                     controller.close()
                     exitApplication()
                 } else {
-                    FinishAction.perform(chosen)
+                    FinishAction.perform(chosen, File(state.settings.downloadDir))
                 }
             }
             finishCountdown?.let { left ->
@@ -364,6 +369,7 @@ fun main(args: Array<String>) {
                         WindowChrome.apply(window, AppTheme.Palette.colors)
                     }
 
+                    ZoomHost {
                     LibraryScreen(
                         state = state,
                         actions = controller.actions,
@@ -384,6 +390,7 @@ fun main(args: Array<String>) {
                         onOpenSettings = { showSettings = true },
                         onQuit = { closing = true }
                     )
+                    }
 
                     // Every dialog is composed inside this Window, and that is not a
                     // style choice. Compose Desktop's Dialog reads LocalComposeScene,
@@ -468,6 +475,7 @@ fun main(args: Array<String>) {
                             onChooseFolder = controller.actions.chooseFolder,
                             onChooseCacheFolder = controller.actions.chooseCacheFolder,
                             onToggleCapture = controller.actions.setBrowserCapture,
+                            onToggleRemote = controller.actions.setRemote,
                             extensionReady = state.extensionReady,
                             extensionPath = state.extensionPath,
                             onOpenExtensionFolder = controller.actions.openExtensionFolder,
@@ -672,6 +680,10 @@ fun main(args: Array<String>) {
                                     // appears underneath reads as two things at once.
                                     pendingAdd = null
                                     controller.actions.addPrepared(request)
+                                },
+                                onPlay = { request ->
+                                    pendingAdd = null
+                                    controller.addAndPlay(request)
                                 },
                                 onDismiss = { pendingAdd = null }
                             )

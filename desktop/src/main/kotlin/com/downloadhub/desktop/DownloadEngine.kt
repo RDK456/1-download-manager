@@ -230,11 +230,21 @@ class DownloadEngine(
                 downloader.download(item.toCoreItem())
             } catch (error: Throwable) {
                 if (error !is kotlinx.coroutines.CancellationException) {
+                    val reason = error.message ?: error::class.simpleName
+                    val expired = reason?.let { Regex("HTTP (403|404|410)").containsMatchIn(it) } == true
                     store.update(id) {
                         it.copy(
                             status = DownloadStatus.FAILED,
-                            errorMessage = error.message ?: error::class.simpleName
+                            errorMessage = if (expired) "$reason - link may have expired; copy a fresh link and use Replace link" else reason
                         )
+                    }
+                    // A dropped connection retries itself a few times, 10 s apart, before giving up.
+                    if (!expired && (autoRetries[id] ?: 0) < 3) {
+                        autoRetries[id] = (autoRetries[id] ?: 0) + 1
+                        scope.launch {
+                            delay(10_000)
+                            if (store.get(id)?.status == DownloadStatus.FAILED) resume(id)
+                        }
                     }
                 }
             } finally {
@@ -268,7 +278,19 @@ class DownloadEngine(
         start(id)
     }
 
-    fun retry(id: String) = resume(id)
+    fun retry(id: String) {
+        autoRetries.remove(id)
+        resume(id)
+    }
+
+    private val autoRetries = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    /** Failed for a reason other than an expired or missing link: worth trying again now. */
+    fun resumeNetworkFailures() {
+        store.snapshot()
+            .filter { it.status == DownloadStatus.FAILED && it.errorMessage?.contains(Regex("HTTP (403|404|410)")) != true }
+            .forEach { autoRetries.remove(it.id); resume(it.id) }
+    }
 
     fun pauseAll() {
         paused = true

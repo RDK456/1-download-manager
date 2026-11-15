@@ -77,17 +77,23 @@ object FinishAction {
     enum class Choice(val label: String) {
         NOTHING("Do nothing"),
         EXIT("Exit the app"),
+        OPEN_FOLDER("Open the downloads folder"),
+        LOCK("Lock the PC"),
         SLEEP("Sleep"),
+        HIBERNATE("Hibernate"),
         SHUTDOWN("Shut down")
     }
 
     var choice by androidx.compose.runtime.mutableStateOf(Choice.NOTHING)
 
     /** Carries the choice out. Exit is the caller's, since it owns the window. */
-    fun perform(choice: Choice) {
+    fun perform(choice: Choice, downloadDir: java.io.File? = null) {
         runCatching {
             when (choice) {
                 Choice.SLEEP -> ProcessBuilder("rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0").start()
+                Choice.HIBERNATE -> ProcessBuilder("shutdown", "/h").start()
+                Choice.LOCK -> ProcessBuilder("rundll32.exe", "user32.dll,LockWorkStation").start()
+                Choice.OPEN_FOLDER -> downloadDir?.let { java.awt.Desktop.getDesktop().open(it) }
                 Choice.SHUTDOWN -> ProcessBuilder("shutdown", "/s", "/t", "0").start()
                 else -> Unit
             }

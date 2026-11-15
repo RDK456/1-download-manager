@@ -237,6 +237,12 @@ fun DetailsBody(
                 Spacer(Modifier.width(12.dp))
                 Switch(checked = item.torrentSequential, onCheckedChange = { on -> DownloadService.requestSequential(context, item.id, on) })
             }
+            if (!finished) {
+                OutlinedButton(
+                    onClick = { com.downloadhub.app.download.TorrentStreaming.play(context, item) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Play while downloading") }
+            }
             TorrentExtras(item.id, contentOf, trackersOf, peersOf, onFilesWanted, onForceRecheck, onForceReannounce)
         }
         if (!finished) QueueChips(item.queueId, queues, onMoveToQueue)

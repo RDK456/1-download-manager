@@ -107,6 +107,16 @@ sealed interface ContextAction {
     /** Puts it in another named queue, which decides when it starts. */
     data object MoveToQueue : ContextAction
 
+    /** Starts it sooner or later than its neighbours of the same priority. */
+    data object MoveUp : ContextAction
+    data object MoveDown : ContextAction
+
+    /** Plays the video while the torrent is still downloading. */
+    data object Stream : ContextAction
+
+    /** Swaps in a fresh link from the clipboard when the old one expired; progress is kept. */
+    data object ReplaceLink : ContextAction
+
     /** Re-reads every piece against its hash. qBittorrent's Force recheck. */
     data object ForceRecheck : ContextAction
 
@@ -137,9 +147,14 @@ fun contextActions(item: DownloadItem, hasContentFiles: Boolean): List<ContextAc
         else -> Unit
     }
     add(ContextAction.Options)
-    if (item.status != DownloadStatus.COMPLETED) add(ContextAction.MoveToQueue)
+    if (item.status != DownloadStatus.COMPLETED) {
+        add(ContextAction.MoveToQueue)
+        add(ContextAction.MoveUp)
+        add(ContextAction.MoveDown)
+    }
     if (!item.isTorrent && item.status != DownloadStatus.COMPLETED) {
         add(ContextAction.SetLocation)
+        add(ContextAction.ReplaceLink)
     }
     if (item.status == DownloadStatus.COMPLETED && hasContentFiles) {
         add(ContextAction.Rename)
@@ -148,6 +163,7 @@ fun contextActions(item: DownloadItem, hasContentFiles: Boolean): List<ContextAc
     if (item.status == DownloadStatus.COMPLETED && hasContentFiles) add(ContextAction.CopyPath)
     if (!item.isTorrent) add(ContextAction.CopyLink)
     if (item.isTorrent) {
+        if (item.status != DownloadStatus.COMPLETED) add(ContextAction.Stream)
         add(ContextAction.ForceRecheck)
         add(ContextAction.ForceReannounce)
         add(ContextAction.CopyMagnet)
@@ -176,6 +192,10 @@ fun contextActionLabel(action: ContextAction): String = when (action) {
     ContextAction.ExportTorrent -> "Export .torrent..."
     ContextAction.AutomaticManagement -> "Automatic Torrent Management"
     ContextAction.MoveToQueue -> "Move to queue..."
+    ContextAction.Stream -> "Play while downloading"
+    ContextAction.ReplaceLink -> "Replace link from clipboard"
+    ContextAction.MoveUp -> "Move up in queue"
+    ContextAction.MoveDown -> "Move down in queue"
     ContextAction.ForceRecheck -> "Force recheck"
     ContextAction.ForceReannounce -> "Force reannounce"
 }

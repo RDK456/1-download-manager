@@ -124,6 +124,12 @@ fun DownloadDetailsSheet(
                         onCheckedChange = { on -> com.downloadhub.app.download.DownloadService.requestSequential(context, item.id, on) }
                     )
                 }
+                if (item.status != DownloadStatus.COMPLETED) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { com.downloadhub.app.download.TorrentStreaming.play(context, item) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Play while downloading") }
+                }
                 TorrentExtras(item.id, contentOf, trackersOf, peersOf, onFilesWanted, onForceRecheck, onForceReannounce)
             }
             if (item.status != DownloadStatus.COMPLETED) {

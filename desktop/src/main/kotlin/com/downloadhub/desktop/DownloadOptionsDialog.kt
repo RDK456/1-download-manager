@@ -92,7 +92,12 @@ fun DownloadOptionsDialog(
         Column(
             Modifier
                 .fillMaxSize()
-                .background(androidx.compose.material3.MaterialTheme.colorScheme.surface)
+                .background(
+                    glassBackdrop(
+                        androidx.compose.material3.MaterialTheme.colorScheme.surface,
+                        androidx.compose.material3.MaterialTheme.colorScheme.primary
+                    )
+                )
                 .padding(16.dp)
         ) {
             Text(item.fileName, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -100,7 +105,10 @@ fun DownloadOptionsDialog(
             Column(
                 Modifier
                     .weight(1f)
+                    .fillMaxWidth()
+                    .liquidGlass(androidx.compose.foundation.shape.RoundedCornerShape(22.dp))
                     .verticalScroll(rememberScrollState())
+                    .padding(16.dp)
             ) {
                 DownloadInfo(item)
             }

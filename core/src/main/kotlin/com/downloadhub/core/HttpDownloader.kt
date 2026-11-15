@@ -413,7 +413,7 @@ class HttpDownloader(
     }
 
     private companion object {
-        const val TRANSFER_BUFFER_BYTES = 64 * 1024
+        const val TRANSFER_BUFFER_BYTES = 256 * 1024
         /** Dropped connections one segment survives before the download fails. */
         const val SEGMENT_RETRIES = 4
     }

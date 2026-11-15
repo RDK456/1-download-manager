@@ -175,12 +175,21 @@ data class DesktopSettings(
     val downloadDir: String = AppPaths.defaultDownloadDir.absolutePath,
     val maxConcurrent: Int = 3,
     /** Parallel connections one HTTP file is split over, when its server takes ranges. */
-    val connectionsPerDownload: Int = 4,
+    val connectionsPerDownload: Int = 8,
     val speedLimitBytesPerSecond: Long = 0L,
     val maxRetries: Int = 2,
     /** Shared secret the browser extension must present. Generated once. */
     val captureToken: String = "",
     val browserCaptureEnabled: Boolean = true,
+    /** Phone remote control on the local network; off until the user turns it on. */
+    val remoteEnabled: Boolean = false,
+    /** Caps downloads at 1 MB/s so calls and streaming keep working. */
+    val slowMode: Boolean = false,
+    /** Unzips a finished .zip beside itself and removes the archive. */
+    val autoExtract: Boolean = false,
+    /** Asks Windows Defender to scan each finished file. */
+    val scanFinished: Boolean = false,
+    val remotePin: String = "",
     val closeToTray: Boolean = true,
     /** The download list as roomy cards instead of AB Download Manager's table. */
     val libraryCards: Boolean = false,
@@ -282,7 +291,10 @@ data class DesktopSettings(
             now
         )
 
-    fun effectiveDownloadLimit(): Long = if (altSpeedActive()) altDownloadLimitBytesPerSecond else speedLimitBytesPerSecond
+    fun effectiveDownloadLimit(): Long {
+        val base = if (altSpeedActive()) altDownloadLimitBytesPerSecond else speedLimitBytesPerSecond
+        return if (slowMode) (if (base > 0L) minOf(base, SLOW_MODE_BYTES_PER_SECOND) else SLOW_MODE_BYTES_PER_SECOND) else base
+    }
     fun effectiveUploadLimit(): Long = if (altSpeedActive()) altUploadLimitBytesPerSecond else uploadLimitBytesPerSecond
 
     fun torrentSessionSettings(): com.downloadhub.core.TorrentSessionSettings = com.downloadhub.core.TorrentSessionSettings(
@@ -321,6 +333,8 @@ data class DesktopSettings(
     fun downloadDirFile(): File = File(downloadDir)
 
     companion object {
+        const val SLOW_MODE_BYTES_PER_SECOND = 1_048_576L
+
         fun load(): DesktopSettings {
             val file = AppPaths.settingsFile
             val loaded = if (file.isFile) {

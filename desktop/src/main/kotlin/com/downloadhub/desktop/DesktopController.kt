@@ -185,6 +185,10 @@ data class DesktopActions(
     /** Points an unfinished download at a different folder. */
     val setDownloadLocation: (String, String) -> Unit,
     val setBrowserCapture: (Boolean) -> Unit,
+    val setRemote: (Boolean) -> Unit = {},
+    val moveInQueue: (String, Boolean) -> Unit = { _, _ -> },
+    val replaceLink: (String) -> Unit = {},
+    val streamTorrent: (String) -> Unit = {},
     val consumeMessage: () -> Unit,
     val setTorrentsTab: (Boolean) -> Unit,
     val openExtensionFolder: () -> Unit,
@@ -407,7 +411,35 @@ class DesktopController(
         if (settingsState.value.browserCaptureEnabled) {
             capture.start()
         }
+        if (settingsState.value.remoteEnabled) remote.start()
         runQueueScheduler()
+        // Files that finish while the app runs get the optional unzip and scan; ones finished before launch are left alone.
+        scope.launch(Dispatchers.IO) {
+            val handled = store.snapshot().filter { it.status == DownloadStatus.COMPLETED }.map { it.id }.toMutableSet()
+            while (isActive) {
+                delay(3_000)
+                val settings = settingsState.value
+                for (item in store.snapshot()) {
+                    if (item.status != DownloadStatus.COMPLETED || !handled.add(item.id)) continue
+                    val file = item.location?.let { File(it) }?.takeIf { it.isFile } ?: continue
+                    if (settings.scanFinished && PostDownload.threatFound(file) == true) {
+                        _messages.value = "Windows Defender flagged ${file.name}. Do not open it."
+                        refresh()
+                    }
+                    if (settings.autoExtract) PostDownload.extractZip(file)
+                }
+            }
+        }
+        // After sleep or a dropped connection the clock jumps past the tick: retry what failed on the network.
+        scope.launch {
+            var last = System.currentTimeMillis()
+            while (isActive) {
+                delay(5_000)
+                val now = System.currentTimeMillis()
+                if (now - last > 30_000) engine.resumeNetworkFailures()
+                last = now
+            }
+        }
         watchForTorrents()
         runRssLoop()
         reportLastUpdate()
@@ -1120,6 +1152,101 @@ class DesktopController(
         _messages.value = null
     }
 
+    /** Swaps start order with the neighbour of the same priority; the queue sorts by priority then age. */
+    fun moveInQueue(id: String, up: Boolean) {
+        val order = store.snapshot()
+            .filter { it.status != DownloadStatus.COMPLETED }
+            .map { it.toCoreItem() }
+            .sortedWith(com.downloadhub.core.TransferRules.queueOrder())
+        val index = order.indexOfFirst { it.id == id }
+        val neighbour = order.getOrNull(if (up) index - 1 else index + 1) ?: return
+        val mine = order[index]
+        if (index < 0 || neighbour.priority != mine.priority) return
+        // Equal timestamps would swap into nothing, so one side is nudged.
+        val a = mine.createdAt
+        val b = neighbour.createdAt.let { if (it == a) if (up) a - 1 else a + 1 else it }
+        store.update(id) { it.copy(createdAt = b) }
+        store.update(neighbour.id) { it.copy(createdAt = a) }
+        store.persist()
+        refresh()
+    }
+
+    /** Adds a torrent in playing order and opens its video as soon as the file appears (up to 3 minutes). */
+    fun addAndPlay(request: com.downloadhub.core.TorrentAddRequest) {
+        val before = store.snapshot().map { it.id }.toSet()
+        addPrepared(request)
+        val id = store.snapshot().firstOrNull { it.id !in before } ?: return
+        scope.launch(Dispatchers.IO) {
+            repeat(60) {
+                delay(3_000)
+                val root = store.get(id.id)?.location?.let { File(it) } ?: return@repeat
+                val ready = root.exists() && root.walkTopDown().any {
+                    it.isFile && it.extension.lowercase() in STREAM_EXTENSIONS && it.length() > 0
+                }
+                if (ready) {
+                    streamTorrent(id.id)
+                    return@launch
+                }
+            }
+            _messages.value = "The video has not appeared yet. Right-click it and choose Play while downloading."
+            refresh()
+        }
+    }
+
+    /** Plays a torrent's video while it is still downloading: in-order pieces, then the biggest video file opens. */
+    fun streamTorrent(id: String) {
+        val item = store.get(id) ?: return
+        torrents.enableSequential(id)
+        store.persist()
+        val root = item.location?.let { File(it) }
+        val video = root?.takeIf { it.exists() }?.walkTopDown()
+            ?.filter { it.isFile && it.extension.lowercase() in STREAM_EXTENSIONS }
+            ?.maxByOrNull { it.length() }
+        _messages.value = if (video == null) {
+            "Fetching in playing order. Choose Stream again in a minute, once the video file appears."
+        } else {
+            runCatching { java.awt.Desktop.getDesktop().open(video) }
+            "Playing ${video.name} while it downloads. Seeking ahead may stall until those parts arrive."
+        }
+        refresh()
+    }
+
+    /** Points an expired download at a fresh link from the clipboard and resumes it; the partial file is kept. */
+    fun replaceLinkFromClipboard(id: String) {
+        val text = runCatching {
+            java.awt.Toolkit.getDefaultToolkit().systemClipboard
+                .getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
+        }.getOrNull()?.trim().orEmpty()
+        if (!text.startsWith("http://") && !text.startsWith("https://")) {
+            _messages.value = "Copy the new download link first, then choose Replace link."
+            refresh()
+            return
+        }
+        store.update(id) { it.copy(url = text) }
+        engine.resume(id)
+    }
+
+    private val remote = RemoteServer(
+        pin = { settingsState.value.remotePin },
+        list = { store.snapshot().map { it.toCoreItem() } },
+        pause = { id -> actions.pause(id) },
+        resume = { id -> actions.resume(id) },
+        add = { link -> addDownload(link, false, "", null, false) }
+    )
+
+    fun setRemote(enabled: Boolean) {
+        val current = settingsState.value
+        val updated = current.copy(
+            remoteEnabled = enabled,
+            // A fresh PIN each time it is switched on.
+            remotePin = if (enabled) RemoteServer.newPin() else current.remotePin
+        )
+        settingsState.value = updated
+        DesktopSettings.save(updated)
+        if (enabled) remote.start() else remote.stop()
+        refresh()
+    }
+
     fun setBrowserCapture(enabled: Boolean) {
         val updated = settingsState.value.copy(browserCaptureEnabled = enabled)
         settingsState.value = updated
@@ -1337,6 +1464,10 @@ class DesktopController(
         renameDownload = ::renameDownload,
         setDownloadLocation = ::setDownloadLocation,
         setBrowserCapture = ::setBrowserCapture,
+        setRemote = ::setRemote,
+        moveInQueue = ::moveInQueue,
+        replaceLink = ::replaceLinkFromClipboard,
+        streamTorrent = ::streamTorrent,
         consumeMessage = ::consumeMessage,
         setTorrentsTab = ::setTorrentsTab,
         openExtensionFolder = ::openExtensionFolder,
@@ -1741,6 +1872,20 @@ class DesktopController(
         store.update(id) { it.copy(status = DownloadStatus.RESOLVING) }
         refresh()
 
+        // A DRM-protected stream cannot be saved; say so rather than fail obscurely.
+        if (item.url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)) {
+            val playlist = runCatching {
+                java.net.URL(item.url).openConnection().apply { connectTimeout = 8_000; readTimeout = 8_000 }
+                    .getInputStream().use { it.readNBytes(256 * 1024).toString(Charsets.UTF_8) }
+            }.getOrNull()
+            if (playlist != null && com.downloadhub.core.StreamCheck.isDrmProtectedHls(playlist)) {
+                store.update(id) { it.copy(status = DownloadStatus.FAILED, errorMessage = "This stream is DRM-protected and cannot be downloaded.") }
+                store.persist()
+                refresh()
+                return
+            }
+        }
+
         val jobDir = File(AppPaths.workDir, "yt-$id")
         // yt-dlp's own partial files (.part, .ytdl) are kept so it carries on where it
         // stopped - after a pause, an app restart or an update - instead of starting over.
@@ -1984,6 +2129,7 @@ internal val APP_VERSION: String = runCatching {
 
 
 /** How often queue schedules are checked. A start time is honoured within this. */
+private val STREAM_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "webm", "m4v", "wmv", "flv", "ts", "mp3", "flac", "m4a")
 private const val QUEUE_SCHEDULER_TICK_MILLIS = 20_000L
 
 /** The fastest the window is rebuilt from engine progress; about eight frames a second. */

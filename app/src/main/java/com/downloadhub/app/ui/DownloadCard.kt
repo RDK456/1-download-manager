@@ -106,16 +106,18 @@ fun DownloadCard(
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    val removed = rememberFileRemoved(item)
                     Text(
                         item.fileName,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        textDecoration = if (removed) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
                     )
                     Spacer(Modifier.size(2.dp))
                     Text(
-                        cardSubtitle(item),
+                        if (removed) "Removed from folder" else cardSubtitle(item),
                         style = MaterialTheme.typography.bodySmall,
                         color = statusColor(item.status),
                         maxLines = 1,
@@ -215,6 +217,27 @@ fun DownloadCard(
  * Secondary line of a card. A finished download shows only its category, because
  * the Completed footer underneath already states the status.
  */
+/** True while a finished download's file is gone from storage; rechecked every few seconds. */
+@Composable
+internal fun rememberFileRemoved(item: DownloadEntity): Boolean {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val path = item.outputPath
+    val done = item.status == DownloadStatus.COMPLETED
+    return androidx.compose.runtime.produceState(false, path, done) {
+        if (!done || path.isNullOrBlank()) { value = false; return@produceState }
+        while (true) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    if (path.startsWith("content:")) {
+                        androidx.documentfile.provider.DocumentFile.fromSingleUri(context, android.net.Uri.parse(path))?.exists() == false
+                    } else !File(path).exists()
+                }.getOrDefault(false)
+            }
+            kotlinx.coroutines.delay(5_000)
+        }
+    }.value
+}
+
 fun cardSubtitle(item: DownloadEntity): String =
     if (item.status == DownloadStatus.COMPLETED) {
         item.category.label
@@ -499,7 +522,8 @@ fun DownloadTile(
             fontWeight = FontWeight.SemiBold,
             maxLines = 2,
             minLines = 2,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            textDecoration = if (rememberFileRemoved(item)) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
         )
         Spacer(Modifier.size(6.dp))
         if (item.status == DownloadStatus.COMPLETED) {

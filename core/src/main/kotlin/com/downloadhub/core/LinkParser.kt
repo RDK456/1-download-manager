@@ -21,6 +21,9 @@ object LinkParser {
         return when {
             normalized.startsWith("magnet:") -> DownloadSource.TORRENT
             isYouTube(normalized) -> DownloadSource.YOUTUBE
+            // A stream playlist is not a file; yt-dlp fetches and merges its segments.
+            normalized.substringBefore('?').let { it.endsWith(".m3u8") || it.endsWith(".mpd") } ->
+                DownloadSource.YOUTUBE
             normalized.substringBefore('?').endsWith(".torrent", ignoreCase = true) ->
                 DownloadSource.TORRENT
             else -> DownloadSource.HTTP

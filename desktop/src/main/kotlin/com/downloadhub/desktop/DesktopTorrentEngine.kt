@@ -545,6 +545,12 @@ class DesktopTorrentEngine(
     fun addTrackers(id: String, urls: List<String>): Boolean =
         store.get(id)?.let { engine.addTrackers(it.toCoreItem(), urls) } ?: false
 
+    /** Fetches pieces in playing order from now on, so a video can be watched while it downloads. */
+    fun enableSequential(id: String): Boolean {
+        store.update(id) { it.copy(torrentSequential = true) }
+        return store.get(id)?.let { engine.setSequential(it.toCoreItem()) } ?: false
+    }
+
     fun forceRecheck(id: String): Boolean =
         store.get(id)?.let { engine.forceRecheck(it.toCoreItem()) } ?: false
 
