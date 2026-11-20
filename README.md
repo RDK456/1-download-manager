@@ -9,6 +9,10 @@ YouTube, torrents and streams in a single queue — with browser extensions for 
 <img src="docs/screenshots/desktop.png" alt="Windows app" width="820">
 
 <p>
+  <img src="docs/screenshots/desktop-download-window.png" width="400" alt="Per-download window with live speed graph and connection map">
+</p>
+
+<p>
   <img src="docs/screenshots/android-downloads.png" width="200" alt="Download queue">
   <img src="docs/screenshots/android-discover.png" width="200" alt="Discover">
   <img src="docs/screenshots/android-archive.png" width="200" alt="Internet Archive browser">
@@ -19,7 +23,8 @@ YouTube, torrents and streams in a single queue — with browser extensions for 
 
 | | |
 |---|---|
-| **Fast** | Splits each file over up to 16 connections (8 by default) so a single link uses your whole line. |
+| **Built for speed** | Every file is split over up to 16 parallel connections (8 by default) with a large read buffer, so one link can fill your whole line. A live graph and connection map show it working. |
+| **All-in-one** | Links, YouTube, torrents, HLS/DASH streams, archive.org and free media — one queue, one app, Android and Windows. |
 | **Never starts over** | Pause, crash, sleep or lose Wi-Fi — downloads resume where they stopped, and retry on their own. |
 | **Watch while it downloads** | Torrents can play in order, so you start the video before it finishes. |
 | **Catches everything** | Chrome and Firefox extensions grab downloads and streams from the page. |
