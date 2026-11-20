@@ -1,7 +1,10 @@
 # 1 download manager
 
-A free download manager for **Android** and **Windows**: direct links, YouTube, torrents and free
-media libraries in one queue, with browser extensions for Chrome and Firefox.
+**Free, open source, no ads.** One download manager for **Android** and **Windows**: direct links,
+YouTube, torrents and streams in a single queue — with browser extensions for Chrome and Firefox.
+
+[**Download the latest release**](https://github.com/RDK456/1-download-manager/releases/latest) ·
+[Features](#features) · [Install](#install)
 
 <img src="docs/screenshots/desktop.png" alt="Windows app" width="820">
 
@@ -12,15 +15,44 @@ media libraries in one queue, with browser extensions for Chrome and Firefox.
   <img src="docs/screenshots/android-youtube.png" width="200" alt="YouTube downloader">
 </p>
 
+## Why people use it
+
+| | |
+|---|---|
+| **Fast** | Splits each file over up to 16 connections (8 by default) so a single link uses your whole line. |
+| **Never starts over** | Pause, crash, sleep or lose Wi-Fi — downloads resume where they stopped, and retry on their own. |
+| **Watch while it downloads** | Torrents can play in order, so you start the video before it finishes. |
+| **Catches everything** | Chrome and Firefox extensions grab downloads and streams from the page. |
+| **Yours** | No account and no ads. Open source. |
+
 ## Features
 
-- **Fast, resumable downloads** — segmented HTTP/HTTPS with pause, resume, retry and a speed limit.
-- **Batch download** — paste many links at once, or a range like `file[001-120].jpg`.
+**Downloading**
+- **Fast, resumable downloads** — segmented HTTP/HTTPS with pause, resume, retry, per-file speed limits and a one-click **slow mode**.
+- **Self-healing** — retries after a dropped connection or when the PC wakes from sleep; swap an expired link for a fresh one and keep your progress.
+- **Batch download** — paste many links at once, or a range like `file[001-120].jpg`. Duplicates are caught for you.
+- **Queues and scheduler** — several queues, start and stop times, reorder with move up / down.
+- **When done** — exit, sleep, hibernate, lock, shut down or open the folder once the queue finishes.
+
+**Video, audio and torrents**
 - **YouTube** — videos, whole playlists, albums and channels; pick the quality or save audio as M4A, MP3, Opus or WAV.
-- **Torrents** — magnet links and `.torrent` files, with file selection.
-- **Internet Archive** — browse all of archive.org (video, audio, books, software, apps) and download a whole item in one click.
+- **Stream grabber** — HLS (`.m3u8`) and DASH (`.mpd`) streams are merged into one file (DRM-protected streams are refused).
+- **Torrents** — magnet links and `.torrent` files, file selection, and **Play now** to watch while downloading.
+- **Internet Archive** — browse all of archive.org and download a whole item in one click.
 - **Free books, movies, music and TV** — public-domain and freely licensed sources, plus a built-in player.
-- **Browser integration** — Chrome and Firefox extensions hand downloads to the app.
+
+**After the download**
+- **Checksums** — verify MD5, SHA-1, SHA-256 or SHA-512 on finished files.
+- **Auto-unzip and virus scan** — optionally unzip archives and scan new files with Windows Defender.
+- **Removed-file tracking** — files deleted outside the app stay in the list, struck through.
+
+**Windows extras**
+- **Per-download window** — live speed graph, connection map, open file, copy link, pause and resume, in an IDM-style dialog.
+- **Control from your phone** — watch and pause downloads from any phone on your Wi-Fi, protected by a PIN.
+- **Interface zoom**, system tray, start with Windows, and a glass-style download window.
+
+**Everywhere**
+- **Browser integration** — Chrome and Firefox extensions hand downloads and page media to the app, with a per-site exclude list.
 - **Automatic updates** — the app checks GitHub and installs new versions for you.
 - **Themes** — light, dark and AMOLED, with nine colour palettes.
 
