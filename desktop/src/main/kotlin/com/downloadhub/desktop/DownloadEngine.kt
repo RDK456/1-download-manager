@@ -228,6 +228,7 @@ class DownloadEngine(
                     destinationTreeUri = { item.outputPath?.takeIf { it.isNotBlank() && !java.io.File(it).isFile } }
                 )
                 downloader.download(item.toCoreItem())
+                autoRetries.remove(id)
             } catch (error: Throwable) {
                 if (error !is kotlinx.coroutines.CancellationException) {
                     val reason = error.message ?: error::class.simpleName

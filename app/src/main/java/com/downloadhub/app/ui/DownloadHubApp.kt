@@ -302,6 +302,7 @@ fun DownloadHubApp(
             viewModel.events.collectLatest { event ->
                 when (event) {
                     is DownloadEvent.Message -> snackbarHostState.showSnackbar(event.text)
+                    is DownloadEvent.OpenPlayer -> navigate(AppDestination.PLAYER)
                     is DownloadEvent.Deleted -> {
                         val result = snackbarHostState.showSnackbar(
                             message = event.text,

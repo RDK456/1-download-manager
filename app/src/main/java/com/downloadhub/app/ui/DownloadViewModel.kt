@@ -85,6 +85,9 @@ sealed interface DownloadEvent {
 
     /** Rows were hidden for a delete that can still be undone; [ids] go back with undoDelete. */
     data class Deleted(val ids: List<String>, val text: String) : DownloadEvent
+
+    /** A finished video or song was handed to the built-in player; show it. */
+    data object OpenPlayer : DownloadEvent
 }
 
 /**
@@ -1370,8 +1373,26 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
             .maxByOrNull { it.length() }
     /** Starts the resolved open/open-with intent, or explains why it cannot. */
     fun launchOpen(item: DownloadEntity, open: Boolean) {
+        // A finished video or song plays in the app's own player: it reads the file directly, so
+        // it does not depend on another app being installed or accepting a shared link.
+        if (open && playInApp(item)) return
         val result = if (open) openFor(item) else openWithFor(item)
         startOrExplain(result)
+    }
+
+    /** True when [item] is a finished single video/audio file that now plays in the built-in player. */
+    private fun playInApp(item: DownloadEntity): Boolean {
+        if (item.status != DownloadStatus.COMPLETED) return false
+        val path = item.outputPath?.takeIf { it.isNotBlank() } ?: return false
+        // By file extension, not by the row's category: a video saved under another category
+        // (a stream, a torrent, a renamed file) still plays instead of "no supported app".
+        if (path.startsWith("content:")) {
+            if (item.category != DownloadCategory.VIDEO && item.category != DownloadCategory.AUDIO) return false
+        } else if (!File(path).exists()) return false
+        val media = AppPlayer.libraryItems(listOf(item)).takeIf { it.isNotEmpty() } ?: return false
+        runCatching { AppPlayer.play(getApplication<Application>(), media, 0) }.onFailure { return false }
+        viewModelScope.launch { _events.emit(DownloadEvent.OpenPlayer) }
+        return true
     }
 
     fun launchShare(item: DownloadEntity) {

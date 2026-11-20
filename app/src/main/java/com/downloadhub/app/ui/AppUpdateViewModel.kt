@@ -257,6 +257,11 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
                                     signatureMatches = isSignedBySameKey(apk)
                                 )
                             )
+                            // One tap less: the installer opens by itself once the download is done.
+                            val ready = _snapshot.value.pending
+                            if (ready != null && !ready.needsPermission && ready.signatureMatches) {
+                                launchInstaller(app, ready.apk, quiet = true)
+                            }
                         }
                         UpdateTransferState.acknowledge()
                     }
@@ -311,9 +316,10 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
     /** Re-evaluates the permission after the user returns from system settings. */
     fun refreshInstallPermission() {
         _snapshot.value.pending?.let { pending ->
-            _snapshot.value = _snapshot.value.copy(
-                pending = pending.copy(needsPermission = !canRequestInstalls())
-            )
+            val needs = !canRequestInstalls()
+            _snapshot.value = _snapshot.value.copy(pending = pending.copy(needsPermission = needs))
+            // Permission just granted: go straight to the installer instead of asking for another tap.
+            if (pending.needsPermission && !needs && pending.signatureMatches) launchInstaller(app, pending.apk, quiet = true)
         }
     }
 
@@ -335,7 +341,7 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
         _messages.value = null
     }
 
-    private fun launchInstaller(context: Context, apk: File) {
+    private fun launchInstaller(context: Context, apk: File, quiet: Boolean = false) {
         val uri = runCatching {
             FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
         }.getOrNull()
@@ -349,7 +355,8 @@ class AppUpdateViewModel(application: Application) : AndroidViewModel(applicatio
         }
         runCatching { context.startActivity(intent) }
             .onSuccess { viewModelScope.launch { settings.clearPendingInstallVersion() } }
-            .onFailure { _messages.value = "No package installer found on this device" }
+            // Quiet when started automatically: the app may be in the background, and the Install button still works.
+            .onFailure { if (!quiet) _messages.value = "No package installer found on this device" }
     }
 
     private fun canRequestInstalls(): Boolean = runCatching {

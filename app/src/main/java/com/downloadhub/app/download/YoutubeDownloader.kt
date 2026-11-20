@@ -280,7 +280,16 @@ class YoutubeDownloader(
         }
 
         ensureActive()
-        val completedFile = storage.largestDownloadableFile(workDirectory)
+        // yt-dlp can leave its separate pieces ("Title.f137.mp4", "Title.f140.m4a") and artwork
+        // beside the merged file. Publish the merged one; the pieces and side files are not wanted.
+        val pieces = Regex("""\.f[0-9A-Za-z-]+\.[A-Za-z0-9]+$""")
+        val sideFiles = setOf("jpg", "jpeg", "png", "webp", "json", "vtt", "srt", "description")
+        val finished = workDirectory.walkTopDown().filter {
+            it.isFile && !it.name.endsWith(".part") && !it.name.endsWith(".ytdl")
+        }.toList()
+        val completedFile = (finished.filter { !pieces.containsMatchIn(it.name) && it.extension.lowercase() !in sideFiles }
+            .maxByOrNull { it.length() }
+            ?: storage.largestDownloadableFile(workDirectory))
             ?: throw YoutubeDLException("The YouTube download did not produce a file")
         val size = completedFile.length()
         val published = storage.publishFile(

@@ -27,8 +27,8 @@ android {
         applicationId = "com.downloadhub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 74
-        versionName = "2.2.19"
+        versionCode = 75
+        versionName = "2.2.20"
 
         // Single source of truth for the About page and the in-app updater.
         buildConfigField("String", "GITHUB_OWNER", "\"RDK456\"")
