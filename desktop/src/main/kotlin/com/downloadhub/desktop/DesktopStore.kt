@@ -132,7 +132,11 @@ data class QueueConfig(
     val scheduleEnabled: Boolean = false,
     val days: List<Int> = (1..7).toList(),
     val startMinute: Int = 0,
-    val stopMinute: Int = QueueSchedule.NO_STOP
+    val stopMinute: Int = QueueSchedule.NO_STOP,
+    /** Retries for each file of this queue; -1 uses the app-wide setting. */
+    val retries: Int = -1,
+    /** A [FinishAction.Choice] name run once this queue has emptied; blank does nothing. */
+    val finishAction: String = ""
 ) {
     val schedule: QueueSchedule
         get() = QueueSchedule(scheduleEnabled, days.toSet(), startMinute, stopMinute)
@@ -178,6 +182,8 @@ data class DesktopSettings(
     val connectionsPerDownload: Int = 8,
     val speedLimitBytesPerSecond: Long = 0L,
     val maxRetries: Int = 2,
+    /** One "host=connections" per entry; overrides [connectionsPerDownload] for that server. */
+    val serverConnections: List<String> = emptyList(),
     /** Shared secret the browser extension must present. Generated once. */
     val captureToken: String = "",
     val browserCaptureEnabled: Boolean = true,

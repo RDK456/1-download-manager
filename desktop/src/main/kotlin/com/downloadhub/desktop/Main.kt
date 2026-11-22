@@ -263,6 +263,13 @@ fun main(args: Array<String>) {
                     wasBusy = true
                 } else if (wasBusy) {
                     wasBusy = false
+                    if (FinishAction.choice == FinishAction.Choice.NOTHING) {
+                        // A queue's own "when done" action, used when none was picked by hand.
+                        state.settings.queues.firstOrNull { it.finishAction.isNotBlank() }?.let { q ->
+                            FinishAction.choice = FinishAction.Choice.entries.firstOrNull { it.name == q.finishAction }
+                                ?: FinishAction.Choice.NOTHING
+                        }
+                    }
                     if (FinishAction.choice != FinishAction.Choice.NOTHING) finishCountdown = 60
                 }
             }

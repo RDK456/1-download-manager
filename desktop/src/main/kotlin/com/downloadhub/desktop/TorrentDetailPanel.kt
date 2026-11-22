@@ -323,7 +323,7 @@ const val PANE_DEFAULT_DP = 300f
     const val LIST_MIN_DP = 260f
 
 @Composable
-private fun TorrentTabContent(
+internal fun TorrentTabContent(
     item: DownloadItem,
     tab: TorrentTab,
     onFilePriority: ((Int, com.downloadhub.core.FilePriority) -> Unit)?,

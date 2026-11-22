@@ -60,8 +60,17 @@ fun DownloadOptionsDialog(
     onPause: () -> Unit = {},
     onResume: () -> Unit = {},
     onOpenFolder: () -> Unit = {},
-    onOpenFile: () -> Unit = {}
+    onOpenFile: () -> Unit = {},
+    /** Torrent panes, shown as tabs of this window; unused for an ordinary link. */
+    trackersOf: (String) -> List<com.downloadhub.core.TrackerRow> = { emptyList() },
+    peersOf: (String) -> List<com.downloadhub.core.PeerRow> = { emptyList() },
+    onAddTrackers: (List<String>) -> Unit = {},
+    onFilePriority: ((Int, com.downloadhub.core.FilePriority) -> Unit)? = null,
+    fileProgress: Map<Int, Long> = emptyMap()
 ) {
+    var tab by remember(item.id) { mutableStateOf(TorrentTab.GENERAL) }
+    var speedTab by remember(item.id) { mutableStateOf(false) }
+    var showDetails by remember(item.id) { mutableStateOf(true) }
     // Closes itself when the download finishes while it is open; one opened on a finished
     // download stays.
     val openedAs = remember(item.id) { item.status }
@@ -81,7 +90,7 @@ fun DownloadOptionsDialog(
     androidx.compose.ui.window.DialogWindow(
         onCloseRequest = onDismiss,
         title = "$percent${item.fileName}",
-        state = androidx.compose.ui.window.rememberDialogState(size = androidx.compose.ui.unit.DpSize(560.dp, 460.dp)),
+        state = androidx.compose.ui.window.rememberDialogState(size = androidx.compose.ui.unit.DpSize(620.dp, 560.dp)),
         resizable = true
     ) {
         androidx.compose.runtime.LaunchedEffect(window) {
@@ -102,15 +111,40 @@ fun DownloadOptionsDialog(
         ) {
             Text(item.fileName, fontWeight = FontWeight.SemiBold, maxLines = 1)
             Spacer(Modifier.height(10.dp))
+            // Tabs, as IDM lays a download out: its status, its own limits, and for a
+            // torrent its files, peers and trackers.
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = !speedTab && tab == TorrentTab.GENERAL, onClick = { speedTab = false; tab = TorrentTab.GENERAL }, label = { Text("Download status") })
+                FilterChip(selected = speedTab, onClick = { speedTab = true }, label = { Text("Speed limiter") })
+                if (item.isTorrent) {
+                    listOf(TorrentTab.CONTENT, TorrentTab.PEERS, TorrentTab.TRACKERS).forEach { entry ->
+                        FilterChip(
+                            selected = !speedTab && tab == entry,
+                            onClick = { speedTab = false; tab = entry },
+                            label = { Text(if (entry == TorrentTab.CONTENT) "Files" else entry.label) }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             Column(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .liquidGlass(androidx.compose.foundation.shape.RoundedCornerShape(22.dp))
-                    .verticalScroll(rememberScrollState())
                     .padding(16.dp)
             ) {
-                DownloadInfo(item)
+                when {
+                    speedTab -> Column(Modifier.verticalScroll(rememberScrollState())) {
+                        SpeedAndPriority(item, onSave)
+                    }
+                    tab == TorrentTab.TRACKERS -> TrackersTab(item.id, trackersOf, onAddTrackers)
+                    tab == TorrentTab.PEERS -> PeersTab(item.id, peersOf)
+                    tab == TorrentTab.CONTENT -> TorrentTabContent(item, tab, onFilePriority, fileProgress, null)
+                    else -> Column(Modifier.verticalScroll(rememberScrollState())) {
+                        DownloadInfo(item, showDetails)
+                    }
+                }
             }
             Spacer(Modifier.height(10.dp))
             val status = item.status
@@ -119,6 +153,9 @@ fun DownloadOptionsDialog(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (!speedTab && tab == TorrentTab.GENERAL) {
+                    TextButton(onClick = { showDetails = !showDetails }) { Text(if (showDetails) "<< Hide details" else "Show details >>") }
+                }
                 TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(item.url)) }) {
                     Text("Copy link")
                 }
@@ -140,7 +177,7 @@ fun DownloadOptionsDialog(
 
 /** Live status block, the way IDM and AB Download Manager show a download in progress. */
 @Composable
-private fun DownloadInfo(item: DownloadItem) {
+private fun DownloadInfo(item: DownloadItem, showDetails: Boolean = true) {
     val total = item.totalBytes
     val fraction = if (total > 0) (item.bytesDownloaded.toDouble() / total).coerceIn(0.0, 1.0) else 0.0
     val left = if (item.speedBytesPerSecond > 0 && total > item.bytesDownloaded) {
@@ -159,6 +196,7 @@ private fun DownloadInfo(item: DownloadItem) {
         }
         Spacer(Modifier.height(6.dp))
     }
+    if (!showDetails) return
     SpeedGraph(item)
     SegmentMap(item)
     val lines = listOfNotNull(
@@ -167,7 +205,12 @@ private fun DownloadInfo(item: DownloadItem) {
         "Downloaded" to DisplayFormat.bytes(item.bytesDownloaded),
         (if (item.speedBytesPerSecond > 0) "Speed" to DisplayFormat.speed(item.speedBytesPerSecond) else null),
         (if (item.status == com.downloadhub.core.DownloadStatus.RUNNING) "Time left" to DisplayFormat.timeLeft(left) else null),
-        (if (item.etag != null || item.lastModified != null) "Resumable" to "Yes" else null),
+        "Resume" to when {
+            item.source != com.downloadhub.core.DownloadSource.HTTP -> "Yes"
+            item.etag != null || item.lastModified != null -> "Yes"
+            else -> "Unknown"
+        },
+        runCatching { java.net.URI(item.url).host }.getOrNull()?.takeIf { it.isNotBlank() }?.let { "Server" to it },
         "Save to" to (item.location ?: item.outputPath ?: "Default folder"),
         "Link" to item.url
     )
@@ -184,6 +227,45 @@ private fun DownloadInfo(item: DownloadItem) {
         }
     }
     ChecksumCheck(item)
+}
+
+/** This download's own speed cap, queue priority and start time (IDM's "Speed Limiter" tab). */
+@Composable
+private fun SpeedAndPriority(
+    item: DownloadItem,
+    onSave: (Int, Long, Long, Double, Int) -> Unit
+) {
+    var kb by remember(item.id) { mutableStateOf(if (item.speedLimitBytesPerSecond > 0) (item.speedLimitBytesPerSecond / 1024).toString() else "") }
+    var rank by remember(item.id) { mutableStateOf(item.priority.rank) }
+    var start by remember(item.id) { mutableStateOf(startAfterPresetFor(item.startAfterEpochMillis)) }
+    val startedAs = remember(item.id) { startAfterPresetFor(item.startAfterEpochMillis) }
+    OutlinedTextField(
+        value = kb,
+        onValueChange = { kb = it.filter(Char::isDigit) },
+        singleLine = true,
+        label = { Text("Limit this download to (KB/s, blank = no limit)") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(12.dp))
+    Section("Priority")
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        DownloadPriority.entries.forEach { level ->
+            FilterChip(selected = rank == level.rank, onClick = { rank = level.rank }, label = { Text(shortLabel(level)) })
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    Section("Start")
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        StartPreset.entries.forEach { preset ->
+            FilterChip(selected = start == preset, onClick = { start = preset }, label = { Text(preset.label, fontSize = 11.sp) })
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    androidx.compose.material3.Button(onClick = {
+        val limit = (kb.toLongOrNull() ?: 0L) * 1024L
+        val startAt = if (start == startedAs) item.startAfterEpochMillis else start.epochMillisFrom(System.currentTimeMillis())
+        onSave(rank, limit, startAt, item.shareRatioLimit, item.seedTimeLimitMinutes)
+    }) { Text("Save") }
 }
 
 /** The last minute of transfer rate, sampled each second while the download runs. */
@@ -238,6 +320,19 @@ private fun SegmentMap(item: DownloadItem) {
             androidx.compose.material3.LinearProgressIndicator(
                 progress = { (segment.done.toFloat() / segment.length).coerceIn(0f, 1f) },
                 modifier = Modifier.weight(segment.length.toFloat()).height(10.dp)
+            )
+        }
+    }
+    // Per-connection table, as IDM lists each connection under its progress bar.
+    Spacer(Modifier.height(4.dp))
+    segments.forEachIndexed { index, segment ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+            Text("${index + 1}", fontSize = 11.sp, color = AppTheme.Palette.muted, modifier = Modifier.width(28.dp))
+            Text(DisplayFormat.bytes(segment.done), fontSize = 11.sp, modifier = Modifier.width(96.dp))
+            Text(
+                if (segment.isComplete) "Finished" else "Receiving data...",
+                fontSize = 11.sp,
+                color = AppTheme.Palette.muted
             )
         }
     }

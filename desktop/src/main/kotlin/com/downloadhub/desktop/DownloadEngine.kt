@@ -126,11 +126,20 @@ class DownloadEngine(
             val current = settingsState.value
             val own = store.get(id)?.speedLimitBytesPerSecond ?: 0L
             val effective = com.downloadhub.core.TransferRules.effectiveSpeedLimit(own, current.effectiveDownloadLimit())
+            val item = store.get(id)
+            val queueRetries = item?.let { current.queue(it.queueId).retries } ?: -1
+            val host = item?.let { runCatching { java.net.URI(it.url).host }.getOrNull() }?.lowercase()
+            val perServer = host?.let { h ->
+                current.serverConnections.firstNotNullOfOrNull { entry ->
+                    val (name, count) = entry.split('=', limit = 2).map { it.trim() }.let { it[0] to it.getOrNull(1)?.toIntOrNull() }
+                    count?.takeIf { name.isNotEmpty() && (h == name.lowercase() || h.endsWith("." + name.lowercase())) }
+                }
+            }
             return TransferPolicy(
-                maxRetries = current.maxRetries,
+                maxRetries = if (queueRetries >= 0) queueRetries else current.maxRetries,
                 speedLimitBytesPerSecond = effective,
                 useSpeedLimit = current.speedLimitEnabled || own > 0L,
-                connections = current.connectionsPerDownload.coerceIn(1, 16),
+                connections = (perServer ?: current.connectionsPerDownload).coerceIn(1, 16),
                 proxy = current.proxySetting().toProxy()
             )
         }

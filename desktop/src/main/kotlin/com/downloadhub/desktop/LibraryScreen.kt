@@ -661,7 +661,7 @@ fun LibraryScreen(
                                         onOpen = { actions.revealDownload(item.location) },
                                         onOptions = { optionsFor = ids.first() },
                                         onRemove = { deleting = ids.toSet() },
-                                        onOpenFile = { openWithSystem(item.location) },
+                                        onOpenFile = { actions.revealDownload(item.location) },
                                         onContext = { x, y ->
                                             contextAt = IntOffset(x, y)
                                             contextFor = ids.first()
@@ -690,7 +690,7 @@ fun LibraryScreen(
                                         onResume = { ids.forEach(actions.resume) },
                                         onRetry = { ids.forEach(actions.retry) },
                                         onOpen = { actions.revealDownload(item.location) },
-                                        onOpenFile = { openWithSystem(item.location) },
+                                        onOpenFile = { actions.revealDownload(item.location) },
                                         onOptions = { optionsFor = ids.first() },
                                         onContext = { x, y ->
                                             contextAt = IntOffset(x, y)
@@ -805,7 +805,12 @@ fun LibraryScreen(
                 onPause = { actions.pause(optionsItem.id) },
                 onResume = { actions.resume(optionsItem.id) },
                 onOpenFolder = { actions.revealDownload(optionsItem.location) },
-                onOpenFile = { openWithSystem(optionsItem.location) }
+                onOpenFile = { openWithSystem(optionsItem.location) },
+                trackersOf = actions.torrentTrackers,
+                peersOf = actions.torrentPeers,
+                onAddTrackers = { urls -> actions.addTrackers(optionsItem.id, urls) },
+                onFilePriority = { index, priority -> actions.setFilePriority(optionsItem.id, index, priority) },
+                fileProgress = state.items.firstOrNull { it.id == optionsItem.id }?.torrentFileProgress ?: emptyMap()
             )
         }
 
@@ -2158,7 +2163,7 @@ private fun DownloadRow(
                     onContext(mouse.x, mouse.y)
                     event.changes.forEach { it.consume() }
                 }
-                // Double-click opens a finished file, as every file manager does.
+                // Double-click shows a finished file in its folder.
                 // Anything still in progress opens its own download window instead.
                 if (mouse != null && mouse.button == java.awt.event.MouseEvent.BUTTON1 &&
                     mouse.clickCount == 2

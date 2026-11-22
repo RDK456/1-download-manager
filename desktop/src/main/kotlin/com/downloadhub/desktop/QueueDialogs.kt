@@ -3,6 +3,8 @@ package com.downloadhub.desktop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,6 +54,8 @@ internal fun QueueEditorDialog(
         mutableStateOf(if (queue.schedule.hasStop) QueueRules.formatTime(queue.stopMinute) else "")
     }
     var days by remember { mutableStateOf(queue.days.toSet()) }
+    var retries by remember { mutableStateOf(if (queue.retries >= 0) queue.retries.toString() else "") }
+    var finish by remember { mutableStateOf(queue.finishAction) }
 
     val startMinute = QueueRules.parseTime(start)
     val stopMinute = if (stop.isBlank()) QueueSchedule.NO_STOP else QueueRules.parseTime(stop)
@@ -66,7 +70,9 @@ internal fun QueueEditorDialog(
                 scheduleEnabled = scheduled,
                 days = days.sorted(),
                 startMinute = startMinute ?: queue.startMinute,
-                stopMinute = stopMinute ?: QueueSchedule.NO_STOP
+                stopMinute = stopMinute ?: QueueSchedule.NO_STOP,
+                retries = retries.toIntOrNull()?.coerceIn(0, 10) ?: -1,
+                finishAction = finish
             )
         )
     }
@@ -91,6 +97,20 @@ internal fun QueueEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().onEnter { save() }
                 )
+                OutlinedTextField(
+                    value = retries,
+                    onValueChange = { retries = it.filter(Char::isDigit).take(2) },
+                    label = { Text("Retries for each file (blank = app setting)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().onEnter { save() }
+                )
+                Text("When this queue is done", fontSize = 11.sp, color = AppTheme.Palette.muted)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    FinishAction.Choice.entries.forEach { c ->
+                        val key = if (c == FinishAction.Choice.NOTHING) "" else c.name
+                        androidx.compose.material3.FilterChip(selected = finish == key, onClick = { finish = key }, label = { Text(c.label, fontSize = 11.sp) })
+                    }
+                }
                 TickRow(
                     "Start and stop on a schedule",
                     scheduled,

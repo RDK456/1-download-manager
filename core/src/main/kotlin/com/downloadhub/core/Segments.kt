@@ -8,9 +8,18 @@ import java.io.File
  * [end] is inclusive, as in an HTTP Range header. [done] is how many bytes of the range
  * are on disk, written by one worker and read by the progress ticker.
  */
-class Segment(val start: Long, val end: Long, done: Long = 0L) {
+class Segment(val start: Long, end: Long, done: Long = 0L) {
     @Volatile
     var done: Long = done
+
+    /** Moves down when an idle worker takes the far half of this range ([SegmentState.steal]). */
+    @Volatile
+    var end: Long = end
+        internal set
+
+    /** A worker is fetching this range right now. */
+    @Volatile
+    internal var active: Boolean = false
 
     val length: Long get() = end - start + 1
     val isComplete: Boolean get() = done >= length
@@ -25,7 +34,30 @@ class Segment(val start: Long, val end: Long, done: Long = 0L) {
  * length says nothing about how much has arrived. Without this file a resume would read
  * a full-length file as a finished one.
  */
-class SegmentState(val total: Long, val segments: List<Segment>) {
+class SegmentState(val total: Long, segments: List<Segment>) {
+    private val list = java.util.concurrent.CopyOnWriteArrayList(segments)
+    val segments: List<Segment> get() = list
+
+    /**
+     * Hands an idle worker its next range: an unfinished one nobody is fetching, else the
+     * far half of the largest range still being fetched - so the last bytes of a file are
+     * shared out instead of waiting on the slowest connection. Null when nothing is worth
+     * splitting. The victim's reader stops at its new, shorter end.
+     */
+    @Synchronized
+    fun steal(minSplitBytes: Long = MIN_SPLIT_BYTES): Segment? {
+        list.firstOrNull { !it.isComplete && !it.active }?.let { it.active = true; return it }
+        val victim = list.filter { !it.isComplete }.maxByOrNull { it.end - it.next + 1 } ?: return null
+        val remaining = victim.end - victim.next + 1
+        if (remaining < 2 * minSplitBytes) return null
+        // Rounded down to 4 KB; the victim may still be mid-read, so keep a wide margin.
+        val mid = ((victim.next + remaining / 2) / 4096) * 4096
+        if (mid <= victim.next || mid > victim.end) return null
+        val taken = Segment(mid, victim.end).also { it.active = true }
+        victim.end = mid - 1
+        list.add(list.indexOf(victim) + 1, taken)
+        return taken
+    }
     val downloaded: Long get() = segments.sumOf { it.done.coerceAtMost(it.length) }
     val isComplete: Boolean get() = segments.all { it.isComplete }
 
@@ -96,5 +128,8 @@ class SegmentState(val total: Long, val segments: List<Segment>) {
         }
 
         const val MIN_SEGMENT_BYTES = 1L * 1024 * 1024
+
+        /** A range is only split when each half keeps at least this much. */
+        const val MIN_SPLIT_BYTES = 1L * 1024 * 1024
     }
 }

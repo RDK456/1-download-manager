@@ -255,8 +255,15 @@ class HttpDownloader(
                     // Its own scope, so a worker's failure comes out of it as that failure
                     // rather than as the cancellation of everything around it.
                     coroutineScope {
-                        plan.segments.filter { !it.isComplete }
-                            .forEach { segment -> launch(Dispatchers.IO) { fetchSegment(item, segment, channel) } }
+                        repeat(connections) {
+                            launch(Dispatchers.IO) {
+                                // Each worker keeps taking ranges until none is left to share.
+                                while (true) {
+                                    val segment = plan.steal() ?: break
+                                    fetchSegment(item, segment, channel)
+                                }
+                            }
+                        }
                     }
                 } finally {
                     ticker.cancel()

@@ -93,6 +93,7 @@ fun SettingsDialog(
     var speed by remember { mutableStateOf((settings.speedLimitBytesPerSecond / 1024L).toString()) }
     var connections by remember { mutableStateOf(settings.connectionsPerDownload.toString()) }
     var retries by remember { mutableStateOf(settings.maxRetries.toString()) }
+    var serverConns by remember { mutableStateOf(settings.serverConnections.joinToString("\n")) }
     var closeToTray by remember { mutableStateOf(settings.closeToTray) }
     var startMinimised by remember { mutableStateOf(settings.startMinimised) }
     var slowMode by remember { mutableStateOf(settings.slowMode) }
@@ -187,6 +188,13 @@ fun SettingsDialog(
                             SectionHeading("Speed")
                             NumberRow("Downloads at once (1-8)", concurrent) { concurrent = it.filter(Char::isDigit) }
                             NumberRow("Connections per download (1-16)", connections) { connections = it.filter(Char::isDigit) }
+                            OutlinedTextField(
+                                value = serverConns,
+                                onValueChange = { serverConns = it },
+                                label = { Text("Exceptions: one per line, server=number (example.com=4)") },
+                                minLines = 2,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             NumberRow("Automatic retries (0-5)", retries) { retries = it.filter(Char::isDigit) }
                             SectionHeading("Temporary files")
                             Text(
@@ -467,6 +475,7 @@ fun SettingsDialog(
                         connectionsPerDownload = connections.toIntOrNull()?.coerceIn(1, 16) ?: 4,
                         speedLimitBytesPerSecond = (speed.toLongOrNull() ?: 0L) * 1024L,
                         maxRetries = retries.toIntOrNull()?.coerceIn(0, 5) ?: 2,
+                        serverConnections = serverConns.lines().map { it.trim() }.filter { it.contains('=') },
                         closeToTray = closeToTray,
                         startMinimised = startMinimised,
                         slowMode = slowMode,
