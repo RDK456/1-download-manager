@@ -71,7 +71,8 @@ class TempDirectoryIndependenceTest {
         val cacheBlock = store.substringAfter("val cacheDir").substringBefore("val updateDir")
         assertTrue(
             "the cache folder must be under AppPaths.home, not a system property:\n$cacheBlock",
-            cacheBlock.contains("File(home,")
+            store.substringAfter("var cacheDirectory").substringBefore("val workDir").contains("File(home,") &&
+                !cacheBlock.contains("java.io.tmpdir")
         )
     }
 

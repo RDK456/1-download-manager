@@ -438,7 +438,9 @@ class DesktopTorrentEngine(
 
     private fun torrentDirFor(item: QueuedDownload): File =
         item.outputPath?.let(::File)
-            ?: File(AppPaths.torrentRoot, item.fileName.replace(Regex("""[\\/:*?"<>|]"""), "_"))
+            ?: item.fileName.replace(Regex("""[\/:*?"<>|]"""), "_").let { safe ->
+                File(AppPaths.home, "torrents/$safe").takeIf { it.exists() } ?: File(AppPaths.torrentRoot, safe)
+            }
 
     /** Opens the largest video or audio file so "open" does something useful. */
     private fun largestMediaIn(directory: File): File? {

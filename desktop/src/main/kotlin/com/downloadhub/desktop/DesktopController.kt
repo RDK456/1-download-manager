@@ -372,13 +372,18 @@ class DesktopController(
         // The bundled binaries and the browser extension are copied out of the app on
         // first run. An installed program directory can be read-only, and yt-dlp has to
         // be a real file on disk for the app to execute it, so this is not optional.
+        // Before anything can start: done inside the coroutine below, a download resumed at
+        // launch could write its partial file to the default cache on the system drive first.
+        runCatching {
+            val folder = settingsState.value.cacheDirFile()
+            if (folder.isDirectory || folder.mkdirs()) AppPaths.cacheDirectory = folder
+        }
         scope.launch {
-            // Adopt the configured cache folder at startup as well as on save, or a folder
-            // set in a previous session is ignored until the user changes it again.
-            runCatching {
-                val folder = settingsState.value.cacheDirFile()
-                if (folder.isDirectory || folder.mkdirs()) AppPaths.cacheDirectory = folder
-            }
+            // Old installers (200 MB each) were kept for ever on the system drive. Anything
+            // for this version or an older one has done its job; a newer one is a pending update.
+            runCatching { cleanUpdateLeftovers() }
+            runCatching { cleanSystemDriveCache() }
+            runCatching { cleanOrphanPartials() }
             // Unpacks yt-dlp and ffmpeg. Both, and independently: one being present says
             // nothing about the other, and ffmpeg is what makes a chosen quality a playable
             // file rather than two loose ones.
@@ -1243,6 +1248,34 @@ class DesktopController(
         store.persist()
         _messages.value = "Mirror added. It is used if the main link fails."
         refresh()
+    }
+
+    /** Partial files of downloads that are no longer in the list can never resume; drop the old ones. */
+    private fun cleanOrphanPartials() {
+        val known = store.snapshot().map { it.id }.toSet()
+        val cutoff = System.currentTimeMillis() - 24L * 3_600_000L
+        (AppPaths.workDir.listFiles()?.toList().orEmpty() + AppPaths.legacyWorkDir.listFiles()?.toList().orEmpty()).distinct().forEach { file ->
+            val id = file.name.removePrefix("part-").substringBefore('.')
+            if (file.name.startsWith("part-") && id !in known && file.lastModified() < cutoff) file.delete()
+        }
+    }
+
+    /** With the cache on another drive, drop what an older version left in the profile on C. */
+    private fun cleanSystemDriveCache() {
+        if (AppPaths.cacheDirectory.canonicalFile == AppPaths.defaultCacheDirectory.canonicalFile) return
+        listOf("images", "libtorrent4j-native").forEach { File(AppPaths.defaultCacheDirectory, it).deleteRecursively() }
+        File(AppPaths.home, "tools").deleteRecursively()
+        File(AppPaths.home, "torrents").takeIf { it.isDirectory && it.list().isNullOrEmpty() }?.delete()
+    }
+
+    private fun cleanUpdateLeftovers() {
+        val version = Regex("""\d+\.\d+\.\d+""")
+        listOf(AppPaths.updateDir, AppPaths.legacyUpdateDir).distinct().forEach { dir ->
+            dir.listFiles()?.forEach { entry ->
+                val found = version.find(entry.name)?.value
+                if (found == null || !isNewerVersion(found, APP_VERSION)) entry.deleteRecursively()
+            }
+        }
     }
 
     private val remote = RemoteServer(

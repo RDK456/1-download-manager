@@ -55,7 +55,18 @@ object AppPaths {
      * from settings that can change while the app runs.
      */
     @Volatile
-    var cacheDirectory: File = File(home, "cache").apply { mkdirs() }
+    var cacheDirectory: File = run {
+        // Read straight from settings.json: everything below (tools, libraries, partial files)
+        // is resolved the first time it is touched, which is before the controller exists.
+        val saved = runCatching {
+            DesktopJson.format.decodeFromString<DesktopSettings>(settingsFile.readText()).cacheDir.trim()
+        }.getOrDefault("")
+        (saved.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.isDirectory || it.mkdirs() }
+            ?: File(home, "cache")).apply { mkdirs() }
+    }
+
+    /** The default cache on the system drive; anything still there after a move is removed. */
+    val defaultCacheDirectory: File get() = File(home, "cache")
 
     /**
      * The scratch directory, one level under the chosen cache.
@@ -67,15 +78,18 @@ object AppPaths {
     val workDir: File
         get() = File(cacheDirectory, "work").apply { if (!isDirectory) mkdirs() }
 
+    /** The old default work folder on the system drive; only read, to finish what began there. */
+    val legacyWorkDir: File get() = File(home, "cache/work")
+
     val defaultDownloadDir: File by lazy {
         File(System.getProperty("user.home") ?: ".", "Downloads" + File.separator + "DownloadHub")
             .apply { mkdirs() }
     }
 
-    val toolsDir: File by lazy { File(home, "tools").apply { mkdirs() } }
+    val toolsDir: File by lazy { File(cacheDirectory, "tools").apply { mkdirs() } }
 
     /** Staging area for torrents; libtorrent writes here before publication. */
-    val torrentRoot: File by lazy { File(home, "torrents").apply { mkdirs() } }
+    val torrentRoot: File by lazy { File(cacheDirectory, "torrents").apply { mkdirs() } }
 
     /**
      * Scratch space for things that have to be unpacked or staged.
@@ -95,10 +109,14 @@ object AppPaths {
      * any settings are read, and a library that had to be re-extracted every time the
      * cache folder changed would be a slow way to learn a wrong path was typed.
      */
-    val nativeLibDir: File by lazy { File(home, "cache/libtorrent4j-native").apply { mkdirs() } }
+    val nativeLibDir: File by lazy { File(cacheDirectory, "libtorrent4j-native").apply { mkdirs() } }
 
     /** Staging area for a downloaded update installer or portable zip. */
-    val updateDir: File by lazy { File(home, "cache/update").apply { mkdirs() } }
+    val updateDir: File
+        get() = File(cacheDirectory, "update").apply { if (!isDirectory) mkdirs() }
+
+    /** The older, fixed location on the system drive, still swept for leftovers. */
+    val legacyUpdateDir: File get() = File(home, "cache/update")
 
     /**
      * Where an unpacked portable build goes before it is started.

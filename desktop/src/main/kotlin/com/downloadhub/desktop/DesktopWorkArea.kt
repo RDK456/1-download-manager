@@ -23,7 +23,14 @@ import java.nio.file.StandardCopyOption
  */
 class DesktopWorkArea(private val settings: () -> DesktopSettings) : WorkArea {
 
-    override fun workFile(id: String): File = AppPaths.workDir.resolve("part-$id")
+    override fun workFile(id: String): File {
+        val chosen = AppPaths.workDir.resolve("part-$id")
+        // A partial begun in the old default folder (system drive) is finished where it is, so
+        // the download resumes instead of restarting; it is removed from there once done.
+        // Everything new goes to the chosen cache folder.
+        val legacy = AppPaths.legacyWorkDir.resolve("part-$id")
+        return if (!chosen.exists() && legacy.exists() && legacy.parentFile != chosen.parentFile) legacy else chosen
+    }
 
     /**
      * The scratch folder a torrent's pieces are written into.

@@ -24,7 +24,7 @@ object RemoteImages {
     private val memory = object : LinkedHashMap<String, ImageBitmap>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap>) = size > MEMORY_ITEMS
     }
-    private val dir: File by lazy { File(AppPaths.home, "cache/images").apply { mkdirs() } }
+    private val dir: File by lazy { File(AppPaths.cacheDirectory, "images").apply { mkdirs() } }
 
     fun cached(url: String): ImageBitmap? = synchronized(memory) { memory[url] }
 
