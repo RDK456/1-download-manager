@@ -117,6 +117,9 @@ sealed interface ContextAction {
     /** Swaps in a fresh link from the clipboard when the old one expired; progress is kept. */
     data object ReplaceLink : ContextAction
 
+    /** Adds the clipboard link as a mirror, tried when this one fails. */
+    data object AddMirror : ContextAction
+
     /** Re-reads every piece against its hash. qBittorrent's Force recheck. */
     data object ForceRecheck : ContextAction
 
@@ -155,6 +158,7 @@ fun contextActions(item: DownloadItem, hasContentFiles: Boolean): List<ContextAc
     if (!item.isTorrent && item.status != DownloadStatus.COMPLETED) {
         add(ContextAction.SetLocation)
         add(ContextAction.ReplaceLink)
+        add(ContextAction.AddMirror)
     }
     if (item.status == DownloadStatus.COMPLETED && hasContentFiles) {
         add(ContextAction.Rename)
@@ -194,6 +198,7 @@ fun contextActionLabel(action: ContextAction): String = when (action) {
     ContextAction.MoveToQueue -> "Move to queue..."
     ContextAction.Stream -> "Play while downloading"
     ContextAction.ReplaceLink -> "Replace link from clipboard"
+    ContextAction.AddMirror -> "Add mirror from clipboard"
     ContextAction.MoveUp -> "Move up in queue"
     ContextAction.MoveDown -> "Move down in queue"
     ContextAction.ForceRecheck -> "Force recheck"

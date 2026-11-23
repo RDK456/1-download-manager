@@ -876,6 +876,7 @@ fun LibraryScreen(
                         ContextAction.AutomaticManagement -> Unit
                         ContextAction.MoveToQueue -> moving = setOf(item.id)
                         ContextAction.ReplaceLink -> actions.replaceLink(item.id)
+                        ContextAction.AddMirror -> actions.addMirror(item.id)
                         ContextAction.Stream -> actions.streamTorrent(item.id)
                         ContextAction.MoveUp -> actions.moveInQueue(item.id, true)
                         ContextAction.MoveDown -> actions.moveInQueue(item.id, false)

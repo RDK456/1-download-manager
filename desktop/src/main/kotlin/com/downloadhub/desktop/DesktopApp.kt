@@ -93,6 +93,8 @@ fun SettingsDialog(
     var speed by remember { mutableStateOf((settings.speedLimitBytesPerSecond / 1024L).toString()) }
     var connections by remember { mutableStateOf(settings.connectionsPerDownload.toString()) }
     var retries by remember { mutableStateOf(settings.maxRetries.toString()) }
+    var capMb by remember { mutableStateOf(if (settings.dataCapMb > 0) settings.dataCapMb.toString() else "") }
+    var capHours by remember { mutableStateOf(settings.dataCapHours.toString()) }
     var serverConns by remember { mutableStateOf(settings.serverConnections.joinToString("\n")) }
     var closeToTray by remember { mutableStateOf(settings.closeToTray) }
     var startMinimised by remember { mutableStateOf(settings.startMinimised) }
@@ -188,6 +190,8 @@ fun SettingsDialog(
                             SectionHeading("Speed")
                             NumberRow("Downloads at once (1-8)", concurrent) { concurrent = it.filter(Char::isDigit) }
                             NumberRow("Connections per download (1-16)", connections) { connections = it.filter(Char::isDigit) }
+                            NumberRow("Data limit in MB (blank = off)", capMb) { capMb = it.filter(Char::isDigit).take(7) }
+                            NumberRow("...within this many hours", capHours) { capHours = it.filter(Char::isDigit).take(4) }
                             OutlinedTextField(
                                 value = serverConns,
                                 onValueChange = { serverConns = it },
@@ -475,6 +479,8 @@ fun SettingsDialog(
                         connectionsPerDownload = connections.toIntOrNull()?.coerceIn(1, 16) ?: 4,
                         speedLimitBytesPerSecond = (speed.toLongOrNull() ?: 0L) * 1024L,
                         maxRetries = retries.toIntOrNull()?.coerceIn(0, 5) ?: 2,
+                        dataCapMb = capMb.toIntOrNull() ?: 0,
+                        dataCapHours = capHours.toIntOrNull()?.coerceAtLeast(1) ?: 24,
                         serverConnections = serverConns.lines().map { it.trim() }.filter { it.contains('=') },
                         closeToTray = closeToTray,
                         startMinimised = startMinimised,

@@ -56,6 +56,7 @@ internal fun QueueEditorDialog(
     var days by remember { mutableStateOf(queue.days.toSet()) }
     var retries by remember { mutableStateOf(if (queue.retries >= 0) queue.retries.toString() else "") }
     var finish by remember { mutableStateOf(queue.finishAction) }
+    var wake by remember { mutableStateOf(queue.wake) }
 
     val startMinute = QueueRules.parseTime(start)
     val stopMinute = if (stop.isBlank()) QueueSchedule.NO_STOP else QueueRules.parseTime(stop)
@@ -72,7 +73,8 @@ internal fun QueueEditorDialog(
                 startMinute = startMinute ?: queue.startMinute,
                 stopMinute = stopMinute ?: QueueSchedule.NO_STOP,
                 retries = retries.toIntOrNull()?.coerceIn(0, 10) ?: -1,
-                finishAction = finish
+                finishAction = finish,
+                wake = wake
             )
         )
     }
@@ -135,6 +137,7 @@ internal fun QueueEditorDialog(
                             modifier = Modifier.weight(1f).onEnter { save() }
                         )
                     }
+                    TickRow("Wake the computer to run this queue", wake, detail = "Adds a Windows scheduled task that wakes the PC two minutes before the start time.") { wake = it }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         DAY_LABELS.forEachIndexed { index, label ->
                             val day = index + 1

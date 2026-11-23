@@ -135,6 +135,8 @@ data class QueueConfig(
     val stopMinute: Int = QueueSchedule.NO_STOP,
     /** Retries for each file of this queue; -1 uses the app-wide setting. */
     val retries: Int = -1,
+    /** Wake the computer for the start time (a Windows scheduled task). */
+    val wake: Boolean = false,
     /** A [FinishAction.Choice] name run once this queue has emptied; blank does nothing. */
     val finishAction: String = ""
 ) {
@@ -184,6 +186,9 @@ data class DesktopSettings(
     val maxRetries: Int = 2,
     /** One "host=connections" per entry; overrides [connectionsPerDownload] for that server. */
     val serverConnections: List<String> = emptyList(),
+    /** Stop starting downloads once this many MB came in within [dataCapHours]; 0 is off. */
+    val dataCapMb: Int = 0,
+    val dataCapHours: Int = 24,
     /** Shared secret the browser extension must present. Generated once. */
     val captureToken: String = "",
     val browserCaptureEnabled: Boolean = true,
@@ -395,6 +400,8 @@ data class QueuedDownload(
     val streamFormatId: String? = null,
     /** The audio half of the pair; empty for an audio-only row, which has just the one. */
     val streamAudioFormatId: String? = null,
+    /** Other links for the same file; tried in turn when this one fails. */
+    val mirrors: List<String> = emptyList(),
     val playlist: Boolean = false,
     val torrentFilePath: String? = null,
     val torrentInfoHash: String? = null,

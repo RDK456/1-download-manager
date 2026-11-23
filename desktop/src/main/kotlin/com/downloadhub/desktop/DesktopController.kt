@@ -188,6 +188,7 @@ data class DesktopActions(
     val setRemote: (Boolean) -> Unit = {},
     val moveInQueue: (String, Boolean) -> Unit = { _, _ -> },
     val replaceLink: (String) -> Unit = {},
+    val addMirror: (String) -> Unit = {},
     val streamTorrent: (String) -> Unit = {},
     val consumeMessage: () -> Unit,
     val setTorrentsTab: (Boolean) -> Unit,
@@ -667,6 +668,7 @@ class DesktopController(
             list + cleaned
         }
         saveSettings(settings.copy(queues = updated))
+        Thread { WakeSchedule.sync(updated) }.apply { isDaemon = true }.start()
         if (cleaned.started) kickEngines()
     }
 
@@ -1226,6 +1228,23 @@ class DesktopController(
         engine.resume(id)
     }
 
+    /** Adds the clipboard link as another source for the same file. */
+    fun addMirrorFromClipboard(id: String) {
+        val text = runCatching {
+            java.awt.Toolkit.getDefaultToolkit().systemClipboard
+                .getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
+        }.getOrNull()?.trim().orEmpty()
+        if (!text.startsWith("http://") && !text.startsWith("https://")) {
+            _messages.value = "Copy the mirror link first, then choose Add mirror."
+            refresh()
+            return
+        }
+        store.update(id) { if (text in it.mirrors || text == it.url) it else it.copy(mirrors = it.mirrors + text) }
+        store.persist()
+        _messages.value = "Mirror added. It is used if the main link fails."
+        refresh()
+    }
+
     private val remote = RemoteServer(
         pin = { settingsState.value.remotePin },
         list = { store.snapshot().map { it.toCoreItem() } },
@@ -1467,6 +1486,7 @@ class DesktopController(
         setRemote = ::setRemote,
         moveInQueue = ::moveInQueue,
         replaceLink = ::replaceLinkFromClipboard,
+        addMirror = ::addMirrorFromClipboard,
         streamTorrent = ::streamTorrent,
         consumeMessage = ::consumeMessage,
         setTorrentsTab = ::setTorrentsTab,

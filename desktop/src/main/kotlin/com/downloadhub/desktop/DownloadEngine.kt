@@ -88,6 +88,7 @@ class DownloadEngine(
             etaSeconds: Long,
             now: Long
         ) {
+            store.get(id)?.let { recordBytes(bytesDownloaded - it.bytesDownloaded) }
             store.update(id) {
                 it.copy(
                     bytesDownloaded = bytesDownloaded,
@@ -145,6 +146,24 @@ class DownloadEngine(
         }
     }
 
+    // --- data allowance -----------------------------------------------------
+
+    private val usage = java.util.concurrent.ConcurrentLinkedQueue<Pair<Long, Long>>()
+    private val capPaused = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private fun recordBytes(count: Long) {
+        if (count > 0) usage.add(System.currentTimeMillis() to count)
+    }
+
+    /** True while the bytes taken in the last [DesktopSettings.dataCapHours] reach the cap. */
+    private fun capReached(): Boolean {
+        val s = settingsState.value
+        if (s.dataCapMb <= 0) return false
+        val cutoff = System.currentTimeMillis() - s.dataCapHours.coerceAtLeast(1) * 3_600_000L
+        usage.removeIf { it.first < cutoff }
+        return usage.sumOf { it.second } >= s.dataCapMb * 1_048_576L
+    }
+
     // --- queue control ------------------------------------------------------
 
     private var pumpJob: kotlinx.coroutines.Job? = null
@@ -157,6 +176,16 @@ class DownloadEngine(
         if (pumpJob?.isActive == true) return
         pumpJob = scope.launch {
             while (isActive) {
+                if (capReached()) {
+                    // Over the allowance: hold what is running until the window moves on.
+                    store.snapshot().filter { it.status == DownloadStatus.RUNNING && it.source == DownloadSource.HTTP }
+                        .forEach { capPaused.add(it.id); pause(it.id) }
+                    delay(5_000)
+                    continue
+                }
+                if (capPaused.isNotEmpty()) {
+                    capPaused.toList().forEach { id -> capPaused.remove(id); if (store.get(id)?.status == DownloadStatus.PAUSED) resume(id) }
+                }
                 val limit = settingsState.value.maxConcurrent.coerceIn(1, 16)
                 // Re-read every pass, so changing the limit in Settings takes effect on
                 // the next chunk rather than at the next restart.
@@ -241,6 +270,14 @@ class DownloadEngine(
             } catch (error: Throwable) {
                 if (error !is kotlinx.coroutines.CancellationException) {
                     val reason = error.message ?: error::class.simpleName
+                    // Another link for the same file, if one was added: swap and go again.
+                    val spare = store.get(id)
+                    if (spare != null && spare.mirrors.isNotEmpty() && (mirrorHops[id] ?: 0) < spare.mirrors.size) {
+                        mirrorHops[id] = (mirrorHops[id] ?: 0) + 1
+                        store.update(id) { it.copy(url = spare.mirrors.first(), mirrors = spare.mirrors.drop(1) + spare.url) }
+                        scope.launch { delay(500); resume(id) }
+                        return@launch
+                    }
                     val expired = reason?.let { Regex("HTTP (403|404|410)").containsMatchIn(it) } == true
                     store.update(id) {
                         it.copy(
@@ -293,6 +330,7 @@ class DownloadEngine(
         resume(id)
     }
 
+    private val mirrorHops = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private val autoRetries = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     /** Failed for a reason other than an expired or missing link: worth trying again now. */
