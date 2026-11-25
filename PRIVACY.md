@@ -1,6 +1,6 @@
 # Privacy policy
 
-Last updated: 2026-10-12
+Last updated: 2026-11-25
 
 The "1 download manager" browser extension does not collect, store or sell personal data, and has no servers, analytics, ads or tracking.
 
@@ -13,6 +13,12 @@ The extension also remembers, in your browser's local storage, the app port, the
 ## What leaves your computer
 
 Nothing is sent to the developer or to any third party by the extension. The only network traffic it creates is to the local app on your machine. The app then downloads the file from the site you were already on.
+
+## The desktop app's optional services
+
+Two things are off until you turn them on. The **local API** accepts commands from programs on your
+own computer that know its secret. The **GitHub mirror** sends the address of a public GitHub file
+to the mirror you typed in, and downloads the file from it.
 
 ## Remote code
 

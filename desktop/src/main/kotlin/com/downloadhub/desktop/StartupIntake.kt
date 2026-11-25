@@ -67,7 +67,8 @@ fun classifyStartupArgument(
         // A remote link. Kept as-is: the queue already knows how to fetch these, and
         // which engine they need is decided by LinkParser when they are added.
         return if (argument.startsWith("http://", ignoreCase = true) ||
-            argument.startsWith("https://", ignoreCase = true)
+            argument.startsWith("https://", ignoreCase = true) ||
+            argument.startsWith("ftp://", ignoreCase = true)
         ) {
             QueueTarget(link = argument, name = LinkParser.fileNameFrom(argument))
         } else {

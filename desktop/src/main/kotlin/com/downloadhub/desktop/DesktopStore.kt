@@ -205,6 +205,11 @@ data class DesktopSettings(
     /** One "host=connections" per entry; overrides [connectionsPerDownload] for that server. */
     val serverConnections: List<String> = emptyList(),
     /** Stop starting downloads once this many MB came in within [dataCapHours]; 0 is off. */
+    /** An https mirror prefix for GitHub file downloads; blank is off. */
+    val githubMirror: String = "",
+    /** The aria2-style API on this computer, which `dm.ps1` uses. Off until asked for. */
+    val rpcEnabled: Boolean = false,
+    val rpcSecret: String = "",
     val dataCapMb: Int = 0,
     val dataCapHours: Int = 24,
     /** Shared secret the browser extension must present. Generated once. */

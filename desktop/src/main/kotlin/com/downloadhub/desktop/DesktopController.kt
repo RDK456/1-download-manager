@@ -418,6 +418,7 @@ class DesktopController(
             capture.start()
         }
         if (settingsState.value.remoteEnabled) remote.start()
+        applyRpc()
         runQueueScheduler()
         // Files that finish while the app runs get the optional unzip and scan; ones finished before launch are left alone.
         scope.launch(Dispatchers.IO) {
@@ -968,6 +969,7 @@ class DesktopController(
         // The script installs once this process has gone, then starts the new version.
         store.persist()
         capture.stop()
+        rpc.stop()
         onQuitRequested()
     }
 
@@ -1286,6 +1288,33 @@ class DesktopController(
         add = { link -> addDownload(link, false, "", null, false) }
     )
 
+    private val rpc = RpcServer(
+        secret = { settingsState.value.rpcSecret },
+        list = { store.snapshot().map { it.toCoreItem() } },
+        add = { link ->
+            val before = store.snapshot().map { it.id }.toSet()
+            addDownload(link, false, "", null, false)
+            store.snapshot().firstOrNull { it.id !in before }?.id
+        },
+        pause = { id -> actions.pause(id) },
+        resume = { id -> actions.resume(id) },
+        remove = { id -> actions.removeSelectingFiles(id, false) }
+    )
+
+    /** Starts or stops the local API to match the settings, and puts `dm.ps1` where they point. */
+    private fun applyRpc() {
+        if (!settingsState.value.rpcEnabled) {
+            rpc.stop()
+            return
+        }
+        runCatching {
+            javaClass.getResourceAsStream("/dm.ps1")?.use { script ->
+                File(AppPaths.cacheDirectory, "dm.ps1").outputStream().use { script.copyTo(it) }
+            }
+        }
+        if (!rpc.start()) _messages.value = "The local API could not start: port ${RpcServer.PORT} is in use."
+    }
+
     fun setRemote(enabled: Boolean) {
         val current = settingsState.value
         val updated = current.copy(
@@ -1504,8 +1533,14 @@ class DesktopController(
                 val folder = updated.cacheDirFile()
                 if (folder.isDirectory || folder.mkdirs()) AppPaths.cacheDirectory = folder
             }
-            settingsState.value = updated
-            DesktopSettings.save(updated)
+            val ready = if (updated.rpcEnabled && updated.rpcSecret.isBlank()) {
+                updated.copy(rpcSecret = CaptureServer.newToken())
+            } else {
+                updated
+            }
+            settingsState.value = ready
+            DesktopSettings.save(ready)
+            applyRpc()
             refresh()
         },
         chooseFolder = ::chooseFolder,
@@ -1756,10 +1791,19 @@ class DesktopController(
             ?: localTorrent?.name
             ?: LinkParser.fileNameFrom(trimmed)
 
+        // The chosen GitHub mirror goes first, with the real address as its fallback. Never
+        // for a request carrying headers or a login: those are not for a third party.
+        val mirrored = trimmed.takeIf {
+            source == com.downloadhub.core.DownloadSource.HTTP &&
+                withCapturedReferer(link, torrentRequest?.http?.headers.orEmpty()).isEmpty() &&
+                torrentRequest?.http?.cookies.isNullOrBlank() && torrentRequest?.http?.username.isNullOrEmpty()
+        }?.let { com.downloadhub.core.GithubMirror.rewrite(it, settingsState.value.githubMirror) }
+
         store.add(
             QueuedDownload(
                 id = id,
-                url = trimmed,
+                url = mirrored ?: trimmed,
+                mirrors = if (mirrored != null) listOf(trimmed) else emptyList(),
                 fileName = name,
                 source = source,
                 category = LinkParser.categoryFor(source, name),

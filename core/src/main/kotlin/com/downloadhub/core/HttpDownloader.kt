@@ -46,6 +46,10 @@ class HttpDownloader(
         val policy = runCatching { policies.policyFor(item.id) }.getOrDefault(TransferPolicy())
         val connections = policy.connections
         proxy = policy.proxy
+        if (item.url.startsWith("ftp://", ignoreCase = true)) {
+            downloadFtp(item, work)
+            return@withContext
+        }
         val segments = SegmentState.fileFor(work)
         // A segment file means this download was started split, and its work file is
         // full-length already - the single-stream path below would read that as done.
@@ -188,6 +192,56 @@ class HttpDownloader(
         }
         @Suppress("UNREACHABLE_CODE")
         Unit
+    }
+
+    /** One FTP connection, continued from the partial file when the server allows it. */
+    private suspend fun downloadFtp(item: DownloadItem, work: File) {
+        val (client, path) = FtpClient.open(item.url, item.request.username, item.request.password, proxy)
+        client.use {
+            val total = client.size(path).coerceAtLeast(0L)
+            var existing = work.length()
+            // Longer than the file on the server: it is not the same file any more.
+            if (total > 0 && existing > total) {
+                work.delete()
+                existing = 0
+            }
+            if (total > 0 && existing == total) {
+                promoteCompleted(item, work, downloaded = total, total = total)
+                return
+            }
+            if (total > 0 && total != item.totalBytes) {
+                store.updateMetadata(item.id, item.fileName, item.mimeType, item.category, total, System.currentTimeMillis())
+            }
+            val (stream, start) = client.retrieve(path, existing)
+            var downloaded = start
+            var windowStarted = System.currentTimeMillis()
+            var windowBytes = 0L
+            FileOutputStream(work, start > 0).use { output ->
+                val buffer = ByteArray(TRANSFER_BUFFER_BYTES)
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val count = stream.read(buffer)
+                    if (count < 0) break
+                    speedLimiter.acquire(count)
+                    itemSpeedLimiter?.acquire(count)
+                    output.write(buffer, 0, count)
+                    downloaded += count
+                    windowBytes += count
+                    val now = System.currentTimeMillis()
+                    if (now - windowStarted >= 400) {
+                        val speed = windowBytes * 1000L / (now - windowStarted)
+                        val percent = if (total > 0) (downloaded * 100L / total).coerceIn(0, 100).toInt() else 0
+                        store.updateProgress(item.id, downloaded, total, percent, speed, estimateEta(total, downloaded, speed), now)
+                        windowStarted = now
+                        windowBytes = 0
+                    }
+                }
+                output.fd.sync()
+            }
+            client.finish()
+            if (total > 0 && work.length() != total) throw IOException("The FTP download was incomplete")
+            promoteCompleted(item, work, downloaded = work.length(), total = work.length())
+        }
     }
 
     /** Set from the policy when a download starts; null follows the system proxy. */

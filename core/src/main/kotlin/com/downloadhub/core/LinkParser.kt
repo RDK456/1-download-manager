@@ -7,7 +7,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 object LinkParser {
-    private val linkPattern = Regex("""(?i)(?:https?://|magnet:\?)[^\s<>"']+""")
+    private val linkPattern = Regex("""(?i)(?:https?://|ftp://|magnet:\?)[^\s<>"']+""")
     private val contentDispositionName = Regex(
         """filename\*\s*=\s*UTF-8''([^;]+)|filename\s*=\s*["']?([^"';]+)""",
         RegexOption.IGNORE_CASE
@@ -66,6 +66,7 @@ object LinkParser {
         if (trimmed.startsWith("magnet:", ignoreCase = true)) return true
         if (trimmed.startsWith("http://", ignoreCase = true)) return true
         if (trimmed.startsWith("https://", ignoreCase = true)) return true
+        if (trimmed.startsWith("ftp://", ignoreCase = true)) return true
         // A file the caller already has in hand counts whatever the link text says, so a
         // `.torrent` handed over by a drop or a picker does not have to round-trip
         // through its own path.

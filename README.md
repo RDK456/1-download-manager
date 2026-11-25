@@ -1,6 +1,6 @@
 # 1 download manager
 
-**Free, open source, no ads.** One download manager for **Android** and **Windows**: direct links,
+**Free, open source, no ads.** One download manager for **Android** and **Windows**: HTTP and FTP links,
 YouTube, torrents and streams in a single queue — with browser extensions for Chrome and Firefox.
 
 [**Download the latest release**](https://github.com/RDK456/1-download-manager/releases/latest) ·
@@ -23,7 +23,7 @@ YouTube, torrents and streams in a single queue — with browser extensions for 
 
 | | |
 |---|---|
-| **Built for speed** | Every file is split over up to 16 parallel connections (8 by default) with a large read buffer, so one link can fill your whole line. A live graph and connection map show it working. |
+| **Built for speed** | Every file is split over up to 16 parallel connections (8 by default) with a large read buffer, to use as much of your line as the server allows. When one connection finishes early, it takes over part of the biggest remaining piece. A live graph and connection map show it working. |
 | **All-in-one** | Links, YouTube, torrents, HLS/DASH streams, archive.org and free media — one queue, one app, Android and Windows. |
 | **Never starts over** | Pause, crash, sleep or lose Wi-Fi — downloads resume where they stopped, and retry on their own. |
 | **Watch while it downloads** | Torrents can play in order, so you start the video before it finishes. |
@@ -34,9 +34,11 @@ YouTube, torrents and streams in a single queue — with browser extensions for 
 
 **Downloading**
 - **Fast, resumable downloads** — segmented HTTP/HTTPS with pause, resume, retry, per-file speed limits and a one-click **slow mode**.
+- **FTP** — `ftp://` links download over one connection and resume when the server allows it (plain FTP only, which does not encrypt the password).
+- **Mirrors** — on Windows, add spare links to a download; if the main one fails, the next is tried.
 - **Self-healing** — retries after a dropped connection or when the PC wakes from sleep; swap an expired link for a fresh one and keep your progress.
 - **Batch download** — paste many links at once, or a range like `file[001-120].jpg`. Duplicates are caught for you.
-- **Queues and scheduler** — several queues, start and stop times, reorder with move up / down.
+- **Queues and scheduler** — several queues, start and stop times, reorder with move up / down. On Windows each queue has its own retries and "when done" action, and can wake the PC to run.
 - **When done** — exit, sleep, hibernate, lock, shut down or open the folder once the queue finishes.
 
 **Video, audio and torrents**
@@ -52,7 +54,11 @@ YouTube, torrents and streams in a single queue — with browser extensions for 
 - **Removed-file tracking** — files deleted outside the app stay in the list, struck through.
 
 **Windows extras**
-- **Per-download window** — live speed graph, connection map, open file, copy link, pause and resume, in an IDM-style dialog.
+- **Per-download window** — tabs for status (speed graph, connection map and each connection's progress) and a speed limiter; torrents add files, peers and trackers.
+- **Double-click** a finished download to show it in its folder.
+- **Limits** — a data allowance over a number of hours, and a connection count of its own for chosen servers.
+- **GitHub mirror** — optionally fetch public GitHub files through a mirror you choose, with GitHub as the fallback. Off by default; only use a mirror you trust, as it can change what it serves.
+- **Your cache folder** — partial files, helper tools and update downloads go to the folder you pick. Settings, the queue and the app itself stay in their usual places.
 - **Control from your phone** — watch and pause downloads from any phone on your Wi-Fi, protected by a PIN.
 - **Interface zoom**, system tray, start with Windows, and a glass-style download window.
 
@@ -60,6 +66,21 @@ YouTube, torrents and streams in a single queue — with browser extensions for 
 - **Browser integration** — Chrome and Firefox extensions hand downloads and page media to the app, with a per-site exclude list.
 - **Automatic updates** — the app checks GitHub and installs new versions for you.
 - **Themes** — light, dark and AMOLED, with nine colour palettes.
+
+## Command line and local API (Windows)
+
+Tick **Settings → Local API and command line**. The app writes `dm.ps1` into your cache folder;
+with the app running:
+
+```powershell
+.\dm.ps1 add "https://example.com/file.zip"
+.\dm.ps1 list
+.\dm.ps1 pause <id>      # also: resume, remove (keeps files), pause-all, resume-all
+```
+
+Other tools can use the same aria2-style JSON-RPC at `http://127.0.0.1:6800/jsonrpc` with the secret
+shown in Settings. It covers a subset of aria2: add a link, list and read status, pause, resume and
+remove. It is off by default, listens on this computer only and refuses requests from web pages.
 
 ## Install
 
