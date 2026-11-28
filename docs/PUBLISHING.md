@@ -14,7 +14,7 @@ and update `License` in the winget locale file.
 
 ## winget
 
-Files: `packaging/winget/` (for v2.2.24). Check them with `winget validate packaging\winget`.
+Files: `packaging/winget/` (for v2.2.25). Check them with `winget validate packaging\winget`.
 
 For a newer release, change the version in all three files, the installer address and
 `InstallerSha256` (`gh release view <tag> --json assets` shows each file's `digest`).

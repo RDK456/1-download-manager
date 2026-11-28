@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
 PackageIdentifier: RDK456.1DownloadManager
-PackageVersion: 2.2.24
+PackageVersion: 2.2.25
 PackageLocale: en-US
 Publisher: RDK456
 PublisherUrl: https://github.com/RDK456

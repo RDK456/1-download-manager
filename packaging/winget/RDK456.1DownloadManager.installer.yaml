@@ -1,12 +1,12 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 PackageIdentifier: RDK456.1DownloadManager
-PackageVersion: 2.2.24
+PackageVersion: 2.2.25
 InstallerType: wix
 Scope: user
 UpgradeBehavior: install
 Installers:
 - Architecture: x64
-  InstallerUrl: https://github.com/RDK456/1-download-manager/releases/download/v2.2.24/1-download-manager-2.2.24.msi
-  InstallerSha256: 27BF614D89A3E4FF173364365635059703443F2ACAE9B1D351AA8DD2D42547D8
+  InstallerUrl: https://github.com/RDK456/1-download-manager/releases/download/v2.2.25/1-download-manager-2.2.25.msi
+  InstallerSha256: 0F1B43E68B647D93230FDE5DD7DF0B54EBF5CAB615620428EBFCE3DB13535593
 ManifestType: installer
 ManifestVersion: 1.6.0
