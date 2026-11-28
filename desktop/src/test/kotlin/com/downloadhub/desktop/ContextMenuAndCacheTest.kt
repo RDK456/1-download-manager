@@ -275,7 +275,7 @@ class ContextMenuAndCacheTest {
     }
 
     @Test
-    fun theStatusStripCountsTorrentsOnly() {
+    fun theStatusStripShowsAllDownloadSpeedButOnlyTorrentSwarmFigures() {
         // Counting HTTP downloads in a torrent client's "seeds" line is what makes such a
         // number mean nothing.
         val items = listOf(
@@ -301,8 +301,8 @@ class ContextMenuAndCacheTest {
         assertEquals(5, strip.seeds)
         assertEquals(9, strip.peers)
         assertEquals(
-            "an HTTP download's speed must not appear as a torrent's",
-            0L,
+            "the bar is under every tab, so a running file's speed shows",
+            999_999L,
             strip.downloadRate
         )
     }

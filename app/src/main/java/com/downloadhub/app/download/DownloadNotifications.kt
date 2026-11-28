@@ -30,6 +30,7 @@ object DownloadNotifications {
     const val FOREGROUND_ID = 4100
     private const val FINISHED_ID = 4200
     private const val FAILED_ID = 4300
+    private const val QUEUE_ID = 4400
     private const val PROGRESS_CHANNEL = "download_progress"
     private const val COMPLETE_CHANNEL = "download_complete"
 
@@ -118,6 +119,12 @@ object DownloadNotifications {
                 context.getString(R.string.notification_pause_all),
                 serviceAction(context, DownloadService.ACTION_PAUSE_ALL)
             )
+        // Android 16 shows a promoted download as a Live Update (status bar chip, top of the
+        // shade and lock screen); older versions ignore both calls. Only while bytes move.
+        if (first != null && first.status == DownloadStatus.RUNNING) {
+            builder.setRequestPromotedOngoing(true)
+            if (first.totalBytes > 0) builder.setShortCriticalText("$percent%")
+        }
         if (active.size > 1) {
             builder.setSubText("${active.size} in queue")
         } else {
@@ -157,7 +164,7 @@ object DownloadNotifications {
         val notification = NotificationCompat.Builder(context, COMPLETE_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_download)
             .setContentTitle("Download needs attention")
-            .setContentText(item.errorMessage ?: item.fileName)
+            .setContentText("${com.downloadhub.app.ui.expressive.model.friendlyError(item.errorMessage).short}: ${item.fileName}")
             .setContentIntent(contentIntent(context, item.id))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -169,6 +176,18 @@ object DownloadNotifications {
             )
             .build()
         notify(context, FAILED_ID + item.id.hashCode(), notification)
+    }
+
+    fun showQueueFinished(context: Context, queue: com.downloadhub.app.data.AppQueue) {
+        val notification = NotificationCompat.Builder(context, COMPLETE_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_download)
+            .setContentTitle("Queue finished")
+            .setContentText("${queue.name}: nothing left to download")
+            .setContentIntent(contentIntent(context, null))
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .build()
+        notify(context, QUEUE_ID + queue.id.hashCode(), notification)
     }
 
     private fun contentIntent(context: Context, id: String?): PendingIntent {

@@ -65,7 +65,8 @@ class DownloadRepository(
             quality = request.quality,
             audioFormat = request.audioFormat,
             streamFormatId = request.streamFormatId,
-            streamAudioFormatId = request.streamAudioFormatId
+            streamAudioFormatId = request.streamAudioFormatId,
+            requestHeaders = request.referer?.takeIf { it.startsWith("http") && '\n' !in it }?.let { "Referer: $it" }
         )
         dao.insert(entity)
         return entity

@@ -184,6 +184,10 @@ interface DownloadDao {
     )
     suspend fun updateRequest(id: String, headers: String?, cookies: String?, username: String?, password: String?, updatedAt: Long)
 
+    /** A fresh address for the same file; the partial copy is kept. */
+    @Query("UPDATE downloads SET url = :url, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateUrl(id: String, url: String, updatedAt: Long)
+
     /** Bumps the retry counter used by the automatic retry policy. */
     @Query("UPDATE downloads SET retryCount = :retryCount WHERE id = :id")
     suspend fun updateRetryCount(id: String, retryCount: Int)

@@ -261,7 +261,9 @@ data class DesktopActions(
  */
 class DesktopController(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-    private val onQuitRequested: () -> Unit = { exitProcess(0) }
+    private val onQuitRequested: () -> Unit = { exitProcess(0) },
+    /** At sign-in the disk is busy: housekeeping and the extractor check wait this long. */
+    private val housekeepingDelayMillis: Long = 0L
 ) {
     private val store = DesktopStore.load()
     private val settingsState = MutableStateFlow(DesktopSettings.load())
@@ -379,6 +381,8 @@ class DesktopController(
             if (folder.isDirectory || folder.mkdirs()) AppPaths.cacheDirectory = folder
         }
         scope.launch {
+            // Not on a first run: there the tools are not unpacked yet and a download may need them.
+            if (tools.available) delay(housekeepingDelayMillis)
             // Old installers (200 MB each) were kept for ever on the system drive. Anything
             // for this version or an older one has done its job; a newer one is a pending update.
             runCatching { cleanUpdateLeftovers() }
@@ -1364,8 +1368,19 @@ class DesktopController(
 
     private fun publishState() {
         val (ytDlpStatus, extensionReady) = toolStatus()
+        val items = store.snapshot()
+        usageHistory.observe(
+            items.map {
+                com.downloadhub.core.UsageHistory.Sample(
+                    it.id, it.bytesDownloaded, it.speedBytesPerSecond,
+                    it.status == com.downloadhub.core.DownloadStatus.RUNNING
+                )
+            },
+            java.time.LocalDate.now().toEpochDay(),
+            System.currentTimeMillis()
+        )
         _ui.value = DesktopUiState(
-            items = store.snapshot(),
+            items = items,
             settings = settingsState.value,
             busyCount = engine.busy.value,
             ytDlpStatus = ytDlpStatus,

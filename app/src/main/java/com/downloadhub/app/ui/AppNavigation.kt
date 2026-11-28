@@ -4,13 +4,7 @@ package com.downloadhub.app.ui
 enum class AppDestination {
     DOWNLOADS,
     TORRENTS,
-    /**
-     * Find something to download.
-     *
-     * A root of its own rather than a sub-page of Downloads: it does not narrow what is
-     * already downloaded, it replaces the list with a box to type in, and back from it
-     * should return to the list the user came from rather than walking a stack.
-     */
+    /** Finding torrents. Opened from the Torrents tab, which back returns to. */
     SEARCH,
     /**
      * A pasted YouTube link, listed as downloadables.
@@ -40,8 +34,8 @@ enum class AppDestination {
     ARCHIVE,
     ABOUT;
 
-    /** The list tabs, search and YouTube are roots; everything else is a sub-page. */
-    val isRoot: Boolean get() = this == DOWNLOADS || this == TORRENTS || this == SEARCH || this == YOUTUBE || this == DISCOVER
+    /** The list tabs, YouTube and Discover are roots; everything else is a sub-page. */
+    val isRoot: Boolean get() = this == DOWNLOADS || this == TORRENTS || this == YOUTUBE || this == DISCOVER
 
     /** Pages that have nothing to do with the download list: no filter, no add button. */
     val isDiscover: Boolean get() = this == DISCOVER || this == BOOKS || this == MOVIES || this == MUSIC || this == PLAYER || this == TV || this == ARCHIVE

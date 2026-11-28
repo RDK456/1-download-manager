@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.downloadhub.app.data.AppQueue
+import com.downloadhub.app.data.DownloadSettings
 import com.downloadhub.core.QueueRules
 import com.downloadhub.core.QueueSchedule
 
@@ -131,6 +132,8 @@ private fun QueueEditor(
     var start by remember { mutableStateOf(QueueRules.formatTime(queue.startMinute)) }
     var stop by remember { mutableStateOf(if (queue.schedule.hasStop) QueueRules.formatTime(queue.stopMinute) else "") }
     var days by remember { mutableStateOf(queue.days) }
+    var retries by remember { mutableStateOf(if (queue.retries >= 0) queue.retries.toString() else "") }
+    var notifyWhenDone by remember { mutableStateOf(queue.notifyWhenDone) }
     val startMinute = QueueRules.parseTime(start)
     val stopMinute = if (stop.isBlank()) QueueSchedule.NO_STOP else QueueRules.parseTime(stop)
     val valid = name.isNotBlank() && (!scheduled || (startMinute != null && stopMinute != null && days.isNotEmpty()))
@@ -147,6 +150,16 @@ private fun QueueEditor(
                     label = { Text("Downloads at once (blank = app setting)") },
                     singleLine = true
                 )
+                OutlinedTextField(
+                    retries,
+                    { retries = it.filter(Char::isDigit).take(2) },
+                    label = { Text("Retries (blank = app setting)") },
+                    singleLine = true
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Notify when the queue finishes", Modifier.weight(1f))
+                    Switch(checked = notifyWhenDone, onCheckedChange = { notifyWhenDone = it })
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Start and stop on a schedule", Modifier.weight(1f))
                     Switch(checked = scheduled, onCheckedChange = { scheduled = it })
@@ -184,7 +197,9 @@ private fun QueueEditor(
                         scheduleEnabled = scheduled,
                         days = days,
                         startMinute = startMinute ?: queue.startMinute,
-                        stopMinute = stopMinute ?: QueueSchedule.NO_STOP
+                        stopMinute = stopMinute ?: QueueSchedule.NO_STOP,
+                        retries = retries.toIntOrNull()?.coerceAtMost(DownloadSettings.MAX_RETRIES_LIMIT) ?: -1,
+                        notifyWhenDone = notifyWhenDone
                     )
                 )
             }) { Text("Save") }

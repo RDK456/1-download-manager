@@ -65,6 +65,7 @@ class DownloadService : Service() {
     private val queue = Channel<String>(Channel.UNLIMITED)
     private val queuedIds = ConcurrentHashMap.newKeySet<String>()
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    private val refreshed = ConcurrentHashMap.newKeySet<String>()
     private val workers = mutableListOf<Job>()
 
     private lateinit var app: DownloadHubApplication
@@ -207,6 +208,15 @@ class DownloadService : Service() {
     private fun observeQueue(dao: DownloadDao) {
         scope.launch {
             dao.observeAll().collectLatest { items ->
+                app.container.usageHistory.observe(
+                    items.map {
+                        com.downloadhub.core.UsageHistory.Sample(
+                            it.id, it.bytesDownloaded, it.speedBytesPerSecond, it.status == DownloadStatus.RUNNING
+                        )
+                    },
+                    java.time.LocalDate.now().toEpochDay(),
+                    System.currentTimeMillis()
+                )
                 if (!queueReady) return@collectLatest
                 val active = items.filter { it.status.isActive }
                 if (active.isEmpty()) {
@@ -278,6 +288,8 @@ class DownloadService : Service() {
             handleFailure(item, error)
         }
 
+        if (queue.notifyWhenDone) notifyIfQueueFinished(id, queue)
+
         if (app.container.settings.currentDownloadSettings().autoRemoveCompleted) {
             dao.getById(id)?.takeIf { it.status == DownloadStatus.COMPLETED }?.let {
                 app.container.repository.delete(it)
@@ -286,18 +298,45 @@ class DownloadService : Service() {
         stopIfIdle()
     }
 
+    /** Alerts when [id] ended and was the last of its queue still waiting or running. */
+    private suspend fun notifyIfQueueFinished(id: String, queue: com.downloadhub.app.data.AppQueue) {
+        val ended = dao.getById(id)?.status
+        if (ended != DownloadStatus.COMPLETED && ended != DownloadStatus.FAILED) return
+        if (dao.getByStatuses(ACTIVE_STATUSES).none { it.queueId == queue.id }) {
+            DownloadNotifications.showQueueFinished(applicationContext, queue)
+        }
+    }
+
     /** Retries transient failures up to the configured limit before giving up. */
     private suspend fun handleFailure(item: DownloadEntity, error: Throwable) {
         val settings = app.container.settings.currentDownloadSettings()
         val message = error.message?.takeIf { it.isNotBlank() }?.take(500) ?: "Download failed"
+        if (item.source == DownloadSource.HTTP && com.downloadhub.core.LinkRefresh.looksExpired(message) && refreshed.add(item.id)) {
+            // Once per download: ask the page it came from for a fresh link.
+            val current = dao.getById(item.id) ?: return
+            val request = current.toCoreItem().request
+            val referer = request.headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value
+            val secrets = request.cookies.isNotBlank() || request.username.isNotEmpty() ||
+                request.headers.keys.any { !it.equals("Referer", true) }
+            val fresh = com.downloadhub.core.LinkRefresh.find(current.url, referer, secrets)
+            // A pause or delete during the page read wins.
+            if (fresh != null && dao.getById(item.id)?.status == DownloadStatus.RUNNING) {
+                dao.updateUrl(item.id, fresh, System.currentTimeMillis())
+                dao.setStatus(item.id, DownloadStatus.QUEUED, "Link refreshed", System.currentTimeMillis())
+                delay(RETRY_DELAY_MILLIS)
+                enqueue(item.id)
+                return
+            }
+        }
         val transient = error is IOException
         val attempts = dao.getById(item.id)?.retryCount ?: 0
-        if (transient && attempts < settings.maxRetries) {
+        val maxRetries = queueOf(item.queueId).retries.takeIf { it >= 0 } ?: settings.maxRetries
+        if (transient && attempts < maxRetries) {
             dao.updateRetryCount(item.id, attempts + 1)
             dao.setStatus(
                 item.id,
                 DownloadStatus.QUEUED,
-                "Retrying (${attempts + 1}/${settings.maxRetries})",
+                "Retrying (${attempts + 1}/$maxRetries)",
                 System.currentTimeMillis()
             )
             delay(RETRY_DELAY_MILLIS)

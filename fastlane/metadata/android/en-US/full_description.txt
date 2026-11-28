@@ -1,0 +1,12 @@
+One queue for every download. No account and no ads.
+
+* Fast, resumable HTTP downloads over several connections, plus FTP
+* Torrents and magnet links, with file selection and play while downloading
+* YouTube videos and playlists, and audio-only saving
+* HLS and DASH streams (DRM-protected streams are refused)
+* Queues with schedules, their own retry count and a finished alert
+* Checksum check for finished files and a daily download history
+* Internet Archive and free books, movies, music and TV, with a built-in player
+* Light, dark and AMOLED themes
+
+Only download content you own or have permission to download.

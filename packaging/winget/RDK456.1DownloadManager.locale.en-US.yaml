@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: RDK456.1DownloadManager
+PackageVersion: 2.2.24
+PackageLocale: en-US
+Publisher: RDK456
+PublisherUrl: https://github.com/RDK456
+PublisherSupportUrl: https://github.com/RDK456/1-download-manager/issues
+PackageName: 1 download manager
+PackageUrl: https://github.com/RDK456/1-download-manager
+# Replace once the repository has a LICENSE file: see docs/PUBLISHING.md.
+License: See LICENSE-NOTICE.md
+LicenseUrl: https://github.com/RDK456/1-download-manager/blob/main/LICENSE-NOTICE.md
+ShortDescription: Download manager for HTTP, FTP, torrents, YouTube and streams.
+Tags:
+- download-manager
+- torrent
+- youtube
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

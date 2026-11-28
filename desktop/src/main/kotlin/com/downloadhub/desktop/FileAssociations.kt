@@ -31,6 +31,9 @@ object FileAssociations {
     /** The scheme browsers hand over for a magnet, and the one the app claims. */
     const val MAGNET_SCHEME = "magnet"
 
+    /** What the browser extension opens to start the app when it is not running. */
+    const val WAKE_SCHEME = "onedm"
+
     const val TORRENT_EXTENSION = ".torrent"
     const val TORRENT_CONTENT_TYPE = "application/x-bittorrent"
 
@@ -64,6 +67,7 @@ object FileAssociations {
     fun isRegistered(exe: File? = launcherExe()): Boolean =
         exe != null && commandFor(MAGNET_SCHEME) == expectedCommand(exe) &&
             commandFor(TORRENT_PROG_ID) == expectedCommand(exe) &&
+            commandFor(WAKE_SCHEME) == expectedCommand(exe) &&
             extensionPointsAt(TORRENT_EXTENSION)
 
     /**
@@ -86,6 +90,13 @@ object FileAssociations {
         regSet("$CLASSES\\$MAGNET_SCHEME\\DefaultIcon", null, icon)
         regSet("$CLASSES\\$MAGNET_SCHEME\\shell\\open\\command", null, command)
 
+        // The app's own scheme. Its argument is ignored at startup: opening it only starts
+        // the app (or leaves the running copy be), so a web page can queue nothing with it.
+        regSet("$CLASSES\\$WAKE_SCHEME", null, "URL:1DownloadManager")
+        regSet("$CLASSES\\$WAKE_SCHEME", "URL Protocol", "")
+        regSet("$CLASSES\\$WAKE_SCHEME\\DefaultIcon", null, icon)
+        regSet("$CLASSES\\$WAKE_SCHEME\\shell\\open\\command", null, command)
+
         // The extension, through a handler name of its own.
         regSet("$CLASSES\\$TORRENT_PROG_ID", null, "BitTorrent metainfo file")
         regSet("$CLASSES\\$TORRENT_PROG_ID", "Content Type", TORRENT_CONTENT_TYPE)
@@ -107,6 +118,7 @@ object FileAssociations {
         listOf(
             "$CLASSES\\$MAGNET_SCHEME",
             "$CLASSES\\$TORRENT_PROG_ID",
+            "$CLASSES\\$WAKE_SCHEME",
             "$CLASSES\\$TORRENT_EXTENSION",
             "$CLASSES\\Applications\\$LAUNCHER_NAME"
         ).forEach { regDelete(it) }

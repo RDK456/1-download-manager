@@ -1,6 +1,7 @@
 package com.downloadhub.core
 
 import java.io.File
+import java.io.InputStream
 import java.security.MessageDigest
 
 /** Checks a finished file against a hash the site published. */
@@ -16,15 +17,16 @@ object Checksum {
 
     fun clean(text: String): String = text.trim().lowercase().filter { it in '0'..'9' || it in 'a'..'f' }
 
-    fun hex(file: File, algorithm: String): String {
+    fun hex(file: File, algorithm: String): String = file.inputStream().use { hex(it, algorithm) }
+
+    /** For a file reached only as a stream, such as an Android content: address. */
+    fun hex(input: InputStream, algorithm: String): String {
         val digest = MessageDigest.getInstance(algorithm)
-        file.inputStream().use { input ->
-            val buffer = ByteArray(1 shl 16)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
+        val buffer = ByteArray(1 shl 16)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }

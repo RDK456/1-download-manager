@@ -15,7 +15,11 @@ data class AppQueue(
     val scheduleEnabled: Boolean = false,
     val days: Set<Int> = (1..7).toSet(),
     val startMinute: Int = 0,
-    val stopMinute: Int = QueueSchedule.NO_STOP
+    val stopMinute: Int = QueueSchedule.NO_STOP,
+    /** Retries for a failed download in this queue; -1 = the app setting. */
+    val retries: Int = -1,
+    /** Alert once when nothing is left to download in this queue. */
+    val notifyWhenDone: Boolean = false
 ) {
     val schedule: QueueSchedule get() = QueueSchedule(scheduleEnabled, days, startMinute, stopMinute)
 
@@ -38,7 +42,9 @@ object QueueCodec {
             if (q.scheduleEnabled) 1 else 0,
             q.days.sorted().joinToString(","),
             q.startMinute,
-            q.stopMinute
+            q.stopMinute,
+            q.retries,
+            if (q.notifyWhenDone) 1 else 0
         ).joinToString("\t")
     }
 
@@ -54,7 +60,10 @@ object QueueCodec {
                 scheduleEnabled = f[4] == "1",
                 days = f[5].split(',').mapNotNull { it.toIntOrNull() }.filter { it in 1..7 }.toSet(),
                 startMinute = f[6].toIntOrNull() ?: 0,
-                stopMinute = f[7].toIntOrNull() ?: QueueSchedule.NO_STOP
+                stopMinute = f[7].toIntOrNull() ?: QueueSchedule.NO_STOP,
+                // Added later: a line saved by an older version stops at the eighth field.
+                retries = f.getOrNull(8)?.toIntOrNull() ?: -1,
+                notifyWhenDone = f.getOrNull(9) == "1"
             )
         }
         val main = parsed.firstOrNull { it.id == QueueRules.MAIN } ?: AppQueue.main()

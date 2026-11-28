@@ -54,12 +54,57 @@ async function pairWithApp(port) {
   }
 }
 
+// ---- starting the app when it is closed ---------------------------------------------
+//
+// An extension cannot run a program. Opening the app's own "onedm:" address asks Windows
+// to start it (the browser asks the user the first time). Downloads arriving together
+// share one attempt, and after a failed one it is not tried again for a while, so a PC
+// without the app does not get a new tab for every download.
+const WAKE_ADDRESS = "onedm://open";
+const WAKE_TIMEOUT_MS = 40000;
+const WAKE_COOLDOWN_MS = 5 * 60 * 1000;
+let waking = null;
+let wakeFailedAt = 0;
+
+function wakeApp(port) {
+  if (waking) return waking;
+  if (Date.now() - wakeFailedAt < WAKE_COOLDOWN_MS) return Promise.resolve(false);
+  waking = (async () => {
+    const tabs = (typeof browser !== "undefined" ? browser : chrome).tabs;
+    let tab;
+    try {
+      tab = await tabs.create({ url: WAKE_ADDRESS, active: true });
+    } catch (error) {
+      return false;
+    }
+    const deadline = Date.now() + WAKE_TIMEOUT_MS;
+    let up = false;
+    while (!up && Date.now() < deadline) {
+      await new Promise((done) => setTimeout(done, 700));
+      // Any extension call keeps the background worker alive through the wait.
+      (typeof browser !== "undefined" ? browser : chrome).runtime.getPlatformInfo?.();
+      up = await isAppReachable(port);
+    }
+    try { await tabs.remove(tab.id); } catch (error) {}
+    // A moment more for the window, so the Add Download dialog has somewhere to open.
+    if (up) await new Promise((done) => setTimeout(done, 1500));
+    return up;
+  })().then((up) => {
+    if (!up) wakeFailedAt = Date.now();
+    waking = null;
+    return up;
+  });
+  return waking;
+}
+
 async function sendToApp(url, options = {}) {
   if (!url) {
     return { ok: false, reason: "no link" };
   }
   const config = await getConfig();
   const port = config.port;
+  // Closed app: start it first, then carry on as usual.
+  if (!(await isAppReachable(port))) await wakeApp(port);
   let token = config.token || (await pairWithApp(port));
   if (!token) {
     return { ok: false, reason: "app not running" };

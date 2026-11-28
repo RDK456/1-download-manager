@@ -1,4 +1,4 @@
-﻿package com.downloadhub.desktop
+package com.downloadhub.desktop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -87,16 +87,22 @@ fun DownloadOptionsDialog(
     // Its own window, as IDM and AB Download Manager show a download, rather than a popup
     // inside the main one.
     val percent = if (item.totalBytes > 0) "${(item.bytesDownloaded * 100 / item.totalBytes).toInt()}% " else ""
+    val dialogState = androidx.compose.ui.window.rememberDialogState(size = androidx.compose.ui.unit.DpSize(620.dp, FULL_HEIGHT))
+    // With the details hidden there is only a progress bar: the window shrinks to fit it.
+    val compact = !showDetails && !speedTab && tab == TorrentTab.GENERAL
     androidx.compose.ui.window.DialogWindow(
         onCloseRequest = onDismiss,
         title = "$percent${item.fileName}",
-        state = androidx.compose.ui.window.rememberDialogState(size = androidx.compose.ui.unit.DpSize(620.dp, 560.dp)),
+        state = dialogState,
         resizable = true
     ) {
         androidx.compose.runtime.LaunchedEffect(window) {
             window.iconImages = AppArtwork.windowIcons()
-            window.minimumSize = java.awt.Dimension(460, 420)
             ForegroundWindow.raise(window)
+        }
+        androidx.compose.runtime.LaunchedEffect(window, compact) {
+            window.minimumSize = java.awt.Dimension(460, if (compact) COMPACT_HEIGHT.value.toInt() else 420)
+            window.setSize(window.width, (if (compact) COMPACT_HEIGHT else FULL_HEIGHT).value.toInt())
         }
         Column(
             Modifier
@@ -129,7 +135,7 @@ fun DownloadOptionsDialog(
             Spacer(Modifier.height(8.dp))
             Column(
                 Modifier
-                    .weight(1f)
+                    .then(if (compact) Modifier else Modifier.weight(1f))
                     .fillMaxWidth()
                     .liquidGlass(androidx.compose.foundation.shape.RoundedCornerShape(22.dp))
                     .padding(16.dp)
@@ -174,6 +180,9 @@ fun DownloadOptionsDialog(
         }
     }
 }
+
+private val FULL_HEIGHT = 560.dp
+private val COMPACT_HEIGHT = 270.dp
 
 /** Live status block, the way IDM and AB Download Manager show a download in progress. */
 @Composable

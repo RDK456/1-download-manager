@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Search
 import com.composables.icons.lucide.Settings
 import com.composables.icons.lucide.SlidersHorizontal
 import com.composables.icons.lucide.X
@@ -51,9 +52,8 @@ object ExpressiveChromeState {
 class NavItem(val label: String, val icon: ImageVector, val selected: Boolean, val badge: Int = 0, val onClick: () -> Unit)
 
 /**
- * The root tabs. The short navigation bar holds three to five items on a phone, which is
- * exactly the app's five, so there is no room for a sixth: anything new goes under one of
- * these. The indicator and the icon spring on the theme's motion scheme.
+ * The root tabs. The short navigation bar holds three to five items on a phone; the app has
+ * four. The indicator and the icon spring on the theme's motion scheme.
  */
 @Composable
 fun ExpressiveNavBar(items: List<NavItem>, modifier: Modifier = Modifier) {
@@ -100,7 +100,8 @@ fun ExpressiveTopBar(
     modifier: Modifier = Modifier,
     onFilter: (() -> Unit)? = null,
     filterActive: Boolean = false,
-    onSettings: (() -> Unit)? = null
+    onSettings: (() -> Unit)? = null,
+    onFind: (() -> Unit)? = null
 ) {
     TopAppBar(
         modifier = modifier,
@@ -113,6 +114,7 @@ fun ExpressiveTopBar(
             }
         },
         actions = {
+            if (onFind != null) IconButton(onFind) { Icon(com.composables.icons.lucide.Lucide.Search, contentDescription = "Find torrents") }
             if (onFilter != null) {
                 IconButton(onFilter) {
                     BadgedBox(badge = { if (filterActive) Badge() }) {

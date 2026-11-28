@@ -704,6 +704,9 @@ val packageZip by tasks.registering(Zip::class) {
 compose.desktop {
     application {
         mainClass = "com.downloadhub.desktop.MainKt"
+        // One small collector thread and heap to start with: less to set up at sign-in and
+        // less memory held while idle in the tray.
+        jvmArgs += listOf("-XX:+UseSerialGC", "-Xms16m", "-XX:MinHeapFreeRatio=20", "-XX:MaxHeapFreeRatio=40")
         // Chromium (KCEF) reaches into AWT internals to host its native window.
         jvmArgs += listOf(
             "--add-opens", "java.desktop/sun.awt=ALL-UNNAMED",

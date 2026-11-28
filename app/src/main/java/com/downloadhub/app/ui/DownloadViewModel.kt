@@ -464,7 +464,8 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
                 },
                 url = candidate.url,
                 fileName = LinkParser.sanitizeFileName(candidate.label),
-                category = category
+                category = category,
+                referer = (_pageScan.value as? PageScanState.Found)?.pageUrl
             )
             runCatching { repository.create(request) }
                 .onSuccess {
@@ -477,7 +478,8 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
 
     /** Queues every item the scan found. */
     fun addAllScannedMedia() {
-        val items = (_pageScan.value as? PageScanState.Found)?.items.orEmpty()
+        val scan = _pageScan.value as? PageScanState.Found ?: return
+        val items = scan.items
         if (items.isEmpty()) return
         viewModelScope.launch {
             val ids = mutableListOf<String>()
@@ -491,6 +493,7 @@ class DownloadViewModel(application: Application, private val saved: androidx.li
                                 DownloadSource.HTTP
                             },
                             url = candidate.url,
+                            referer = scan.pageUrl,
                             fileName = LinkParser.sanitizeFileName(candidate.label),
                             category = when (candidate.kind) {
                                 MediaKind.VIDEO -> DownloadCategory.VIDEO

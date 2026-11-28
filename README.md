@@ -38,7 +38,9 @@ YouTube, torrents and streams in a single queue — with browser extensions for 
 - **Mirrors** — on Windows, add spare links to a download; if the main one fails, the next is tried.
 - **Self-healing** — retries after a dropped connection or when the PC wakes from sleep; swap an expired link for a fresh one and keep your progress.
 - **Batch download** — paste many links at once, or a range like `file[001-120].jpg`. Duplicates are caught for you.
-- **Queues and scheduler** — several queues, start and stop times, reorder with move up / down. On Windows each queue has its own retries and "when done" action, and can wake the PC to run.
+- **Queues and scheduler** — several queues, start and stop times, reorder with move up / down. Each queue has its own retry count. On Windows it also has a "when done" action and can wake the PC to run; on Android it can alert you when it finishes.
+- **Expired links** — when a link stops working, the app looks once on the page it came from for a fresh one and carries on, when it can tell which file is the same.
+- **Download history** — data downloaded each day and the fastest speed reached.
 - **When done** — exit, sleep, hibernate, lock, shut down or open the folder once the queue finishes.
 
 **Video, audio and torrents**
@@ -49,7 +51,7 @@ YouTube, torrents and streams in a single queue — with browser extensions for 
 - **Free books, movies, music and TV** — public-domain and freely licensed sources, plus a built-in player.
 
 **After the download**
-- **Checksums** — verify MD5, SHA-1, SHA-256 or SHA-512 on finished files.
+- **Checksums** — verify MD5, SHA-1, SHA-256 or SHA-512 on finished files, on Android and Windows.
 - **Auto-unzip and virus scan** — optionally unzip archives and scan new files with Windows Defender.
 - **Removed-file tracking** — files deleted outside the app stay in the list, struck through.
 
@@ -60,11 +62,13 @@ YouTube, torrents and streams in a single queue — with browser extensions for 
 - **GitHub mirror** — optionally fetch public GitHub files through a mirror you choose, with GitHub as the fallback. Off by default; only use a mirror you trust, as it can change what it serves.
 - **Your cache folder** — partial files, helper tools and update downloads go to the folder you pick. Settings, the queue and the app itself stay in their usual places.
 - **Control from your phone** — watch and pause downloads from any phone on your Wi-Fi, protected by a PIN.
+- **Quiet start** — started with Windows, it waits in the tray without loading its window.
 - **Interface zoom**, system tray, start with Windows, and a glass-style download window.
 
 **Everywhere**
-- **Browser integration** — Chrome and Firefox extensions hand downloads and page media to the app, with a per-site exclude list.
+- **Browser integration** — Chrome and Firefox extensions hand downloads and page media to the app, with a per-site exclude list. If the Windows app is closed, they start it (allow the browser's one-time prompt).
 - **Automatic updates** — the app checks GitHub and installs new versions for you.
+- **Live Updates** — on Android 16, a running download can show its progress in the status bar.
 - **Themes** — light, dark and AMOLED, with nine colour palettes.
 
 ## Command line and local API (Windows)
@@ -123,6 +127,10 @@ tags, pushes and publishes the GitHub release:
 
 Release builds are signed with `keystore/` (not in git). **Back up the keystore and its
 passwords** — Android only updates an app signed with the same key.
+
+## Helping out
+
+[Translating the app](docs/TRANSLATING.md) · [Publishing to stores](docs/PUBLISHING.md)
 
 ## Legal
 

@@ -278,7 +278,21 @@ class DownloadEngine(
                         scope.launch { delay(500); resume(id) }
                         return@launch
                     }
-                    val expired = reason?.let { Regex("HTTP (403|404|410)").containsMatchIn(it) } == true
+                    val expired = com.downloadhub.core.LinkRefresh.looksExpired(reason)
+                    // Once per download: ask the page it came from for a fresh link.
+                    if (expired && spare != null && refreshed.add(id)) {
+                        val request = spare.toCoreItem().request
+                        val referer = request.headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value
+                        val secrets = request.cookies.isNotBlank() || request.username.isNotEmpty() ||
+                            request.headers.keys.any { !it.equals("Referer", true) }
+                        val fresh = com.downloadhub.core.LinkRefresh.find(spare.url, referer, secrets)
+                        // A pause or delete during the page read wins.
+                        if (fresh != null && store.get(id)?.status == DownloadStatus.RUNNING) {
+                            store.update(id) { it.copy(url = fresh) }
+                            scope.launch { delay(500); resume(id) }
+                            return@launch
+                        }
+                    }
                     store.update(id) {
                         it.copy(
                             status = DownloadStatus.FAILED,
@@ -327,9 +341,11 @@ class DownloadEngine(
 
     fun retry(id: String) {
         autoRetries.remove(id)
+        refreshed.remove(id)
         resume(id)
     }
 
+    private val refreshed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val mirrorHops = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private val autoRetries = java.util.concurrent.ConcurrentHashMap<String, Int>()
 

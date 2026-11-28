@@ -3,6 +3,7 @@ package com.downloadhub.app.ui
 import androidx.compose.foundation.border
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Archive
+import com.downloadhub.app.ui.expressive.model.friendlyError
 import com.composables.icons.lucide.CircleCheck
 import com.composables.icons.lucide.EllipsisVertical
 import com.composables.icons.lucide.File
@@ -179,20 +180,24 @@ fun DownloadCard(
                 // A finished download shows a state, not a full progress bar.
                 CompletedFooter(item)
             } else {
-                SignalBar(
-                    progress = progress,
-                    color = statusColor(item.status),
-                    live = item.status.canPauseUi,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                )
-                Spacer(Modifier.size(8.dp))
+                // A download that failed before it began has no progress to draw.
+                val neverStarted = item.status == DownloadStatus.FAILED && item.bytesDownloaded == 0L
+                if (!neverStarted) {
+                    SignalBar(
+                        progress = progress,
+                        color = statusColor(item.status),
+                        live = item.status.canPauseUi,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                    )
+                    Spacer(Modifier.size(8.dp))
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
+                    if (!neverStarted) Text(
                         progressLabel(item),
                         style = MaterialTheme.typography.labelMedium,
                         fontFamily = Mono,
@@ -394,7 +399,7 @@ private fun progressDetail(item: DownloadEntity): String = when (item.status) {
     DownloadStatus.RESOLVING -> "Finding the best stream"
     DownloadStatus.QUEUED -> "Waiting in queue"
     DownloadStatus.PAUSED -> "${progressLabel(item)} paused"
-    DownloadStatus.FAILED -> item.errorMessage ?: "Retry available"
+    DownloadStatus.FAILED -> friendlyError(item.errorMessage).short
     DownloadStatus.COMPLETED -> formatBytes(item.bytesDownloaded)
 }
 

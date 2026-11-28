@@ -75,6 +75,8 @@ fun MenuBar(
     var showIntegration by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     if (showAbout) AboutDialog(version) { showAbout = false }
+    var showUsage by remember { mutableStateOf(false) }
+    if (showUsage) UsageDialog { showUsage = false }
     // Where each label ended up, so its panel opens underneath it.
     val offsets = remember { mutableStateMapOf<String, Int>() }
 
@@ -170,6 +172,7 @@ fun MenuBar(
 
                             "Tools" -> {
                                 MenuItem("Create torrent...") { open = null; onCreateTorrent() }
+                                MenuItem("Download history") { open = null; showUsage = true }
                                 if (AutoStart.available()) {
                                     val on = AutoStart.isEnabled()
                                     MenuItem(if (on) "Start with Windows: On" else "Start with Windows: Off") { open = null; AutoStart.set(!on) }

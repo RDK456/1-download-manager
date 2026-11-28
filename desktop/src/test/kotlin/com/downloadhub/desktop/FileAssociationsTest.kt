@@ -211,4 +211,15 @@ class FileAssociationsTest {
         assertTrue("the path is quoted, for the spaces in Program Files", expected.startsWith("\""))
         assertTrue("the substituted argument is quoted, for spaces in the argument", expected.endsWith("\"%1\""))
     }
+
+    /** The extension starts a closed app through the scheme the app registers. */
+    @Test
+    fun bothExtensionsWakeTheAppWithItsOwnScheme() {
+        for (build in listOf("chromium", "firefox")) {
+            val script = java.io.File("browser-extension/$build/background.js").readText()
+            assertTrue(build, script.contains("\"${FileAssociations.WAKE_SCHEME}://open\""))
+            assertTrue(build, script.contains("await wakeApp(port)"))
+        }
+        assertEquals(null, classifyStartupArgument("${FileAssociations.WAKE_SCHEME}://open"))
+    }
 }

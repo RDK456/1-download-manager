@@ -139,12 +139,13 @@ class AppIconTest {
     /** The tray asks the shared drawing rather than keeping a copy of it. */
     @Test
     fun theTrayIconUsesTheSameArtwork() {
-        val tray = File("src/main/kotlin/com/downloadhub/desktop/SystemTrayIcon.kt").readText()
-        assertTrue(
-            "the tray draws its own icon instead of using AppArtwork, so there are now " +
-                "two icons to keep in step",
-            tray.contains("AppArtwork.icon(32)")
-        )
+        // The tray reads a picture rather than drawing (that keeps a quiet start light), so
+        // the picture has to stay the one AppArtwork draws.
+        val saved = javax.imageio.ImageIO.read(File("src/main/resources/tray-icon.png"))
+        val drawn = java.awt.image.BufferedImage(64, 64, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        drawn.createGraphics().apply { drawImage(AppArtwork.icon(64), 0, 0, null); dispose() }
+        val different = (0 until 64).sumOf { x -> (0 until 64).count { y -> saved.getRGB(x, y) != drawn.getRGB(x, y) } }
+        assertTrue("tray-icon.png is not AppArtwork's icon: $different pixels differ", different < 64)
     }
 
 

@@ -108,5 +108,7 @@ data class DownloadCreateRequest(
     /** Exact video stream the picker named, as a yt-dlp format id. Null keeps the ceiling. */
     val streamFormatId: String? = null,
     /** Exact audio stream the picker named. Null keeps the ceiling. */
-    val streamAudioFormatId: String? = null
+    val streamAudioFormatId: String? = null,
+    /** The page an HTTP link was found on: sent as Referer, and read again if the link expires. */
+    val referer: String? = null
 )

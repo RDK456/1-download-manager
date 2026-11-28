@@ -61,7 +61,11 @@ class SystemTrayIcon(
             }
             menu.add(exit)
 
-            val icon = TrayIcon(AppArtwork.icon(32), "1 download manager")
+            // A ready-made picture of AppArtwork's icon (AppIconTest keeps them the same):
+            // drawing it here would load the whole graphics library for a start to the tray.
+            val artwork = SystemTrayIcon::class.java.getResourceAsStream("/tray-icon.png")
+                ?.use { javax.imageio.ImageIO.read(it) } ?: AppArtwork.icon(32)
+            val icon = TrayIcon(artwork, "1 download manager")
             icon.setImage(autoSized(icon.image))
             icon.setPopupMenu(menu)
             // Left click is the fastest way back to a hidden window.

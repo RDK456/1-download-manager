@@ -36,6 +36,7 @@ class AppContainer(context: Context) {
     val batteryOptimisation = BatteryOptimisation(appContext)
 
     val storage = DownloadStorage(appContext)
+    val usageHistory by lazy { com.downloadhub.core.UsageHistory(java.io.File(appContext.filesDir, "usage.txt")) }
 
     /** For keeping small pieces of state in step with settings for the life of the process. */
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)

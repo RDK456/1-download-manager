@@ -87,6 +87,15 @@ class DetailsModelTest {
     }
 
     @Test
+    fun toolWarningsAreNeverShownAsTheReason() {
+        val warned = "WARNING: Your yt-dlp version (2025.11.12) is older than 90 days!"
+        assertEquals("Could not read the video", friendlyError(warned).short)
+        assertEquals("Link refused (403)", friendlyError("$warned\nERROR: unable to download: HTTP Error 403: Forbidden").short)
+        assertEquals("Could not read the video", friendlyError("Unable to parse video information").short)
+        assertEquals("Video unavailable", friendlyError("ERROR: [youtube] x: Private video").short)
+    }
+
+    @Test
     fun missingMessageStillSaysSomethingAndKeepsNoRaw() {
         val e = friendlyError("   ")
         assertEquals("Needs attention", e.short)

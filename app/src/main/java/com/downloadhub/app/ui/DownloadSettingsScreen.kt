@@ -229,6 +229,8 @@ fun DownloadSettingsScreen(
             )
         }
 
+        UsageSection()
+
         SettingsSection("YouTube downloader") {
             YtDlpStatusRow(
                 installed = downloaderVersion,

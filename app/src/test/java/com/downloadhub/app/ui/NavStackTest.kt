@@ -101,7 +101,8 @@ class NavStackTest {
     fun onlyTheListTabsAreRoots() {
         assertTrue(DOWNLOADS.isRoot)
         assertTrue(TORRENTS.isRoot)
-        assertTrue(SEARCH.isRoot)
+        assertFalse("search is opened from the Torrents tab", SEARCH.isRoot)
+        assertEquals(TORRENTS, NavStack().navigate(TORRENTS).navigate(SEARCH).back()?.current)
         assertTrue(YOUTUBE.isRoot)
         assertFalse(SETTINGS.isRoot)
         assertFalse(DOWNLOAD_SETTINGS.isRoot)

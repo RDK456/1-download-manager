@@ -209,12 +209,11 @@ fun DownloadDetailsSheet(
             }
             item.mimeType?.let { DetailRow("Format", it) }
             item.outputPath?.let { DetailRow("Location", it, maxLines = 2) }
+            if (item.status == DownloadStatus.COMPLETED) item.outputPath?.let { ChecksumCheck(it) }
             if (item.status == DownloadStatus.FAILED) {
-                Text(
-                    item.errorMessage ?: "The download could not be completed.",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                val error = com.downloadhub.app.ui.expressive.model.friendlyError(item.errorMessage)
+                Text(error.short, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleSmall)
+                Text(error.detail, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),

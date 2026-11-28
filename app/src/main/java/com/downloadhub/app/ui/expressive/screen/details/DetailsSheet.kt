@@ -270,6 +270,7 @@ fun DetailsBody(
             }
         }
         if (finished) TextButton(onOpenWith, Modifier.fillMaxWidth()) { Text("Open with another app") }
+        if (finished) item.outputPath?.let { com.downloadhub.app.ui.ChecksumCheck(it) }
         TextButton(onClick = onAskDelete, modifier = Modifier.fillMaxWidth()) {
             Icon(Lucide.Trash2, null, tint = scheme.error)
             Spacer(Modifier.width(8.dp))

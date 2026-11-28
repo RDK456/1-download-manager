@@ -106,13 +106,13 @@ data class TorrentStatusStrip(
         /**
          * Read from the queue, so the numbers cannot drift from what the list shows.
          *
-         * Torrents only. Counting HTTP downloads in a torrent client's "seeds" line is
-         * what makes such a number mean nothing.
+         * The download speed is everything running: the bar is under every tab, and reading
+         * 0 B/s while a file downloads looks broken. Upload, seeds and peers are torrents'.
          */
         fun from(items: List<DownloadItem>): TorrentStatusStrip {
             val torrents = items.filter { it.source == DownloadSource.TORRENT }
             return TorrentStatusStrip(
-                downloadRate = torrents.filter { it.status == DownloadStatus.RUNNING }
+                downloadRate = items.filter { it.status == DownloadStatus.RUNNING }
                     .sumOf { it.speedBytesPerSecond },
                 uploadRate = torrents.sumOf { it.uploadRate },
                 seeds = torrents.sumOf { it.seeds },

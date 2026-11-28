@@ -7,14 +7,32 @@ package com.downloadhub.app.ui.expressive.model
  */
 data class FriendlyError(val short: String, val detail: String, val raw: String?)
 
-private val HTTP_CODE = Regex("""HTTP\s*(\d{3})""", RegexOption.IGNORE_CASE)
+private val HTTP_CODE = Regex("""HTTP(?:\s+Error)?\s*(\d{3})""", RegexOption.IGNORE_CASE)
 
 fun friendlyError(message: String?): FriendlyError {
     val raw = message?.trim()?.takeIf { it.isNotEmpty() }
     if (raw == null) return FriendlyError("Needs attention", "The download could not be completed. Try again.", null)
-    val lower = raw.lowercase()
-    val code = HTTP_CODE.find(raw)?.groupValues?.get(1)?.toIntOrNull()
+    // yt-dlp prints warnings ahead of the reason; the reason is its last ERROR line.
+    val lines = raw.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    val reason = lines.lastOrNull { it.startsWith("ERROR:") }?.removePrefix("ERROR:")?.trim()
+        ?: lines.filterNot { it.startsWith("WARNING:") }.joinToString(" ")
+    val lower = reason.lowercase()
+    val code = HTTP_CODE.find(reason)?.groupValues?.get(1)?.toIntOrNull()
     return when {
+        "sign in to confirm" in lower -> FriendlyError(
+            "Site wants a sign-in",
+            "The site asked to check you are a person or signed in. Wait a while, or try another network.",
+            raw
+        )
+        "private video" in lower || "video unavailable" in lower -> FriendlyError(
+            "Video unavailable", "This video is private, removed or blocked where you are.", raw
+        )
+        // Nothing but warnings, or the site's page could not be read: usually an old yt-dlp.
+        reason.isEmpty() || "unable to parse video information" in lower || "unable to extract" in lower -> FriendlyError(
+            "Could not read the video",
+            "The video tool could not read this page. Update it in Download settings, then retry.",
+            raw
+        )
         code == 401 || code == 403 -> FriendlyError(
             "Link refused ($code)",
             "The server would not hand the file over. The link may have expired, or it needs you to be signed in. Open the page again and copy a fresh link.",
@@ -43,6 +61,6 @@ fun friendlyError(message: String?): FriendlyError {
             "The secure connection could not be set up. The site's certificate may be wrong or your date and time may be off.",
             raw
         )
-        else -> FriendlyError(raw.take(60), raw, raw)
+        else -> FriendlyError(reason.take(60), reason, raw)
     }
 }

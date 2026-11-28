@@ -75,11 +75,17 @@ fun main(args: Array<String>) {
         // us to open, so the request is handed over rather than dropped; this copy then
         // has nothing left to do.
         IntakeChannel.handOff(targets)
+        // Opened by hand while the app sits in the tray: bring its window up.
+        if (targets.isEmpty() && AutoStart.SWITCH !in args) QuietStart.askToShow()
         instance.release()
         return
     }
 
-    val controller = DesktopController()
+    // Started by Windows at sign-in (AutoStart), or asked for in Settings: straight to the tray.
+    val atSignIn = AutoStart.SWITCH in args
+    val controller = DesktopController(
+        housekeepingDelayMillis = if (atSignIn) QuietStart.HOUSEKEEPING_DELAY_MILLIS else 0L
+    )
     controller.start()
 
     // Claim magnet links and .torrent files before anything else can be queued, so a
@@ -105,9 +111,11 @@ fun main(args: Array<String>) {
     // torrent was dropped: no dialog, no row, and nothing in the list to show for it.
     // It is drained once the window has composed and set the callback.
     val startupTargets = IntakeChannel.take() + targets
+    QuietStart.takeShowRequest() // one left over from last time means nothing now
 
     // Declared outside `application` so the tray callbacks can reach the window state.
-    var showWindow: () -> Unit = {}
+    val opened = java.util.concurrent.atomic.AtomicBoolean(false)
+    var showWindow: () -> Unit = { opened.set(true) }
     var hideWindow: () -> Unit = {}
     var requestExit: () -> Unit = { controller.close(); exitProcess(0) }
 
@@ -123,6 +131,18 @@ fun main(args: Array<String>) {
     // Keeps a "Start with Windows" entry pointing at this copy after an update or a move.
     Thread { runCatching { AutoStart.refresh() } }.apply { isDaemon = true }.start()
 
+    val quiet = (atSignIn || controller.settings.value.startMinimised) && !shouldShowSetup(controller.settings.value)
+    if (quiet) {
+        while (!QuietStart.needsUi(
+                opened.get() || QuietStart.takeShowRequest().also { if (it) opened.set(true) },
+                startupTargets.isNotEmpty() || AppPaths.pendingIntakeFile.length() > 0,
+                controller.ui.value.items.map { it.toCoreItem().status }
+            )
+        ) Thread.sleep(500)
+    }
+    // Straight to the tray unless something asked to be seen.
+    val startVisible = !quiet || opened.get() || startupTargets.isNotEmpty()
+
     try {
         application {
             // Material 3 otherwise falls back to its light scheme, so every dialog renders as a
@@ -137,13 +157,10 @@ fun main(args: Array<String>) {
                 palette = ThemePalette.fromValue(state.settings.themePalette),
                 mode = themeMode
             ) {
-            // Started by Windows at sign-in (AutoStart), or asked for in Settings: open minimized,
-            // not over what the user is doing. Read once, so toggling it never hides a live window.
             val windowState = rememberWindowState(size = DpSize(1180.dp, 720.dp))
-            // Straight to the tray, with no taskbar button: a minimised window still sits there.
-            var visible by remember {
-                mutableStateOf(!(AutoStart.SWITCH in args || controller.settings.value.startMinimised))
-            }
+            // Hidden means no taskbar button: a minimised window still sits there. Read once, so
+            // toggling the setting never hides a live window.
+            var visible by remember { mutableStateOf(startVisible) }
             // The link-entry step, which only exists to collect a link before the
             // pre-download dialog. It used to be the only step, and when that dialog was
             // replaced this flag was left setting a piece of state nothing read, so `+`
@@ -210,6 +227,7 @@ fun main(args: Array<String>) {
             LaunchedEffect(Unit) {
                 while (true) {
                     delay(INTAKE_POLL_MILLIS)
+                    if (QuietStart.takeShowRequest()) showWindow()
                     val arrived = IntakeChannel.take()
                     if (arrived.isNotEmpty()) {
                         controller.queueTargets(arrived)

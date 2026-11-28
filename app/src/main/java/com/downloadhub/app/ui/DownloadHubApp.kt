@@ -102,6 +102,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.layout
@@ -354,7 +355,8 @@ fun DownloadHubApp(
                     onBack = if (destination.isRoot) null else ({ nav.back()?.let { navKey = encodeNav(it) } }),
                     onFilter = if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) ({ filterSheetOpen = true }) else null,
                     filterActive = hasActiveFilter,
-                    onSettings = if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT) ({ navigate(AppDestination.SETTINGS) }) else null
+                    onSettings = if (destination != AppDestination.SETTINGS && destination != AppDestination.ABOUT) ({ navigate(AppDestination.SETTINGS) }) else null,
+                    onFind = if (destination == AppDestination.TORRENTS) ({ navigate(AppDestination.SEARCH) }) else null
                 ) else TopAppBar(
                     title = {
                         // Downloads wears the "1DM" plate in either layout, as the desktop does.
@@ -377,7 +379,7 @@ fun DownloadHubApp(
                         // root tabs show the app mark instead of a second add button.
                         when (destination) {
                             // Every bottom-bar tab is a root: no back arrow on any of them.
-                            AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.SEARCH, AppDestination.YOUTUBE, AppDestination.DISCOVER -> {
+                            AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.YOUTUBE, AppDestination.DISCOVER -> {
                                 Image(
                                     painter = painterResource(R.drawable.ic_app_mark),
                                     contentDescription = null,
@@ -396,6 +398,11 @@ fun DownloadHubApp(
                         }
                     },
                     actions = {
+                        if (destination == AppDestination.TORRENTS) {
+                            IconButton(onClick = { navigate(AppDestination.SEARCH) }) {
+                                Icon(Lucide.Search, contentDescription = "Find torrents")
+                            }
+                        }
                         // The filter narrows the download list, so it is offered only where
                         // that list is; on Search and YouTube it did nothing visible.
                         if (destination == AppDestination.DOWNLOADS || destination == AppDestination.TORRENTS) {
@@ -432,11 +439,10 @@ fun DownloadHubApp(
                     if (destination != AppDestination.PLAYER) MiniPlayer(onOpen = { navigate(AppDestination.PLAYER) })
                     NavBarSwitch(
                         listOf(
-                            NavTab("Downloads", Lucide.Download, destination == AppDestination.DOWNLOADS, mainSummary.active) { navigate(AppDestination.DOWNLOADS) },
-                            NavTab("Torrents", Lucide.Folder, destination == AppDestination.TORRENTS, torrentSummary.active) { navigate(AppDestination.TORRENTS) },
-                            NavTab("Search", Lucide.Search, destination == AppDestination.SEARCH) { navigate(AppDestination.SEARCH) },
-                            NavTab("YouTube", Lucide.Film, destination == AppDestination.YOUTUBE) { navigate(AppDestination.YOUTUBE) },
-                            NavTab("Discover", Lucide.Compass, destination.isDiscover) { navigate(AppDestination.DISCOVER) }
+                            NavTab(stringResource(R.string.nav_downloads), Lucide.Download, destination == AppDestination.DOWNLOADS, mainSummary.active) { navigate(AppDestination.DOWNLOADS) },
+                            NavTab(stringResource(R.string.nav_torrents), Lucide.Folder, destination == AppDestination.TORRENTS || destination == AppDestination.SEARCH, torrentSummary.active) { navigate(AppDestination.TORRENTS) },
+                            NavTab(stringResource(R.string.nav_youtube), Lucide.Film, destination == AppDestination.YOUTUBE) { navigate(AppDestination.YOUTUBE) },
+                            NavTab(stringResource(R.string.nav_discover), Lucide.Compass, destination.isDiscover) { navigate(AppDestination.DISCOVER) }
                         )
                     )
                     }
@@ -465,7 +471,7 @@ fun DownloadHubApp(
             // Swipe sideways between the bottom-bar sections, in their bar order. Only on the
             // sections themselves: sub-pages keep back as the way out. Rows that scroll
             // sideways (the chips) take the drag first, so they still scroll.
-            val tabs = listOf(AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.SEARCH, AppDestination.YOUTUBE, AppDestination.DISCOVER)
+            val tabs = listOf(AppDestination.DOWNLOADS, AppDestination.TORRENTS, AppDestination.YOUTUBE, AppDestination.DISCOVER)
             val tabIndex = tabs.indexOf(destination)
             val swipeTabs = if (tabIndex < 0) Modifier else Modifier.pointerInput(tabIndex) {
                 var travelled = 0f
@@ -486,14 +492,13 @@ fun DownloadHubApp(
                 )
             }
             Row(Modifier.fillMaxSize().padding(padding)) {
-            if (com.downloadhub.app.ui.theme.UiGeneration.expressive && widthClass.usesRail && destination.isRoot) {
+            if (com.downloadhub.app.ui.theme.UiGeneration.expressive && widthClass.usesRail && (destination.isRoot || destination == AppDestination.SEARCH)) {
                 com.downloadhub.app.ui.expressive.shell.ExpressiveRail(
                     items = listOf(
-                        com.downloadhub.app.ui.expressive.shell.NavItem("Downloads", Lucide.Download, destination == AppDestination.DOWNLOADS, mainSummary.active) { navigate(AppDestination.DOWNLOADS) },
-                        com.downloadhub.app.ui.expressive.shell.NavItem("Torrents", Lucide.Folder, destination == AppDestination.TORRENTS, torrentSummary.active) { navigate(AppDestination.TORRENTS) },
-                        com.downloadhub.app.ui.expressive.shell.NavItem("Search", Lucide.Search, destination == AppDestination.SEARCH) { navigate(AppDestination.SEARCH) },
-                        com.downloadhub.app.ui.expressive.shell.NavItem("YouTube", Lucide.Film, destination == AppDestination.YOUTUBE) { navigate(AppDestination.YOUTUBE) },
-                        com.downloadhub.app.ui.expressive.shell.NavItem("Discover", Lucide.Compass, destination.isDiscover) { navigate(AppDestination.DISCOVER) }
+                        com.downloadhub.app.ui.expressive.shell.NavItem(stringResource(R.string.nav_downloads), Lucide.Download, destination == AppDestination.DOWNLOADS, mainSummary.active) { navigate(AppDestination.DOWNLOADS) },
+                        com.downloadhub.app.ui.expressive.shell.NavItem(stringResource(R.string.nav_torrents), Lucide.Folder, destination == AppDestination.TORRENTS || destination == AppDestination.SEARCH, torrentSummary.active) { navigate(AppDestination.TORRENTS) },
+                        com.downloadhub.app.ui.expressive.shell.NavItem(stringResource(R.string.nav_youtube), Lucide.Film, destination == AppDestination.YOUTUBE) { navigate(AppDestination.YOUTUBE) },
+                        com.downloadhub.app.ui.expressive.shell.NavItem(stringResource(R.string.nav_discover), Lucide.Compass, destination.isDiscover) { navigate(AppDestination.DISCOVER) }
                     ),
                     expanded = widthClass.showsDetailPane
                 )
@@ -1517,25 +1522,26 @@ private fun SettingsNavRow(
     }
 }
 
+@Composable
 private fun destinationTitle(destination: AppDestination): String = when (destination) {
     AppDestination.DOWNLOADS -> APP_TITLE
-    AppDestination.TORRENTS -> "Torrents"
-    AppDestination.SEARCH -> "Search"
-    AppDestination.YOUTUBE -> "YouTube"
-    AppDestination.SETTINGS -> "Settings"
-    AppDestination.DOWNLOAD_SETTINGS -> "Download settings"
-    AppDestination.THEMES -> "Themes"
-    AppDestination.QUEUES -> "Queues"
-    AppDestination.ADVANCED -> "Advanced"
-    AppDestination.RSS -> "RSS feeds"
-    AppDestination.DISCOVER -> "Discover"
-    AppDestination.BOOKS -> "Free books"
-    AppDestination.MOVIES -> "Free movies"
-    AppDestination.MUSIC -> "Free music"
-    AppDestination.PLAYER -> "Player"
-    AppDestination.TV -> "Free TV"
-    AppDestination.ARCHIVE -> "Internet Archive"
-    AppDestination.ABOUT -> "About us"
+    AppDestination.TORRENTS -> stringResource(R.string.nav_torrents)
+    AppDestination.SEARCH -> stringResource(R.string.title_find_torrents)
+    AppDestination.YOUTUBE -> stringResource(R.string.nav_youtube)
+    AppDestination.SETTINGS -> stringResource(R.string.title_settings)
+    AppDestination.DOWNLOAD_SETTINGS -> stringResource(R.string.title_download_settings)
+    AppDestination.THEMES -> stringResource(R.string.title_themes)
+    AppDestination.QUEUES -> stringResource(R.string.title_queues)
+    AppDestination.ADVANCED -> stringResource(R.string.title_advanced)
+    AppDestination.RSS -> stringResource(R.string.title_rss)
+    AppDestination.DISCOVER -> stringResource(R.string.nav_discover)
+    AppDestination.BOOKS -> stringResource(R.string.title_books)
+    AppDestination.MOVIES -> stringResource(R.string.title_movies)
+    AppDestination.MUSIC -> stringResource(R.string.title_music)
+    AppDestination.PLAYER -> stringResource(R.string.title_player)
+    AppDestination.TV -> stringResource(R.string.title_tv)
+    AppDestination.ARCHIVE -> stringResource(R.string.title_archive)
+    AppDestination.ABOUT -> stringResource(R.string.title_about)
 }
 
 private fun themeLabel(mode: ThemeMode): String = when (mode) {
